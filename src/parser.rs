@@ -2,6 +2,8 @@ use core::convert::From;
 use core::fmt::Debug;
 use core::iter::Iterator;
 
+use paste::paste;
+
 use crate::lexer::Token;
 
 macro_rules! expect_token {
@@ -23,41 +25,45 @@ trait FromTokens: Sized {
     fn from_tokens(ts: &mut (impl Iterator<Item = Token> + Clone)) -> Option<Self>;
 }
 
+trait ToTokens {
+    fn to_tokens(self, emit: &mut impl FnMut(Token));
+}
+
 macro_rules! node {
     ($node:ident ( $(
-        $case:ident : $(
-            ~
-            $($itoken:ident)?
-            $(<$subnode:ident>)?
-            $({$ctoken:ident ($pat:pat) : $ty:ty})?
-        )*
-    )|* ) ) => {
+        *
+        $($itoken:ident)?
+        $(<$subnode:ident>)?
+        $({$ctoken:ident ($pat:pat) : $ty:ty})?
+    )* ) ) => {
         #[derive(Debug, PartialEq, Eq)]
-        pub enum $node {$(
-            $case($($($subnode,)?$($ty,)?)*),
-        )*}
+        pub struct $node($(
+            $($subnode,)?$($ty,)?
+        )*);
 
         impl FromTokens for $node {
-            fn from_tokens(iter: &mut (impl Iterator<Item = Token> + Clone)) -> Option<Self> {
-                $(if let Some(($($($subnode,)?$($ctoken,)?)*)) = {
-                    let mut ts = iter.clone();
-                    let out = (|| -> Option<_> {
-                        $(
-                            $(expect_token!(ts, $itoken);)?
-                            $(let $subnode = $subnode::from_tokens(&mut ts)?;)?
-                            $(let $ctoken = expect_token!(ts, $ctoken($pat): $ty);)?
-                        )*
-                        Some(($($($subnode,)?$($ctoken,)?)*))
-                    })();
-                    if out.is_some() {
-                        *iter = ts;
-                    }
-                    out
-                } {
-                    return Some($node::$case($($($subnode,)?$($ctoken,)?)*));
-                })*
+            fn from_tokens(ts: &mut (impl Iterator<Item = Token> + Clone)) -> Option<Self> {
+                paste! {
+                $(
+                    $(expect_token!(ts, $itoken);)?
+                    $(let [< v_ $subnode:snake >] = $subnode::from_tokens(ts)?;)?
+                    $(let [< v_ $ctoken:snake >] = expect_token!(ts, $ctoken($pat): $ty);)?
+                )*
+                Some($node($($([< v_ $subnode:snake >],)?$([< v_ $ctoken:snake >],)?)*))
+                }
+            }
+        }
 
-                None
+        impl ToTokens for $node {
+            fn to_tokens(self, emit: &mut impl FnMut(Token)) {
+                paste! {
+                let $node($($([< v_ $subnode:snake >],)?$([< v_ $ctoken:snake >],)?)*) = self;
+                $(
+                    $(emit(Token::$itoken);)?
+                    $([< v_ $subnode:snake >].to_tokens(emit);)?
+                    $(emit(Token::$ctoken([< v_ $ctoken:snake >].into()));)?
+                )*
+                }
             }
         }
     };
@@ -70,15 +76,16 @@ macro_rules! nodes {
 }
 
 nodes! {
-    Program(Function : ~<Function>);
-    Function(IntFn :
-        ~KeywordInt ~<Identifier> ~OpenParen ~KeywordVoid ~CloseParen ~OpenBrace
-            ~<Statement>
-        ~CloseBrace);
-    Statement(ReturnStatement : ~KeywordReturn ~<Exp> ~Semicolon);
-    Exp(Int : ~<Int>);
-    Identifier(Variable : ~{Ident(_): String});
-    Int(Constant : ~{Constant(_): isize});
+    Program(*<Function>);
+    Function(
+        *KeywordInt *<Identifier> *OpenParen *KeywordVoid *CloseParen *OpenBrace
+            *<Statement>
+        *CloseBrace
+    );
+    Statement(*KeywordReturn *<Exp> *Semicolon);
+    Exp(*<Int>);
+    Identifier(*{Ident(_): String});
+    Int(*{Constant(_): isize});
 }
 
 pub fn parse<TS>(tokens: TS) -> Option<Program>
@@ -101,35 +108,61 @@ mod test {
     use super::*;
     use Token::*;
 
+    fn assert_forwards<T: FromTokens + Debug + PartialEq>(tokens: &[Token], expected: &T) {
+        let actual = T::from_tokens(&mut Vec::from(tokens).into_iter());
+        assert_eq!(Some(expected), actual.as_ref());
+    }
+
+    fn assert_backwards(tree: impl ToTokens + Debug + PartialEq, expected: &[Token]) {
+        let mut actual = Vec::<Token>::new();
+        tree.to_tokens(&mut |t| actual.push(t));
+        assert_eq!(expected, actual);
+    }
+
+    fn assert_convertible(tokens: &[Token], tree: impl ToTokens + FromTokens + Debug + PartialEq) {
+        assert_forwards(tokens, &tree);
+        assert_backwards(tree, tokens);
+    }
+
     #[test]
-    fn parse_int() {
-        assert_eq!(
-            Int::from_tokens(&mut [Constant(2)].into_iter()),
-            Some(Int::Constant(2))
+    fn int() {
+        assert_convertible(&[Constant(2)], Int(2))
+    }
+
+    #[test]
+    fn ident() {
+        assert_convertible(&[Ident("x".into())], Identifier("x".into()));
+    }
+
+    #[test]
+    fn exp() {
+        assert_convertible(&[Constant(2)], Exp(Int(2)));
+    }
+
+    #[test]
+    fn statement() {
+        assert_convertible(
+            &[KeywordReturn, Constant(2), Semicolon],
+            Statement(Exp(Int(2))),
         );
     }
 
     #[test]
-    fn parse_ident() {
-        assert_eq!(
-            Identifier::from_tokens(&mut [Ident("x".into())].into_iter()),
-            Some(Identifier::Variable("x".into())),
-        );
-    }
-
-    #[test]
-    fn parse_exp() {
-        assert_eq!(
-            Exp::from_tokens(&mut [Constant(2)].into_iter()),
-            Some(Exp::Int(Int::Constant(2)))
-        );
-    }
-
-    #[test]
-    fn parse_statement() {
-        assert_eq!(
-            Statement::from_tokens(&mut [KeywordReturn, Constant(2), Semicolon].into_iter()),
-            Some(Statement::ReturnStatement(Exp::Int(Int::Constant(2))))
+    fn function() {
+        assert_convertible(
+            &[
+                KeywordInt,
+                Ident("main".into()),
+                OpenParen,
+                KeywordVoid,
+                CloseParen,
+                OpenBrace,
+                KeywordReturn,
+                Constant(2),
+                Semicolon,
+                CloseBrace,
+            ],
+            Function(Identifier("main".into()), Statement(Exp(Int(2)))),
         );
     }
 }

@@ -65,7 +65,7 @@ fn main() -> Result<(), ()> {
     };
 
     let source = fs::read_to_string(filename).map_err(|e| {
-        eprintln!("error reading file: {}", e);
+        eprintln!("error reading file: {e}");
     })?;
 
     if !lex {
@@ -73,7 +73,7 @@ fn main() -> Result<(), ()> {
     }
 
     let tokens = lexer::lex(&source).map_err(|e| {
-        eprintln!("error lexing: {}", e);
+        eprintln!("error lexing: {e}");
     })?;
     println!("{tokens:?}");
 
@@ -81,9 +81,8 @@ fn main() -> Result<(), ()> {
         return Ok(());
     }
 
-    let tree = parser::parse(tokens).ok_or_else(|| {
-        // TODO: actually return parse errors
-        eprintln!("error parsing");
+    let tree = parser::parse(tokens).map_err(|e| {
+        eprintln!("error parsing: {e}");
     })?;
     println!("{tree:?}");
     printer::pretty_print(tree);

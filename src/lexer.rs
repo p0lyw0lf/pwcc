@@ -1,15 +1,15 @@
-use core::fmt::Display;
+use core::concat;
+use core::fmt::Debug;
+use core::str::FromStr;
+
+use regex::Regex;
+use regex::RegexSet;
 
 macro_rules! tokens {
     ($($regex:literal : $t:ident $( ( $inner:ty ) )? , )*) => {
-        use ::core::concat;
-        use ::core::fmt::Debug;
-        use ::core::str::FromStr;
 
-        use ::regex::Regex;
-        use ::regex::RegexSet;
-
-        #[derive(Clone, Debug, PartialEq, Eq)]
+        #[derive(Debug, Clone)]
+        #[cfg_attr(test, derive(PartialEq))]
         pub enum Token {
             $($t$(($inner))?,)*
         }
@@ -27,9 +27,9 @@ macro_rules! tokens {
         /// Converts a string into the `n`th token. MUST only be called if
         /// said string matches the token's regex.
         static TO_TOKEN: &'static [fn (&str) -> Result<Token, TokenError>] = &[$(
-            |s: &str| -> Result<Token, TokenError> {
+            |_s: &str| -> Result<Token, TokenError> {
                 Ok(Token::$t$(({
-                    let inner = <$inner as FromStr>::from_str(s).map_err(TokenError::$t)?;
+                    let inner = <$inner as FromStr>::from_str(_s).map_err(TokenError::$t)?;
                     inner
                 }))?)
             },
@@ -60,11 +60,22 @@ macro_rules! tokens {
     };
 }
 
+// Truncates the string so it appears about `mid` characters long
+fn safe_truncate(s: &str, mut mid: usize) -> &str {
+    while mid < s.len() {
+        if let Some((front, _)) = s.split_at_checked(mid) {
+            return front;
+        }
+        mid += 1;
+    }
+    s
+}
+
 impl Tokenizer {
     pub fn consume_token<'a>(&self, source: &'a str) -> Result<(Token, &'a str), LexError<'a>> {
         let first_match = match self.rs.matches_at(source, 0).iter().next() {
             Some(m) => m,
-            None => return Err(LexError::UnexpectedToken(source)),
+            None => return Err(LexError::InvalidToken(safe_truncate(source, 8))),
         };
 
         Ok(unsafe {
@@ -89,18 +100,8 @@ tokens! {
 
 #[derive(Debug)]
 pub enum LexError<'a> {
-    UnexpectedToken(&'a str),
+    InvalidToken(&'a str),
     TokenError(TokenError),
-}
-
-impl<'a> Display for LexError<'a> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use LexError::*;
-        match self {
-            UnexpectedToken(t) => write!(f, "unexpected token: {t}"),
-            TokenError(e) => write!(f, "SHOULD NOT HAPPEN: error parsing token: {e:?}"),
-        }
-    }
 }
 
 /// Lexes a source file into a list of tokens.

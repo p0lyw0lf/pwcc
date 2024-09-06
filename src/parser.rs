@@ -6,27 +6,40 @@ use paste::paste;
 
 use crate::lexer::Token;
 
+#[derive(Debug)]
+#[cfg_attr(test, derive(PartialEq))]
+pub enum ParseError {
+    UnexpectedToken { expected: Token, actual: Token },
+    MissingToken { expected: Token },
+    ExtraToken { actual: Token },
+}
+
 macro_rules! expect_token {
     ($ts:ident, $token:ident$(($pat:pat) : $ty:ty)?) => {
         {
+            use ParseError::*;
+            use Token::*;
             (match $ts.next() {
-                None => None,
-                Some(Token::$token$((v @ $pat))?) => Some(($(<$ty>::from(v))?)),
-                Some(t) => {
-                    eprintln!("expected {}, got {t:?} instead", stringify!($token));
-                    None
-                }
+                None => Err(MissingToken {
+                    expected: $token$((<$ty as Default>::default().into()))?,
+                }),
+                Some(Token::$token$((v @ $pat))?) => Ok(($(<$ty>::from(v))?)),
+                Some(t) => Err(UnexpectedToken {
+                    expected: $token$((<$ty as Default>::default().into()))?,
+                    actual: t,
+                }),
             })?
         }
     };
 }
 
 pub trait FromTokens: Sized {
-    fn from_tokens(ts: &mut (impl Iterator<Item = Token> + Clone)) -> Option<Self>;
+    fn from_tokens(ts: &mut (impl Iterator<Item = Token> + Clone)) -> Result<Self, ParseError>;
 }
 
+// IntoIterator is too hard b/c can't name the IntoIter type
 pub trait ToTokens {
-    fn to_tokens(self, emit: &mut impl FnMut(Token));
+    fn to_tokens(self) -> impl Iterator<Item = Token>;
 }
 
 macro_rules! node {
@@ -36,33 +49,35 @@ macro_rules! node {
         $(<$subnode:ident>)?
         $({$ctoken:ident ($pat:pat) : $ty:ty})?
     )* ) ) => {
-        #[derive(Debug, PartialEq, Eq)]
+        #[derive(Debug)]
+        #[cfg_attr(test, derive(PartialEq))]
         pub struct $node($(
             $($subnode,)?$($ty,)?
         )*);
 
         impl FromTokens for $node {
-            fn from_tokens(ts: &mut (impl Iterator<Item = Token> + Clone)) -> Option<Self> {
+            fn from_tokens(ts: &mut (impl Iterator<Item = Token> + Clone)) -> Result<Self, ParseError> {
                 paste! {
                 $(
                     $(expect_token!(ts, $itoken);)?
                     $(let [< v_ $subnode:snake >] = $subnode::from_tokens(ts)?;)?
                     $(let [< v_ $ctoken:snake >] = expect_token!(ts, $ctoken($pat): $ty);)?
                 )*
-                Some($node($($([< v_ $subnode:snake >],)?$([< v_ $ctoken:snake >],)?)*))
+                Ok($node($($([< v_ $subnode:snake >],)?$([< v_ $ctoken:snake >],)?)*))
                 }
             }
         }
 
         impl ToTokens for $node {
-            fn to_tokens(self, emit: &mut impl FnMut(Token)) {
+            fn to_tokens(self) -> impl Iterator<Item = Token> {
                 paste! {
                 let $node($($([< v_ $subnode:snake >],)?$([< v_ $ctoken:snake >],)?)*) = self;
-                $(
-                    $(emit(Token::$itoken);)?
-                    $([< v_ $subnode:snake >].to_tokens(emit);)?
-                    $(emit(Token::$ctoken([< v_ $ctoken:snake >].into()));)?
-                )*
+                ::core::iter::empty()
+                $(.chain(
+                    $(::core::iter::once(Token::$itoken))?
+                    $([< v_ $subnode:snake >].to_tokens())?
+                    $(::core::iter::once(Token::$ctoken([< v_ $ctoken:snake >].into())))?
+                ))*
                 }
             }
         }
@@ -88,18 +103,15 @@ nodes! {
     Int(*{Constant(_): isize});
 }
 
-pub fn parse<TS>(tokens: TS) -> Option<Program>
+pub fn parse<TS>(tokens: TS) -> Result<Program, ParseError>
 where
     TS: IntoIterator<Item = Token>,
     TS::IntoIter: Clone,
 {
     let mut iter = tokens.into_iter();
-    Program::from_tokens(&mut iter).filter(|_| {
-        if let Some(t) = iter.next() {
-            eprintln!("expected end of stream, got {t:?} instead");
-            return false;
-        }
-        true
+    Program::from_tokens(&mut iter).and_then(|p| match iter.next() {
+        Some(token) => Err(ParseError::ExtraToken { actual: token }),
+        None => Ok(p),
     })
 }
 
@@ -110,12 +122,11 @@ mod test {
 
     fn assert_forwards<T: FromTokens + Debug + PartialEq>(tokens: &[Token], expected: &T) {
         let actual = T::from_tokens(&mut Vec::from(tokens).into_iter());
-        assert_eq!(Some(expected), actual.as_ref());
+        assert_eq!(Ok(expected), actual.as_ref());
     }
 
     fn assert_backwards(tree: impl ToTokens + Debug + PartialEq, expected: &[Token]) {
-        let mut actual = Vec::<Token>::new();
-        tree.to_tokens(&mut |t| actual.push(t));
+        let actual = tree.to_tokens().collect::<Vec<_>>();
         assert_eq!(expected, actual);
     }
 
@@ -126,7 +137,7 @@ mod test {
 
     #[test]
     fn int() {
-        assert_convertible(&[Constant(2)], Int(2))
+        assert_convertible(&[Constant(2)], Int(2));
     }
 
     #[test]

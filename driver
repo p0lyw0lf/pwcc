@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+DIR="$(dirname "$0")"
+
+FILES=()
+OPTIONS=()
+
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --lex|--parse|--codegen)
+      OPTIONS+=("$1")
+      shift
+      ;;
+    -*)
+      echo "Unknown option $1"
+      exit 1
+      ;;
+    *)
+      FILES+=("$1")
+      shift
+      ;;
+  esac
+done
+
+if [[ "${#FILES[@]}" -eq "0" ]]; then
+  echo "Must provide filename"
+  exit 1
+fi
+
+cd $DIR
+EXE=$(cargo build --message-format=json-render-diagnostics | jq -js '.[] | select(.reason == "compiler-artifact") | select(.executable != null) | .executable')
+
+process_file () {
+  file="$1"
+  output="${file%.*}"
+  preprocessed="${output}.i"
+  assembly="${output}.s"
+
+  rm -f "${preprocessed}" "${assembly}"
+
+  gcc -E -P "${file}" -o "${preprocessed}"
+
+  if [[ ! -f "${preprocessed}" ]]; then
+    echo "gcc produced no preprocessed output"
+    exit 1
+  fi
+
+  "${EXE}" "${OPTIONS[@]}" "${preprocessed}"
+
+  if [[ "${#OPTIONS[@]}" -gt 0 ]]; then
+    exit 0
+  fi
+
+  if [[ ! -f "${assembly}" ]]; then
+    echo "pwcc produced no assembly output"
+    exit 1
+  fi
+
+  gcc "${assembly}" -o "${output}"
+}
+
+for file in "${FILES[@]}"; do
+  process_file "${file}"
+done

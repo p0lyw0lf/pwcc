@@ -1,7 +1,8 @@
 use std::env;
 use std::fs;
 
-mod lex;
+mod lexer;
+mod parser;
 
 fn print_help() {
     println!("{{--lex,--parse,--codegen,}} <file.i>");
@@ -70,7 +71,7 @@ fn main() -> Result<(), ()> {
         return Ok(());
     }
 
-    let tokens = lex::lex(&source).map_err(|e| {
+    let tokens = lexer::lex(&source).map_err(|e| {
         eprintln!("error lexing: {}", e);
     })?;
     println!("{tokens:?}");
@@ -79,7 +80,11 @@ fn main() -> Result<(), ()> {
         return Ok(());
     }
 
-    println!("parse");
+    let tree = parser::parse(tokens).ok_or_else(|| {
+        // TODO: actually return parse errors
+        eprintln!("error parsing");
+    })?;
+    println!("{tree:?}");
 
     if !codegen {
         return Ok(());

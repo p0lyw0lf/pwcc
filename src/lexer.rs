@@ -9,7 +9,7 @@ macro_rules! tokens {
         use ::regex::Regex;
         use ::regex::RegexSet;
 
-        #[derive(Clone, Debug)]
+        #[derive(Clone, Debug, PartialEq, Eq)]
         pub enum Token {
             $($t$(($inner))?,)*
         }

@@ -3,6 +3,7 @@ use std::fs;
 
 mod lexer;
 mod parser;
+mod printer;
 
 fn print_help() {
     println!("{{--lex,--parse,--codegen,}} <file.i>");
@@ -85,6 +86,7 @@ fn main() -> Result<(), ()> {
         eprintln!("error parsing");
     })?;
     println!("{tree:?}");
+    printer::pretty_print(tree);
 
     if !codegen {
         return Ok(());

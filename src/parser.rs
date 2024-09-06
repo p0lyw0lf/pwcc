@@ -21,11 +21,11 @@ macro_rules! expect_token {
     };
 }
 
-trait FromTokens: Sized {
+pub trait FromTokens: Sized {
     fn from_tokens(ts: &mut (impl Iterator<Item = Token> + Clone)) -> Option<Self>;
 }
 
-trait ToTokens {
+pub trait ToTokens {
     fn to_tokens(self, emit: &mut impl FnMut(Token));
 }
 

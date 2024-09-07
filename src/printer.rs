@@ -13,7 +13,7 @@ impl Display for Token {
             // Used for pretty-printing
             match self {
                 KeywordInt => f.write_str("int "),
-                KeywordVoid => f.write_str("void"),
+                KeywordVoid => f.write_str("void "),
                 KeywordReturn => f.write_str("return "),
                 Ident(i) => f.write_str(i),
                 Constant(n) => write!(f, "{n}"),
@@ -22,38 +22,24 @@ impl Display for Token {
                 OpenParen => f.write_str("("),
                 CloseParen => f.write_str(")"),
                 Semicolon => f.write_str(";"),
+                Increment => f.write_str("++"),
                 Decrement => f.write_str("--"),
+                Plus => f.write_str("+"),
                 Minus => f.write_str("-"),
+                Star => f.write_str("*"),
+                ForwardSlash => f.write_str("/"),
+                Percent => f.write_str("%"),
                 Tilde => f.write_str("~"),
             }
         } else {
             // Used for error output
             match self {
-                KeywordInt => f.write_str(r#""int""#),
-                KeywordVoid => f.write_str(r#""void""#),
-                KeywordReturn => f.write_str(r#""return""#),
-                Ident(i) => {
-                    if f.sign_minus() {
-                        f.write_str(r#"identifier"#)
-                    } else {
-                        write!(f, "\"{i}\"")
-                    }
-                }
-                Constant(c) => {
-                    if f.sign_minus() {
-                        f.write_str(r#"constant"#)
-                    } else {
-                        write!(f, "\"{c}\"")
-                    }
-                }
-                OpenBrace => f.write_str(r#""{""#),
-                CloseBrace => f.write_str(r#""}""#),
-                OpenParen => f.write_str(r#""(""#),
-                CloseParen => f.write_str(r#"")""#),
-                Semicolon => f.write_str(r#"";""#),
-                Decrement => f.write_str(r#""--""#),
-                Minus => f.write_str(r#""-""#),
-                Tilde => f.write_str(r#""~""#),
+                KeywordInt => f.write_str("\"int\""),
+                KeywordVoid => f.write_str("\"void\""),
+                KeywordReturn => f.write_str("\"return\""),
+                Ident(_) if f.sign_minus() => f.write_str("identifier"),
+                Constant(_) if f.sign_minus() => f.write_str("constant"),
+                other => write!(f, "\"{other}\""),
             }
         }
     }

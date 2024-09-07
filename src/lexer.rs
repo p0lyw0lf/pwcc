@@ -20,8 +20,13 @@ Tokenizer for Token with TokenError:
     r"\{": OpenBrace,
     r"\}": CloseBrace,
     r";": Semicolon,
+    r"\+\+": Increment,
     r"--": Decrement,
+    r"\+": Plus,
     r"-": Minus,
+    r"\*": Star,
+    r"/": ForwardSlash,
+    r"%": Percent,
     r"~": Tilde,
 }
 

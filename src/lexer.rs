@@ -19,6 +19,15 @@ macro_rules! tokens {
             $($($t(<$inner as FromStr>::Err),)?)*
         }
 
+        impl ::core::fmt::Display for TokenError {
+            fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                use TokenError::*;
+                match self {
+                    $($($t(e) => write!(f, "parsing {}: {}", stringify!($inner), e),)?)*
+                }
+            }
+        }
+
         struct Tokenizer {
             rs: RegexSet,
             pats: Vec<Regex>,
@@ -96,6 +105,9 @@ tokens! {
     r"\{": OpenBrace,
     r"\}": CloseBrace,
     r";": Semicolon,
+    r"--": Decrement,
+    r"-": Minus,
+    r"~": Tilde,
 }
 
 #[derive(Debug)]

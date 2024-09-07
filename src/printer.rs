@@ -22,6 +22,9 @@ impl Display for Token {
                 OpenParen => f.write_str("("),
                 CloseParen => f.write_str(")"),
                 Semicolon => f.write_str(";"),
+                Decrement => f.write_str("--"),
+                Minus => f.write_str("-"),
+                Tilde => f.write_str("~"),
             }
         } else {
             // Used for error output
@@ -48,6 +51,9 @@ impl Display for Token {
                 OpenParen => f.write_str(r#""(""#),
                 CloseParen => f.write_str(r#"")""#),
                 Semicolon => f.write_str(r#"";""#),
+                Decrement => f.write_str(r#""--""#),
+                Minus => f.write_str(r#""-""#),
+                Tilde => f.write_str(r#""~""#),
             }
         }
     }

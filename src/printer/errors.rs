@@ -8,7 +8,7 @@ impl<'a> Display for LexError<'a> {
         use LexError::*;
         match self {
             InvalidToken(t) => write!(f, "invalid token: {t}"),
-            TokenError(e) => write!(f, "SHOULD NOT HAPPEN: error parsing token: {e:?}"),
+            TokenError(e) => write!(f, "SHOULD NOT HAPPEN: error parsing token: {e}"),
         }
     }
 }

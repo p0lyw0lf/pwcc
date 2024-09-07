@@ -16,8 +16,8 @@ impl Display for Program {
 
 impl Display for Function {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "\t.globl {}", self.name.0)?;
-        writeln!(f, "{}:", self.name.0)?;
+        writeln!(f, "\t.globl {}", self.name.ident)?;
+        writeln!(f, "{}:", self.name.ident)?;
         for instruction in &self.instructions.0 {
             write!(f, "{}", instruction)?;
         }

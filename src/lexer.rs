@@ -15,6 +15,7 @@ macro_rules! tokens {
         }
 
         #[derive(Debug)]
+        #[cfg_attr(test, derive(PartialEq))]
         pub enum TokenError {
             $($($t(<$inner as FromStr>::Err),)?)*
         }
@@ -62,8 +63,9 @@ macro_rules! tokens {
                 let token_str = pat.find_at(source, 0).unwrap().as_str();
 
                 let token = TO_TOKEN.get_unchecked(index)(token_str)?;
+                let (_, rest) = source.split_at(token_str.len());
 
-                Ok((token, source.trim_start_matches(token_str)))
+                Ok((token, rest))
             }
         }
     };
@@ -111,6 +113,7 @@ tokens! {
 }
 
 #[derive(Debug)]
+#[cfg_attr(test, derive(PartialEq))]
 pub enum LexError<'a> {
     InvalidToken(&'a str),
     TokenError(TokenError),
@@ -132,4 +135,18 @@ pub fn lex(mut source: &str) -> Result<Vec<Token>, LexError<'_>> {
     }
 
     Ok(out)
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn extra_paren() {
+        use Token::*;
+        assert_eq!(
+            Ok(Vec::from([OpenParen, Constant(3), CloseParen, CloseParen])),
+            lex("(3))")
+        );
+    }
 }

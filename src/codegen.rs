@@ -7,7 +7,7 @@ pub struct Program(pub Function);
 
 impl From<parser::Program> for Program {
     fn from(program: parser::Program) -> Self {
-        Self(program.0.into())
+        Self(program.function.into())
     }
 }
 
@@ -20,8 +20,8 @@ pub struct Function {
 impl From<parser::Function> for Function {
     fn from(function: parser::Function) -> Self {
         Self {
-            name: function.0,
-            instructions: function.1.into(),
+            name: function.identifier,
+            instructions: function.statement.into(),
         }
     }
 }
@@ -39,7 +39,7 @@ impl From<parser::Statement> for Instructions {
     fn from(statement: parser::Statement) -> Self {
         Self(Vec::from([
             Instruction::Mov {
-                src: statement.0.into(),
+                src: statement.exp.into(),
                 dst: Operand::Register,
             },
             Instruction::Ret,
@@ -55,6 +55,10 @@ pub enum Operand {
 
 impl From<parser::Exp> for Operand {
     fn from(exp: parser::Exp) -> Self {
-        Self::Imm(exp.0 .0)
+        use parser::Exp::*;
+        match exp {
+            Int(i) => Self::Imm(i.constant),
+            _ => todo!(),
+        }
     }
 }

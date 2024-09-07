@@ -2,8 +2,6 @@ use core::convert::From;
 use core::fmt::Debug;
 use core::iter::Iterator;
 
-use paste::paste;
-
 use crate::lexer::Token;
 
 #[derive(Debug)]
@@ -12,6 +10,7 @@ pub enum ParseError {
     UnexpectedToken { expected: Token, actual: Token },
     MissingToken { expected: Token },
     ExtraToken { actual: Token },
+    NoMatches,
 }
 
 macro_rules! expect_token {
@@ -43,42 +42,97 @@ pub trait ToTokens {
 }
 
 macro_rules! node {
+    // Multiplication: concatenate all nodes
     ($node:ident ( $(
         *
         $($itoken:ident)?
-        $(<$subnode:ident>)?
-        $({$ctoken:ident ($pat:pat) : $ty:ty})?
+        $(<$sname:ident : $subnode:ident>)?
+        $({$cname:ident : $ctoken:ident ($pat:pat = $ty:ty) })?
     )* ) ) => {
         #[derive(Debug)]
         #[cfg_attr(test, derive(PartialEq))]
-        pub struct $node($(
-            $(pub $subnode,)?$(pub $ty,)?
-        )*);
+        pub struct $node {$(
+            $(pub $sname: $subnode,)?
+            $(pub $cname: $ty,)?
+        )*}
 
         impl FromTokens for $node {
             fn from_tokens(ts: &mut (impl Iterator<Item = Token> + Clone)) -> Result<Self, ParseError> {
-                paste! {
                 $(
                     $(expect_token!(ts, $itoken);)?
-                    $(let [< v_ $subnode:snake >] = $subnode::from_tokens(ts)?;)?
-                    $(let [< v_ $ctoken:snake >] = expect_token!(ts, $ctoken($pat): $ty);)?
+                    $(let $sname = $subnode::from_tokens(ts)?;)?
+                    $(let $cname = expect_token!(ts, $ctoken($pat): $ty);)?
                 )*
-                Ok($node($($([< v_ $subnode:snake >],)?$([< v_ $ctoken:snake >],)?)*))
-                }
+                Ok($node {$(
+                    $($sname,)?
+                    $($cname,)?
+                )*})
             }
         }
 
         impl ToTokens for $node {
             fn to_tokens(self) -> impl Iterator<Item = Token> {
-                paste! {
-                let $node($($([< v_ $subnode:snake >],)?$([< v_ $ctoken:snake >],)?)*) = self;
+                let $node {$(
+                    $($sname,)?
+                    $($cname,)?
+                )*} = self;
+
                 ::core::iter::empty()
                 $(.chain(
                     $(::core::iter::once(Token::$itoken))?
-                    $([< v_ $subnode:snake >].to_tokens())?
-                    $(::core::iter::once(Token::$ctoken([< v_ $ctoken:snake >].into())))?
+                    $($sname.to_tokens())?
+                    $(::core::iter::once(Token::$ctoken($cname.into())))?
                 ))*
+            }
+        }
+    };
+
+    // Addition: choose between notes
+    ($node:ident ( $(
+        +
+        $($itoken:ident)?
+        $(<$subnode:ident>)?
+        $({$ctoken:ident ($pat:pat = $ty:ty) })?
+    )* ) ) => {
+        #[derive(Debug)]
+        #[cfg_attr(test, derive(PartialEq))]
+        pub enum $node {$(
+            $($itoken,)?
+            $($subnode($subnode),)?
+            $($ctoken($ty),)?
+        )*}
+
+        impl FromTokens for $node {
+            fn from_tokens(ts: &mut (impl Iterator<Item = Token> + Clone)) -> Result<Self, ParseError> {
+                use $node::*;
+                $(
+                let mut iter = ts.clone();
+                if let Ok(out) = (|| -> Result<Self, ParseError> {
+                    $(let out = {
+                        expect_token!(iter, $itoken);
+                        $itoken
+                    };)?
+                    $(let out = $subnode($subnode.from_tokens(&mut iter)?);)?
+                    $(let out = $ctoken(expect_token!(iter, $ctoken($pat): $ty));)?
+                    Ok(out)
+                })() {
+                    *ts = iter;
+                    return Ok(out);
                 }
+                )*
+
+                Err(ParseError::NoMatches)
+            }
+        }
+
+        impl ToTokens for $node {
+            fn to_tokens(self) -> impl Iterator<Item = Token> {
+                use $node::*;
+                match self {$(
+                    $($itoken => Box::new(::core::iter::once(Token::$itoken)) as Box<dyn Iterator<Item = Token>>,)?
+                    $($subnode(s) => Box::new(s.to_tokens()) as Box<dyn Iterator<Item = Token>>,)?
+                    $($ctoken(c) => Box::new(::core::iter::once(Token::$ctoken(c.into()))) as Box<dyn Iterator<Item = Token>>,)?
+                )*}
             }
         }
     };
@@ -91,16 +145,75 @@ macro_rules! nodes {
 }
 
 nodes! {
-    Program(*<Function>);
+    Program(*<function: Function>);
     Function(
-        *KeywordInt *<Identifier> *OpenParen *KeywordVoid *CloseParen *OpenBrace
-            *<Statement>
+        *KeywordInt *<identifier: Identifier> *OpenParen *KeywordVoid *CloseParen *OpenBrace
+            *<statement: Statement>
         *CloseBrace
     );
-    Statement(*KeywordReturn *<Exp> *Semicolon);
-    Exp(*<Int>);
-    Identifier(*{Ident(_): String});
-    Int(*{Constant(_): isize});
+    Statement(*KeywordReturn *<exp: Exp> *Semicolon);
+    // Exp needs to be implemented separately because of parenthesis
+    UnaryOp(+Minus +Tilde);
+    Identifier(*{ident: Ident(_ = String)});
+    Int(*{constant: Constant(_ = isize)});
+}
+
+#[derive(Debug)]
+#[cfg_attr(test, derive(PartialEq))]
+pub enum Exp {
+    Int(Int),
+    Unary { op: UnaryOp, exp: Box<Exp> },
+}
+
+impl FromTokens for Exp {
+    fn from_tokens(ts: &mut (impl Iterator<Item = Token> + Clone)) -> Result<Self, ParseError> {
+        let mut iter = ts.clone();
+        if let Ok(out) = Int::from_tokens(&mut iter) {
+            *ts = iter;
+            return Ok(Exp::Int(out));
+        }
+
+        let mut iter = ts.clone();
+        if let Ok(out) = (|| -> Result<Self, ParseError> {
+            let op = UnaryOp::from_tokens(&mut iter)?;
+            let exp = Exp::from_tokens(&mut iter)?;
+            Ok(Exp::Unary {
+                op,
+                exp: Box::new(exp),
+            })
+        })() {
+            *ts = iter;
+            return Ok(out);
+        }
+
+        if let Ok(out) = (|| -> Result<Self, ParseError> {
+            expect_token!(iter, OpenParen);
+            let exp = Exp::from_tokens(&mut iter)?;
+            expect_token!(iter, CloseParen);
+            Ok(exp)
+        })() {
+            *ts = iter;
+            return Ok(out);
+        }
+
+        Err(ParseError::NoMatches)
+    }
+}
+
+impl ToTokens for Exp {
+    fn to_tokens(self) -> impl Iterator<Item = Token> {
+        use Exp::*;
+        let out: Box<dyn Iterator<Item = Token>> = match self {
+            Int(i) => Box::new(i.to_tokens()),
+            Unary { op, exp } => Box::new(
+                op.to_tokens()
+                    .chain(core::iter::once(Token::OpenParen))
+                    .chain(exp.to_tokens())
+                    .chain(core::iter::once(Token::CloseParen)),
+            ),
+        };
+        out
+    }
 }
 
 pub fn parse<TS>(tokens: TS) -> Result<Program, ParseError>
@@ -137,24 +250,26 @@ mod test {
 
     #[test]
     fn int() {
-        assert_convertible(&[Constant(2)], Int(2));
+        assert_convertible(&[Constant(2)], Int { constant: 2 });
     }
 
     #[test]
     fn ident() {
-        assert_convertible(&[Ident("x".into())], Identifier("x".into()));
+        assert_convertible(&[Ident("x".into())], Identifier { ident: "x".into() });
     }
 
     #[test]
     fn exp() {
-        assert_convertible(&[Constant(2)], Exp(Int(2)));
+        assert_convertible(&[Constant(2)], Exp::Int(Int { constant: 2 }));
     }
 
     #[test]
     fn statement() {
         assert_convertible(
             &[KeywordReturn, Constant(2), Semicolon],
-            Statement(Exp(Int(2))),
+            Statement {
+                exp: Exp::Int(Int { constant: 2 }),
+            },
         );
     }
 
@@ -173,7 +288,14 @@ mod test {
                 Semicolon,
                 CloseBrace,
             ],
-            Function(Identifier("main".into()), Statement(Exp(Int(2)))),
+            Function {
+                identifier: Identifier {
+                    ident: "main".into(),
+                },
+                statement: Statement {
+                    exp: Exp::Int(Int { constant: 2 }),
+                },
+            },
         );
     }
 }

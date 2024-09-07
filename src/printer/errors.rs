@@ -26,6 +26,10 @@ impl Display for ParseError {
             ExtraToken { actual } => {
                 write!(f, "extra token: expected end of stream, got {}", actual)
             }
+            NoMatches => {
+                // TODO: make this more informative ?
+                write!(f, "did not match any branches")
+            }
         }
     }
 }

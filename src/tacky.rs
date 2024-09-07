@@ -17,14 +17,14 @@ impl From<parser::Program> for Program {
 
 #[derive(Debug)]
 pub struct Function {
-    pub identifier: parser::Identifier,
+    pub name: String,
     pub body: Instructions,
 }
 
 impl From<parser::Function> for Function {
     fn from(function: parser::Function) -> Self {
         Self {
-            identifier: function.identifier,
+            name: function.name,
             body: function.statement.into(),
         }
     }
@@ -66,7 +66,7 @@ fn chomp_exp(
 ) -> Val {
     use parser::Exp::*;
     match exp {
-        IntExp { int } => Val::Constant(int.constant),
+        Constant { constant } => Val::Constant(constant),
         Unary { op, exp } => {
             let src = chomp_exp(*exp, instructions, tf);
             let dst = tf.next();
@@ -79,6 +79,7 @@ fn chomp_exp(
 
             Val::Var(dst)
         }
+        Binary { lhs, op, rhs } => todo!(),
     }
 }
 

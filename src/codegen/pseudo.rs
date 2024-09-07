@@ -25,7 +25,7 @@ impl From<tacky::Program> for Program<State> {
 impl From<tacky::Function> for Function<State> {
     fn from(function: tacky::Function) -> Self {
         Self {
-            name: function.identifier,
+            name: function.name,
             instructions: function.body.into(),
         }
     }

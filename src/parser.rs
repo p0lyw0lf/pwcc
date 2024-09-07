@@ -28,19 +28,64 @@ pub trait ToTokens {
 nodes! {
     Program(*<function: Function>);
     Function(
-        *KeywordInt *<identifier: Identifier> *OpenParen *KeywordVoid *CloseParen *OpenBrace
+        *KeywordInt *{name: Ident(_ = String)} *OpenParen *KeywordVoid *CloseParen *OpenBrace
             *<statement: Statement>
         *CloseBrace
     );
     Statement(*KeywordReturn *<exp: Exp> *Semicolon);
-    Exp(
-        +IntExp(*<int: Int>)
-        +Unary(*<op: UnaryOp> *[exp: Box<Self>])
-        +( *OpenParen *[Self] *CloseParen )
-    );
     UnaryOp(+Minus +Tilde);
-    Identifier(*{ident: Ident(_ = String)});
-    Int(*{constant: Constant(_ = isize)});
+    BinaryOp(+Plus +Minus +Star +ForwardSlash +Percent);
+}
+
+/// Exp is special, since its AST doesn't exactly correspond with the grammar, so we define it
+/// separately
+#[derive(Debug)]
+#[cfg_attr(test, derive(PartialEq))]
+pub enum Exp {
+    Constant {
+        constant: isize,
+    },
+    Unary {
+        op: UnaryOp,
+        exp: Box<Exp>,
+    },
+    Binary {
+        lhs: Box<Exp>,
+        op: BinaryOp,
+        rhs: Box<Exp>,
+    },
+}
+
+impl FromTokens for Exp {
+    fn from_tokens(ts: &mut (impl Iterator<Item = Token> + Clone)) -> Result<Self, ParseError> {
+        todo!()
+    }
+}
+
+impl ToTokens for Exp {
+    fn to_tokens(self) -> impl Iterator<Item = Token> {
+        use Exp::*;
+        use Token::*;
+        let out: Box<dyn Iterator<Item = Token>> = match self {
+            Exp::Constant { constant } => Box::new(core::iter::once(Token::Constant(constant))),
+            Unary { op, exp } => Box::new(
+                op.to_tokens()
+                    .chain(core::iter::once(OpenParen))
+                    .chain(exp.to_tokens())
+                    .chain(core::iter::once(CloseParen)),
+            ),
+            Binary { lhs, op, rhs } => Box::new(
+                core::iter::once(OpenParen)
+                    .chain(lhs.to_tokens())
+                    .chain(core::iter::once(CloseParen))
+                    .chain(op.to_tokens())
+                    .chain(core::iter::once(OpenParen))
+                    .chain(rhs.to_tokens())
+                    .chain(core::iter::once(CloseParen)),
+            ),
+        };
+        out
+    }
 }
 
 pub fn parse<TS>(tokens: TS) -> Result<Program, ParseError>
@@ -76,23 +121,8 @@ mod test {
     }
 
     #[test]
-    fn int() {
-        assert_convertible(&[Constant(2)], Int { constant: 2 });
-    }
-
-    #[test]
-    fn ident() {
-        assert_convertible(&[Ident("x".into())], Identifier { ident: "x".into() });
-    }
-
-    #[test]
     fn exp() {
-        assert_convertible(
-            &[Constant(2)],
-            Exp::IntExp {
-                int: Int { constant: 2 },
-            },
-        );
+        assert_convertible(&[Constant(2)], Exp::Constant { constant: 2 });
     }
 
     #[test]
@@ -100,9 +130,7 @@ mod test {
         assert_convertible(
             &[KeywordReturn, Constant(2), Semicolon],
             Statement {
-                exp: Exp::IntExp {
-                    int: Int { constant: 2 },
-                },
+                exp: Exp::Constant { constant: 2 },
             },
         );
     }
@@ -123,9 +151,7 @@ mod test {
                 CloseBrace,
             ],
             Function {
-                identifier: Identifier {
-                    ident: "main".into(),
-                },
+                name: "main".into(),
                 statement: Statement {
                     exp: Exp::IntExp {
                         int: Int { constant: 2 },
@@ -145,9 +171,7 @@ mod test {
                     op: UnaryOp::Minus,
                     exp: Box::new(Exp::Unary {
                         op: UnaryOp::Tilde,
-                        exp: Box::new(Exp::IntExp {
-                            int: Int { constant: 3 },
-                        }),
+                        exp: Box::new(Exp::Constant { constant: 3 }),
                     }),
                 }),
             },

@@ -39,7 +39,7 @@ impl<S: State> Reduce<S::Location> for Program<S> {
 
 #[derive(Debug)]
 pub struct Function<S: State> {
-    pub name: parser::Identifier,
+    pub name: String,
     pub instructions: Instructions<S::Location>,
 }
 

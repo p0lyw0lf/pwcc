@@ -16,8 +16,8 @@ impl Display for Program<hardware::Pass> {
 
 impl Display for Function<hardware::Pass> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "\t.globl {}", self.name.ident)?;
-        writeln!(f, "{}:", self.name.ident)?;
+        writeln!(f, "\t.globl {}", self.name)?;
+        writeln!(f, "{}:", self.name)?;
         writeln!(f, "\tpushq\t%rbp")?;
         writeln!(f, "\tmovq\t%rsp, %rbp")?;
         for instruction in &self.instructions.0 {

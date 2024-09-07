@@ -110,12 +110,24 @@ fn main() -> Result<(), ()> {
         return Ok(());
     }
 
-    let code = "TODO: codgen from tacky ir";
+    let pass0 = codegen::Program::<codegen::pseudo::State>::from(ir);
+    if !output {
+        println!("{pass0:?}");
+    }
+
+    let pass1: codegen::Program<codegen::stack::Pass> = pass0.run_pass();
+    if !output {
+        println!("{pass1:?}");
+    }
+
+    let pass2: codegen::Program<codegen::hardware::Pass> = pass1.run_pass();
 
     if !output {
-        println!("output");
+        println!("{pass2:?}");
         return Ok(());
     }
+
+    let code = pass2;
 
     let mut output_path = PathBuf::from(filename);
     output_path.set_extension("s");

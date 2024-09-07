@@ -52,7 +52,7 @@ macro_rules! node {
         #[derive(Debug)]
         #[cfg_attr(test, derive(PartialEq))]
         pub struct $node($(
-            $($subnode,)?$($ty,)?
+            $(pub $subnode,)?$(pub $ty,)?
         )*);
 
         impl FromTokens for $node {

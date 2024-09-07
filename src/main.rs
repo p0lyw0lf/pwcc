@@ -1,6 +1,10 @@
 use std::env;
 use std::fs;
+use std::io::Write;
+use std::path::PathBuf;
 
+mod codegen;
+mod emitter;
 mod lexer;
 mod parser;
 mod printer;
@@ -64,7 +68,7 @@ fn main() -> Result<(), ()> {
         Some(f) => f,
     };
 
-    let source = fs::read_to_string(filename).map_err(|e| {
+    let source = fs::read_to_string(filename.clone()).map_err(|e| {
         eprintln!("error reading file: {e}");
     })?;
 
@@ -75,29 +79,38 @@ fn main() -> Result<(), ()> {
     let tokens = lexer::lex(&source).map_err(|e| {
         eprintln!("error lexing: {e}");
     })?;
-    println!("{tokens:?}");
 
     if !parse {
+        println!("{tokens:?}");
         return Ok(());
     }
 
     let tree = parser::parse(tokens).map_err(|e| {
         eprintln!("error parsing: {e}");
     })?;
-    println!("{tree:?}");
-    printer::pretty_print(tree);
 
     if !codegen {
+        printer::pretty_print(tree);
         return Ok(());
     }
 
-    println!("codegen");
+    let code = codegen::Program::from(tree);
 
     if !output {
+        println!("{code:?}");
         return Ok(());
     }
 
-    println!("output");
+    let mut output_path = PathBuf::from(filename);
+    output_path.set_extension("s");
+
+    let mut output = fs::File::create(output_path).map_err(|e| {
+        eprintln!("error opening output file: {e}");
+    })?;
+
+    write!(output, "{code}").map_err(|e| {
+        eprintln!("error writing to output file: {e}");
+    })?;
 
     Ok(())
 }

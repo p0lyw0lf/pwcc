@@ -57,7 +57,7 @@ impl From<parser::Exp> for Operand {
     fn from(exp: parser::Exp) -> Self {
         use parser::Exp::*;
         match exp {
-            Int(i) => Self::Imm(i.constant),
+            IntExp { int } => Self::Imm(int.constant),
             _ => todo!(),
         }
     }

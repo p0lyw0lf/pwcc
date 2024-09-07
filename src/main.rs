@@ -8,14 +8,16 @@ mod emitter;
 mod lexer;
 mod parser;
 mod printer;
+mod tacky;
 
 fn print_help() {
-    println!("{{--lex,--parse,--codegen,}} <file.i>");
+    println!("{{--lex,--parse,--tacky,--codegen}} <file.i>");
 }
 
 fn main() -> Result<(), ()> {
     let mut lex = false;
     let mut parse = false;
+    let mut tacky = false;
     let mut codegen = false;
     let mut filename: Option<String> = None;
 
@@ -36,9 +38,15 @@ fn main() -> Result<(), ()> {
                 lex = true;
                 parse = true;
             }
+            "--tacky" => {
+                lex = true;
+                parse = true;
+                tacky = true;
+            }
             "--codegen" => {
                 lex = true;
                 parse = true;
+                tacky = true;
                 codegen = true;
             }
             other => match filename {
@@ -52,10 +60,11 @@ fn main() -> Result<(), ()> {
         };
     }
 
-    let output = !lex && !parse && !codegen;
+    let output = !lex && !parse && !tacky && !codegen;
     if output {
         lex = true;
         parse = true;
+        tacky = true;
         codegen = true;
     }
 
@@ -89,15 +98,22 @@ fn main() -> Result<(), ()> {
         eprintln!("error parsing: {e}");
     })?;
 
-    if !codegen {
+    if !tacky {
         printer::pretty_print(tree);
         return Ok(());
     }
 
-    let code = codegen::Program::from(tree);
+    let ir = tacky::Program::from(tree);
+
+    if !codegen {
+        println!("{ir:?}");
+        return Ok(());
+    }
+
+    let code = "TODO: codgen from tacky ir";
 
     if !output {
-        println!("{code:?}");
+        println!("output");
         return Ok(());
     }
 

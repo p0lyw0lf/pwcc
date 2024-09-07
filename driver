@@ -6,11 +6,17 @@ DIR="$(dirname "$0")"
 
 FILES=()
 OPTIONS=()
+INFO=0
 
 while [[ $# -gt 0 ]]; do
   case $1 in
-    --lex|--parse|--codegen)
+    --lex|--parse|--tacky|--codegen)
       OPTIONS+=("$1")
+      shift
+      ;;
+    -h|--help|-v|--version)
+      OPTIONS+=("$1")
+      INFO=1
       shift
       ;;
     -*)
@@ -24,13 +30,19 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+cd $DIR
+EXE=$(cargo build --message-format=json-render-diagnostics | jq -js '.[] | select(.reason == "compiler-artifact") | select(.executable != null) | .executable')
+
+
+if [[ "${INFO}" -eq "1" ]]; then
+  "${EXE}" "${OPTIONS[@]}"
+  exit 0
+fi
+
 if [[ "${#FILES[@]}" -eq "0" ]]; then
   echo "Must provide filename"
   exit 1
 fi
-
-cd $DIR
-EXE=$(cargo build --message-format=json-render-diagnostics | jq -js '.[] | select(.reason == "compiler-artifact") | select(.executable != null) | .executable')
 
 process_file () {
   file="$1"

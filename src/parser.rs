@@ -56,9 +56,85 @@ pub enum Exp {
     },
 }
 
+impl BinaryOp {
+    fn precedence(&self) -> usize {
+        use BinaryOp::*;
+        match self {
+            Plus | Minus => 45,
+            Star | ForwardSlash | Percent => 50,
+        }
+    }
+}
+
 impl FromTokens for Exp {
     fn from_tokens(ts: &mut (impl Iterator<Item = Token> + Clone)) -> Result<Self, ParseError> {
-        todo!()
+        fn parse_factor(ts: &mut (impl Iterator<Item = Token> + Clone)) -> Result<Exp, ParseError> {
+            let mut iter = ts.clone();
+            if let Ok(out) = (|| -> Result<Exp, ParseError> {
+                let constant = expect_token!(iter, Constant(_): isize);
+                Ok(Exp::Constant { constant })
+            })() {
+                *ts = iter;
+                return Ok(out);
+            }
+
+            let mut iter = ts.clone();
+            if let Ok(out) = (|| -> Result<Exp, ParseError> {
+                let op = UnaryOp::from_tokens(&mut iter)?;
+                let exp = parse_factor(&mut iter)?;
+                Ok(Exp::Unary {
+                    op,
+                    exp: Box::new(exp),
+                })
+            })() {
+                *ts = iter;
+                return Ok(out);
+            }
+
+            let mut iter = ts.clone();
+            if let Ok(out) = (|| -> Result<Exp, ParseError> {
+                expect_token!(iter, OpenParen);
+                let exp = parse_exp(&mut iter, 0)?;
+                expect_token!(iter, CloseParen);
+                Ok(exp)
+            })() {
+                *ts = iter;
+                return Ok(out);
+            }
+
+            Err(ParseError::NoMatches)
+        }
+
+        fn parse_exp(
+            ts: &mut (impl Iterator<Item = Token> + Clone),
+            min_prec: usize,
+        ) -> Result<Exp, ParseError> {
+            let mut iter = ts.clone();
+            let mut left = parse_factor(&mut iter)?;
+
+            let mut peek_iter = iter.clone();
+            let mut next_token = BinaryOp::from_tokens(&mut peek_iter);
+            while let Ok(op) = next_token {
+                if op.precedence() < min_prec {
+                    break;
+                }
+                iter = peek_iter;
+                let right = parse_exp(&mut iter, op.precedence() + 1)?;
+                left = Exp::Binary {
+                    lhs: Box::new(left),
+                    op,
+                    rhs: Box::new(right),
+                };
+
+                peek_iter = iter.clone();
+                next_token = BinaryOp::from_tokens(&mut peek_iter);
+            }
+
+            *ts = iter;
+            Ok(left)
+        }
+
+        parse_exp(ts, 0)
     }
 }
 
@@ -115,20 +191,21 @@ mod test {
         assert_eq!(expected, actual);
     }
 
-    fn assert_convertible(tokens: &[Token], tree: impl ToTokens + FromTokens + Debug + PartialEq) {
-        assert_forwards(tokens, &tree);
-        assert_backwards(tree, tokens);
+    fn assert_convertible(s: &str, tree: impl ToTokens + FromTokens + Debug + PartialEq) {
+        let tokens = crate::lexer::lex(s).expect("lex failed");
+        assert_forwards(&tokens, &tree);
+        assert_backwards(tree, &tokens);
     }
 
     #[test]
-    fn exp() {
-        assert_convertible(&[Constant(2)], Exp::Constant { constant: 2 });
+    fn constant() {
+        assert_convertible("2", Exp::Constant { constant: 2 });
     }
 
     #[test]
     fn statement() {
         assert_convertible(
-            &[KeywordReturn, Constant(2), Semicolon],
+            "return 2;",
             Statement {
                 exp: Exp::Constant { constant: 2 },
             },
@@ -138,24 +215,11 @@ mod test {
     #[test]
     fn function() {
         assert_convertible(
-            &[
-                KeywordInt,
-                Ident("main".into()),
-                OpenParen,
-                KeywordVoid,
-                CloseParen,
-                OpenBrace,
-                KeywordReturn,
-                Constant(2),
-                Semicolon,
-                CloseBrace,
-            ],
+            "int main(void) { return 2; }",
             Function {
                 name: "main".into(),
                 statement: Statement {
-                    exp: Exp::IntExp {
-                        int: Int { constant: 2 },
-                    },
+                    exp: Exp::Constant { constant: 2 },
                 },
             },
         );
@@ -164,7 +228,7 @@ mod test {
     #[test]
     fn unary() {
         assert_convertible(
-            &[Minus, Minus, Tilde, Constant(3)],
+            "-(-(~(3)))",
             Exp::Unary {
                 op: UnaryOp::Minus,
                 exp: Box::new(Exp::Unary {
@@ -172,6 +236,47 @@ mod test {
                     exp: Box::new(Exp::Unary {
                         op: UnaryOp::Tilde,
                         exp: Box::new(Exp::Constant { constant: 3 }),
+                    }),
+                }),
+            },
+        )
+    }
+
+    #[test]
+    fn binary() {
+        assert_convertible(
+            "((1)+(2))*(3)",
+            Exp::Binary {
+                lhs: Box::new(Exp::Binary {
+                    lhs: Box::new(Exp::Constant { constant: 1 }),
+                    op: BinaryOp::Plus,
+                    rhs: Box::new(Exp::Constant { constant: 2 }),
+                }),
+                op: BinaryOp::Star,
+                rhs: Box::new(Exp::Constant { constant: 3 }),
+            },
+        );
+    }
+
+    #[test]
+    fn binary_precedence() {
+        let tokens = crate::lexer::lex("1*2-3*(4+5)").expect("lex failed");
+        assert_forwards(
+            &tokens,
+            &Exp::Binary {
+                lhs: Box::new(Exp::Binary {
+                    lhs: Box::new(Exp::Constant { constant: 1 }),
+                    op: BinaryOp::Star,
+                    rhs: Box::new(Exp::Constant { constant: 2 }),
+                }),
+                op: BinaryOp::Minus,
+                rhs: Box::new(Exp::Binary {
+                    lhs: Box::new(Exp::Constant { constant: 3 }),
+                    op: BinaryOp::Star,
+                    rhs: Box::new(Exp::Binary {
+                        lhs: Box::new(Exp::Constant { constant: 4 }),
+                        op: BinaryOp::Plus,
+                        rhs: Box::new(Exp::Constant { constant: 5 }),
                     }),
                 }),
             },

@@ -16,7 +16,9 @@ pub enum Location {
 #[derive(Debug)]
 pub enum Reg {
     AX,
+    DX,
     R10,
+    R11,
 }
 
 impl super::Pass for Pass {

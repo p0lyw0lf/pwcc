@@ -1,7 +1,5 @@
 use core::fmt::Debug;
 
-use crate::parser;
-
 pub mod hardware;
 pub mod pseudo;
 pub mod stack;
@@ -82,7 +80,7 @@ impl<L> Reduce<L> for Instructions<L> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub enum Instruction<Location> {
     Mov {
         src: Operand<Location>,
@@ -92,12 +90,22 @@ pub enum Instruction<Location> {
         op: UnaryOp,
         dst: Location,
     },
+    Binary {
+        op: BinaryOp,
+        src: Operand<Location>,
+        dst: Location,
+    },
+    Idiv {
+        denom: Operand<Location>,
+    },
+    Cdq,
     AllocateStack {
         amount: usize,
     },
     Ret,
 }
 
+// TODO: write a macro for this (only going to get larger)
 impl<L1> Instruction<L1> {
     fn into<L2>(self) -> Instruction<L2>
     where
@@ -113,35 +121,57 @@ impl<L1> Instruction<L1> {
                 op,
                 dst: dst.into(),
             },
+            Binary { op, src, dst } => Binary {
+                op,
+                src: src.into(),
+                dst: dst.into(),
+            },
+            Idiv { denom } => Idiv { denom: denom.into() },
+            Cdq => Cdq,
             AllocateStack { amount } => AllocateStack { amount },
             Ret => Ret,
         }
     }
 }
 
+// TODO: write a macro for this one too
 impl<L> Reduce<L> for Instruction<L> {
     fn reduce<Acc>(&self, f: &mut impl FnMut(&L, Acc) -> Acc, acc: Acc) -> Acc {
         use Instruction::*;
         match self {
             Mov { src, dst } => {
-                let acc = f(dst, acc);
                 let acc = src.reduce(f, acc);
+                let acc = f(dst, acc);
                 acc
             }
             Unary { op: _, dst } => f(dst, acc),
+            Binary { op: _, src, dst } => {
+                let acc = src.reduce(f, acc);
+                let acc = f(dst, acc);
+                acc
+            }
+            Idiv { denom } => denom.reduce(f, acc),
+            Cdq => acc,
             AllocateStack { .. } => acc,
             Ret => acc,
         }
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub enum UnaryOp {
     Neg,
     Not,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
+pub enum BinaryOp {
+    Add,
+    Sub,
+    Mult,
+}
+
+#[derive(Debug, Copy, Clone)]
 pub enum Operand<Location> {
     Imm(isize),
     Location(Location),

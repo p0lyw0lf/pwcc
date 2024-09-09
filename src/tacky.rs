@@ -42,6 +42,27 @@ pub enum Instruction {
         src: Val,
         dst: Temporary,
     },
+    Binary {
+        op: BinaryOp,
+        src1: Val,
+        src2: Val,
+        dst: Temporary,
+    },
+}
+
+#[derive(Debug)]
+pub enum UnaryOp {
+    Complement,
+    Negate,
+}
+
+#[derive(Debug)]
+pub enum BinaryOp {
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Remainder,
 }
 
 impl From<parser::Statement> for Instructions {
@@ -79,7 +100,22 @@ fn chomp_exp(
 
             Val::Var(dst)
         }
-        Binary { lhs, op, rhs } => todo!(),
+        Binary { lhs, op, rhs } => {
+            let src1 = chomp_exp(*lhs, instructions, tf);
+            let src2 = chomp_exp(*rhs, instructions, tf);
+            let dst = tf.next();
+            use parser::BinaryOp::*;
+            let op = match op {
+                Plus => BinaryOp::Add,
+                Minus => BinaryOp::Subtract,
+                Star => BinaryOp::Multiply,
+                ForwardSlash => BinaryOp::Divide,
+                Percent => BinaryOp::Remainder,
+            };
+            instructions.push(Instruction::Binary { op, src1, src2, dst });
+
+            Val::Var(dst)
+        }
     }
 }
 
@@ -100,10 +136,4 @@ impl TemporaryFactory {
         self.0 += 1;
         out
     }
-}
-
-#[derive(Debug)]
-pub enum UnaryOp {
-    Complement,
-    Negate,
 }

@@ -33,6 +33,9 @@ impl Display for Instruction<hardware::Location> {
         match self {
             Mov { src, dst } => writeln!(f, "\tmovl\t{src}, {dst}"),
             Unary { op, dst } => writeln!(f, "\t{op}\t{dst}"),
+            Binary { op, src, dst } => writeln!(f, "\t{op}\t{src}, {dst}"),
+            Idiv { denom } => writeln!(f, "\tidivl\t{denom}"),
+            Cdq => writeln!(f, "\tcdq"),
             AllocateStack { amount } => writeln!(f, "\tsubq\t${amount}, %rsp"),
             Ret => {
                 writeln!(f, "\tmovq\t%rbp, %rsp")?;
@@ -50,6 +53,17 @@ impl Display for UnaryOp {
         match self {
             Neg => write!(f, "negl"),
             Not => write!(f, "notl"),
+        }
+    }
+}
+
+impl Display for BinaryOp {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        use BinaryOp::*;
+        match self {
+            Add => write!(f, "addl"),
+            Sub => write!(f, "subl"),
+            Mult => write!(f, "imull"),
         }
     }
 }
@@ -79,7 +93,9 @@ impl Display for hardware::Reg {
         use hardware::Reg::*;
         match self {
             AX => write!(f, "%eax"),
+            DX => write!(f, "%edx"),
             R10 => write!(f, "%r10d"),
+            R11 => write!(f, "%r11d"),
         }
     }
 }

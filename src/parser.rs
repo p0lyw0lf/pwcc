@@ -179,7 +179,6 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    use Token::*;
 
     fn assert_forwards<T: FromTokens + Debug + PartialEq>(tokens: &[Token], expected: &T) {
         let actual = T::from_tokens(&mut Vec::from(tokens).into_iter());

@@ -38,24 +38,92 @@ impl From<tacky::Instructions> for Instructions<Location> {
             instructions
                 .0
                 .into_iter()
-                .flat_map(|i| match i {
-                    Return { val } => [
-                        Instruction::Mov {
-                            src: val.into(),
-                            dst: Location::Concrete(hardware::Location::Reg(hardware::Reg::AX)),
-                        },
-                        Instruction::Ret,
-                    ],
-                    Unary { op, src, dst } => [
-                        Instruction::Mov {
-                            src: src.into(),
-                            dst: dst.into(),
-                        },
-                        Instruction::Unary {
-                            op: op.into(),
-                            dst: dst.into(),
-                        },
-                    ],
+                .flat_map(|i| {
+                    let out: Box<dyn Iterator<Item = Instruction<Location>>> = match i {
+                        Return { val } => Box::new(
+                            [
+                                Instruction::Mov {
+                                    src: val.into(),
+                                    dst: Location::Concrete(hardware::Location::Reg(
+                                        hardware::Reg::AX,
+                                    )),
+                                },
+                                Instruction::Ret,
+                            ]
+                            .into_iter(),
+                        ),
+                        Unary { op, src, dst } => Box::new(
+                            [
+                                Instruction::Mov {
+                                    src: src.into(),
+                                    dst: dst.into(),
+                                },
+                                Instruction::Unary {
+                                    op: op.into(),
+                                    dst: dst.into(),
+                                },
+                            ]
+                            .into_iter(),
+                        ),
+                        Binary {
+                            op: op @ (tacky::BinaryOp::Divide | tacky::BinaryOp::Remainder),
+                            src1,
+                            src2,
+                            dst,
+                        } => Box::new(
+                            [
+                                Instruction::Mov {
+                                    src: src1.into(),
+                                    dst: Location::Concrete(hardware::Location::Reg(
+                                        hardware::Reg::AX,
+                                    )),
+                                },
+                                Instruction::Cdq,
+                                // TODO: make it impossible to represent a div acting directly on a
+                                // constant
+                                Instruction::Idiv { denom: src2.into() },
+                                Instruction::Mov {
+                                    src: Operand::Location(Location::Concrete(
+                                        hardware::Location::Reg(
+                                            if matches!(op, tacky::BinaryOp::Divide) {
+                                                hardware::Reg::AX
+                                            } else {
+                                                hardware::Reg::DX
+                                            },
+                                        ),
+                                    )),
+                                    dst: dst.into(),
+                                },
+                            ]
+                            .into_iter(),
+                        ),
+                        Binary {
+                            op,
+                            src1,
+                            src2,
+                            dst,
+                        } => Box::new(
+                            [
+                                Instruction::Mov {
+                                    src: src1.into(),
+                                    dst: dst.into(),
+                                },
+                                Instruction::Binary {
+                                    op: match op {
+                                        tacky::BinaryOp::Add => BinaryOp::Add,
+                                        tacky::BinaryOp::Subtract => BinaryOp::Sub,
+                                        tacky::BinaryOp::Multiply => BinaryOp::Mult,
+                                        tacky::BinaryOp::Divide => unreachable!(),
+                                        tacky::BinaryOp::Remainder => unreachable!(),
+                                    },
+                                    src: src2.into(),
+                                    dst: dst.into(),
+                                },
+                            ]
+                            .into_iter(),
+                        ),
+                    };
+                    out
                 })
                 .collect(),
         )

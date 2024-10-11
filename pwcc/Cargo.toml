@@ -1,0 +1,8 @@
+[package]
+name = "pwcc"
+version = "0.0.2"
+edition = "2021"
+
+[dependencies]
+regex = "1.10.*"
+functional = { path = "../functional" }

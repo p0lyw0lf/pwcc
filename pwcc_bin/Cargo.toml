@@ -1,0 +1,7 @@
+[package]
+name = "pwcc_bin"
+version = "0.0.2"
+edition = "2021"
+
+[dependencies]
+pwcc = { path = "../pwcc" }

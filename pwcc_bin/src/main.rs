@@ -3,22 +3,23 @@ use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 
-mod codegen;
-mod emitter;
-mod lexer;
-mod parser;
-mod printer;
-mod tacky;
+use pwcc::{lexer, parser, tacky, codegen, printer};
+
+static STAGES: &'static [&'static str] = &["lex", "parse", "tacky", "codegen"];
 
 fn print_help() {
-    println!("{{--lex,--parse,--tacky,--codegen}} <file.i>");
+    println!(
+        "{{{}}} <file.i>",
+        STAGES
+            .iter()
+            .map(|stage| format!("--{}", stage))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
 }
 
 fn main() -> Result<(), ()> {
-    let mut lex = false;
-    let mut parse = false;
-    let mut tacky = false;
-    let mut codegen = false;
+    let mut stage: Option<usize> = None;
     let mut filename: Option<String> = None;
 
     for arg in env::args().skip(1) {
@@ -31,23 +32,22 @@ fn main() -> Result<(), ()> {
                 println!("{} v{}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
                 return Ok(());
             }
-            "--lex" => {
-                lex = true;
-            }
-            "--parse" => {
-                lex = true;
-                parse = true;
-            }
-            "--tacky" => {
-                lex = true;
-                parse = true;
-                tacky = true;
-            }
-            "--codegen" => {
-                lex = true;
-                parse = true;
-                tacky = true;
-                codegen = true;
+            option if option.starts_with("--") => {
+                let stage_str = option.strip_prefix("--").unwrap();
+                match STAGES.iter().position(|s| s == &stage_str) {
+                    None => {
+                        eprintln!("Unexpected option \"{}\"", option);
+                        print_help();
+                        return Err(());
+                    }
+                    Some(new_stage) => {
+                        if let Some(old_stage) = stage {
+                            stage = Some(core::cmp::max(old_stage, new_stage));
+                        } else {
+                            stage = Some(new_stage);
+                        }
+                    }
+                }
             }
             other => match filename {
                 None => filename = Some(other.to_string()),
@@ -58,14 +58,6 @@ fn main() -> Result<(), ()> {
                 }
             },
         };
-    }
-
-    let output = !lex && !parse && !tacky && !codegen;
-    if output {
-        lex = true;
-        parse = true;
-        tacky = true;
-        codegen = true;
     }
 
     let filename = match filename {
@@ -81,7 +73,7 @@ fn main() -> Result<(), ()> {
         eprintln!("error reading file: {e}");
     })?;
 
-    if !lex {
+    if stage.map_or(false, |stage| stage < 0) {
         return Ok(());
     }
 
@@ -89,7 +81,7 @@ fn main() -> Result<(), ()> {
         eprintln!("error lexing: {e}");
     })?;
 
-    if !parse {
+    if stage.map_or(false, |stage| stage < 1) {
         println!("{tokens:?}");
         return Ok(());
     }
@@ -98,31 +90,31 @@ fn main() -> Result<(), ()> {
         eprintln!("error parsing: {e}");
     })?;
 
-    if !tacky {
+    if stage.map_or(false, |stage| stage < 2) {
         printer::pretty_print(tree);
         return Ok(());
     }
 
     let ir = tacky::Program::from(tree);
 
-    if !codegen {
+    if stage.map_or(false, |stage| stage < 3) {
         println!("{ir:?}");
         return Ok(());
     }
 
     let pass0 = codegen::Program::<codegen::pseudo::State>::from(ir);
-    if !output {
+    if stage.is_some() {
         println!("{pass0:?}");
     }
 
     let pass1: codegen::Program<codegen::stack::Pass> = pass0.run_pass();
-    if !output {
+    if stage.is_some() {
         println!("{pass1:?}");
     }
 
     let pass2: codegen::Program<codegen::hardware::Pass> = pass1.run_pass();
 
-    if !output {
+    if stage.is_some() {
         println!("{pass2:?}");
         return Ok(());
     }

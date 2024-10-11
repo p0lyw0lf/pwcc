@@ -1,8 +1,9 @@
 use core::fmt::Debug;
-use core::convert::From;
 
 use functional::foldable;
+use functional::foldable::Foldable;
 use functional::functor;
+use functional::functor::Functor;
 
 pub mod hardware;
 pub mod pseudo;
@@ -15,14 +16,17 @@ pub trait State: Debug + Sized {
 
 /// Newtype needed to avoid "unconstrained type" errors
 #[derive(Debug)]
-pub struct Location<S: State> { inner: S::Location }
-foldable!(struct<S: State> Location for S::Location { inner, });
-functor!(type<I: State, O: State> Location);
-impl<S: State> From<S::Location> for Location<S> {
-    fn from(value: S::Location) -> Self {
-        Self { inner: value }
+pub struct Location<S: State>(pub S::Location);
+impl<S: State> Location<S> {
+    pub fn inner(self) -> S::Location {
+        self.0
+    }
+    pub fn wrap(inner: S::Location) -> Self {
+        Self(inner)
     }
 }
+foldable!(type<S: State> Location);
+functor!(type<I: State, O: State> Location);
 
 #[derive(Debug)]
 pub struct Program<S: State> {
@@ -46,13 +50,30 @@ functor!(struct<I: State, O: State> Function for Location<I> |> Location<O> { in
 /// We separate this out into a newtype struct so that we can map over it as well as individual
 /// instructions.
 #[derive(Debug)]
-pub struct Instructions<S: State> {
-    pub instructions: Vec<Instruction<S>>,
-}
+pub struct Instructions<S: State>(pub Vec<Instruction<S>>);
 
-foldable!(struct<S: State> Instructions for Location<S> { instructions, });
+impl<I: State> Foldable<Location<I>> for Instructions<I> {
+    fn foldl<'s, 'f: 's, B>(&'s self, f: fn(B, &'s Location<I>) -> B, mut acc: B) -> B {
+        for i in self.0.iter() {
+            acc = i.foldl(f, acc);
+        }
+        acc
+    }
+}
 functor!(type<I: State, O: State> Instructions);
-functor!(struct<I: State, O: State> Instructions for Location<I> |> Location<O> { instructions, .. });
+impl<I: State, O: State> Functor<Location<O>> for Instructions<I> {
+    type Input = Location<I>;
+    type Output = Location<O>;
+    type Mapped = Instructions<O>;
+    fn fmap(self, f: &mut impl FnMut(Self::Input) -> Self::Output) -> Self::Mapped {
+        Instructions(
+            self.0
+                .into_iter()
+                .map(|i| Functor::<Location<O>>::fmap(i, f))
+                .collect(),
+        )
+    }
+}
 
 #[derive(Debug)]
 pub enum Instruction<S: State> {
@@ -72,11 +93,11 @@ pub enum Instruction<S: State> {
     Idiv {
         denom: Operand<S>,
     },
-    Cdq,
+    Cdq {},
     AllocateStack {
         amount: usize,
     },
-    Ret,
+    Ret {},
 }
 
 foldable!(enum<S: State> Instruction for Location<S> {
@@ -90,6 +111,9 @@ functor!(enum<I: State, O: State> Instruction for Location<I> |> Location<O> {
     Unary { dst, .. op, },
     Binary { src, dst, .. op, },
     Idiv { denom, .. },
+    Cdq { .. },
+    AllocateStack { .. amount, },
+    Ret { .. },
 });
 
 #[derive(Debug, Copy, Clone)]
@@ -115,5 +139,23 @@ foldable!(enum<S: State> Operand for Location<S> {
     Location { location, },
 });
 functor!(enum<I: State, O: State> Operand for Location<I> |> Location<O> {
+    Imm { .. val, },
     Location { location, .. },
 });
+
+pub trait Passthrough<B> {
+    type Mapped;
+    fn passthrough(self) -> Self::Mapped;
+}
+
+impl<T, I, O> Passthrough<Location<O>> for T
+where
+    I: State,
+    O: State<Location=I::Location>,
+    T: Functor<Location<O>, Input=Location<I>, Output=Location<O>>,
+{
+    type Mapped = T::Mapped;
+    fn passthrough(self) -> Self::Mapped {
+        self.fmap(&mut |x: Location<I>| Location::<O>(x.inner()))
+    }
+}

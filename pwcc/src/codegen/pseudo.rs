@@ -15,10 +15,11 @@ pub enum Location {
     Pseudo(usize),
     Concrete(hardware::Location),
 }
+foldable!(type Location);
 
 impl From<tacky::Program> for Program<State> {
     fn from(program: tacky::Program) -> Self {
-        Self(program.function.into())
+        Self { function: program.function.into() }
     }
 }
 
@@ -144,8 +145,8 @@ impl From<tacky::Val> for Operand<Location> {
     fn from(val: tacky::Val) -> Self {
         use tacky::Val::*;
         match val {
-            Constant(i) => Operand::Imm(i),
-            Var(t) => Operand::Location(t.into()),
+            Constant(i) => Operand::Imm { val: i },
+            Var(t) => Operand::Location { location: t.into() },
         }
     }
 }

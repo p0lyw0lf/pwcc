@@ -5,7 +5,7 @@ use crate::codegen::*;
 
 impl Display for Program<hardware::Pass> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)?;
+        write!(f, "{}", self.function)?;
         #[cfg(target_os = "linux")]
         {
             writeln!(f, "\t.section .note.GNU-stack,\"\",@progbits")?;
@@ -27,7 +27,7 @@ impl Display for Function<hardware::Pass> {
     }
 }
 
-impl Display for Instruction<hardware::Location> {
+impl Display for Instruction<hardware::Pass> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use Instruction::*;
         match self {
@@ -68,7 +68,7 @@ impl Display for BinaryOp {
     }
 }
 
-impl Display for Operand<hardware::Location> {
+impl Display for Operand<hardware::Pass> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use Operand::*;
         match self {

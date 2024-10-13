@@ -1,9 +1,9 @@
 use core::fmt::Debug;
+use std::fmt::Display;
 
 use functional::foldable;
-use functional::foldable::Foldable;
-use functional::functor;
-use functional::functor::Functor;
+use functional::Foldable;
+use functional::Functor;
 
 pub mod hardware;
 pub mod pseudo;
@@ -17,25 +17,17 @@ pub trait State: Debug + Sized {
 /// Newtype needed to avoid "unconstrained type" errors
 #[derive(Debug)]
 pub struct Location<S: State>(pub S::Location);
-impl<S: State> Location<S> {
-    pub fn inner(self) -> S::Location {
-        self.0
-    }
-    pub fn wrap(inner: S::Location) -> Self {
-        Self(inner)
-    }
-}
-foldable!(type<S: State> Location);
-functor!(type<I: State, O: State> Location);
+foldable!(type Location<S: State>);
+// functor!(type<I: State, O: State> Location);
 
 #[derive(Debug)]
 pub struct Program<S: State> {
     pub function: Function<S>,
 }
 
-foldable!(struct<S: State> Program for Location<S> { function, });
-functor!(struct<I: State, O: State> Program for Instructions<I> |> Instructions<O> { function, .. });
-functor!(struct<I: State, O: State> Program for Location<I> |> Location<O> { function, .. });
+foldable!(struct Program<S: State> for Location<S> | { function, });
+// functor!(struct<I: State, O: State> Program for Instructions<I> |> Instructions<O> { function, .. });
+// functor!(struct<I: State, O: State> Program for Location<I> |> Location<O> { function, .. });
 
 #[derive(Debug)]
 pub struct Function<S: State> {
@@ -43,37 +35,18 @@ pub struct Function<S: State> {
     pub instructions: Instructions<S>,
 }
 
-foldable!(struct<S: State> Function for Location<S> { instructions, });
-functor!(struct<I: State, O: State> Function for Instructions<I> |> Instructions<O> { instructions, .. name, });
-functor!(struct<I: State, O: State> Function for Location<I> |> Location<O> { instructions, .. name, });
+foldable!(struct Function<S: State> for Location<S> | { instructions, });
+// functor!(struct<I: State, O: State> Function for Instructions<I> |> Instructions<O> { instructions, .. name, });
+// functor!(struct<I: State, O: State> Function for Location<I> |> Location<O> { instructions, .. name, });
 
 /// We separate this out into a newtype struct so that we can map over it as well as individual
 /// instructions.
 #[derive(Debug)]
 pub struct Instructions<S: State>(pub Vec<Instruction<S>>);
 
-impl<I: State> Foldable<Location<I>> for Instructions<I> {
-    fn foldl<'s, 'f: 's, B>(&'s self, f: fn(B, &'s Location<I>) -> B, mut acc: B) -> B {
-        for i in self.0.iter() {
-            acc = i.foldl(f, acc);
-        }
-        acc
-    }
-}
-functor!(type<I: State, O: State> Instructions);
-impl<I: State, O: State> Functor<Location<O>> for Instructions<I> {
-    type Input = Location<I>;
-    type Output = Location<O>;
-    type Mapped = Instructions<O>;
-    fn fmap(self, f: &mut impl FnMut(Self::Input) -> Self::Output) -> Self::Mapped {
-        Instructions(
-            self.0
-                .into_iter()
-                .map(|i| Functor::<Location<O>>::fmap(i, f))
-                .collect(),
-        )
-    }
-}
+foldable!(struct Instructions<S: State> for Location<S> | (0,));
+// functor!(type Instructions<(I: State) -> (O: State)>);
+// functor!(struct Instructions<(I: State) -> (O: State)> for Location<I> |> Location<O> (0,));
 
 #[derive(Debug)]
 pub enum Instruction<S: State> {
@@ -93,27 +66,18 @@ pub enum Instruction<S: State> {
     Idiv {
         denom: Operand<S>,
     },
-    Cdq {},
+    Cdq,
     AllocateStack {
         amount: usize,
     },
-    Ret {},
+    Ret,
 }
 
-foldable!(enum<S: State> Instruction for Location<S> {
+foldable!(enum Instruction<S: State> for Location<S> | {
     Mov { src, dst, },
     Unary { dst, },
     Binary { src, dst, },
     Idiv { denom, },
-});
-functor!(enum<I: State, O: State> Instruction for Location<I> |> Location<O> {
-    Mov { src, dst, .. },
-    Unary { dst, .. op, },
-    Binary { src, dst, .. op, },
-    Idiv { denom, .. },
-    Cdq { .. },
-    AllocateStack { .. amount, },
-    Ret { .. },
 });
 
 #[derive(Debug, Copy, Clone)]
@@ -131,31 +95,60 @@ pub enum BinaryOp {
 
 #[derive(Debug)]
 pub enum Operand<S: State> {
-    Imm { val: isize },
-    Location { location: Location<S> },
+    Imm(isize),
+    Location(Location<S>),
 }
 
-foldable!(enum<S: State> Operand for Location<S> {
-    Location { location, },
-});
-functor!(enum<I: State, O: State> Operand for Location<I> |> Location<O> {
-    Imm { .. val, },
-    Location { location, .. },
+foldable!(enum Operand<S: State> for Location<S> | {
+    Location (0,),
 });
 
-pub trait Passthrough<B> {
+// Utilities for working with the Location newtype
+
+impl<S: State> Location<S> {
+    pub fn inner(self) -> S::Location {
+        self.0
+    }
+    pub fn into<L, O: State<Location = L>>(self) -> Location<O>
+    where
+        S::Location: Into<L>,
+    {
+        Location(self.0.into())
+    }
+}
+impl<S: State> AsRef<S::Location> for Location<S> {
+    fn as_ref(&self) -> &S::Location {
+        &self.0
+    }
+}
+impl<S: State> AsMut<S::Location> for Location<S> {
+    fn as_mut(&mut self) -> &mut S::Location {
+        &mut self.0
+    }
+}
+fn wrap<S: State>(loc: S::Location) -> Location<S> {
+    Location(loc)
+}
+
+pub trait Identity<B> {
     type Mapped;
-    fn passthrough(self) -> Self::Mapped;
+    fn identity(self) -> Self::Mapped;
 }
-
-impl<T, I, O> Passthrough<Location<O>> for T
+impl<T, L, I: State<Location = L>, O: State<Location = L>> Identity<Location<O>> for T
 where
-    I: State,
-    O: State<Location=I::Location>,
-    T: Functor<Location<O>, Input=Location<I>, Output=Location<O>>,
+    T: Functor<Location<O>, Input = Location<I>, Output = Location<O>>,
 {
     type Mapped = T::Mapped;
-    fn passthrough(self) -> Self::Mapped {
-        self.fmap(&mut |x: Location<I>| Location::<O>(x.inner()))
+    fn identity(self) -> Self::Mapped {
+        self.fmap(&mut |x| wrap(x.inner()))
+    }
+}
+
+impl<S: State> Display for Location<S>
+where
+    S::Location: Display,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(&self.0, f)
     }
 }

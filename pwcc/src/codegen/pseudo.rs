@@ -19,7 +19,9 @@ foldable!(type Location);
 
 impl From<tacky::Program> for Program<State> {
     fn from(program: tacky::Program) -> Self {
-        Self { function: program.function.into() }
+        Self {
+            function: program.function.into(),
+        }
     }
 }
 
@@ -32,7 +34,7 @@ impl From<tacky::Function> for Function<State> {
     }
 }
 
-impl From<tacky::Instructions> for Instructions<Location> {
+impl From<tacky::Instructions> for Instructions<State> {
     fn from(instructions: tacky::Instructions) -> Self {
         use tacky::Instruction::*;
         Self(
@@ -40,14 +42,14 @@ impl From<tacky::Instructions> for Instructions<Location> {
                 .0
                 .into_iter()
                 .flat_map(|i| {
-                    let out: Box<dyn Iterator<Item = Instruction<Location>>> = match i {
+                    let out: Box<dyn Iterator<Item = Instruction<State>>> = match i {
                         Return { val } => Box::new(
                             [
                                 Instruction::Mov {
                                     src: val.into(),
-                                    dst: Location::Concrete(hardware::Location::Reg(
+                                    dst: wrap(Location::Concrete(hardware::Location::Reg(
                                         hardware::Reg::AX,
-                                    )),
+                                    ))),
                                 },
                                 Instruction::Ret,
                             ]
@@ -57,11 +59,11 @@ impl From<tacky::Instructions> for Instructions<Location> {
                             [
                                 Instruction::Mov {
                                     src: src.into(),
-                                    dst: dst.into(),
+                                    dst: wrap(dst.into()),
                                 },
                                 Instruction::Unary {
                                     op: op.into(),
-                                    dst: dst.into(),
+                                    dst: wrap(dst.into()),
                                 },
                             ]
                             .into_iter(),
@@ -75,16 +77,16 @@ impl From<tacky::Instructions> for Instructions<Location> {
                             [
                                 Instruction::Mov {
                                     src: src1.into(),
-                                    dst: Location::Concrete(hardware::Location::Reg(
+                                    dst: wrap(Location::Concrete(hardware::Location::Reg(
                                         hardware::Reg::AX,
-                                    )),
+                                    ))),
                                 },
                                 Instruction::Cdq,
                                 // TODO: make it impossible to represent a div acting directly on a
                                 // constant
                                 Instruction::Idiv { denom: src2.into() },
                                 Instruction::Mov {
-                                    src: Operand::Location(Location::Concrete(
+                                    src: Operand::Location(wrap(Location::Concrete(
                                         hardware::Location::Reg(
                                             if matches!(op, tacky::BinaryOp::Divide) {
                                                 hardware::Reg::AX
@@ -92,8 +94,8 @@ impl From<tacky::Instructions> for Instructions<Location> {
                                                 hardware::Reg::DX
                                             },
                                         ),
-                                    )),
-                                    dst: dst.into(),
+                                    ))),
+                                    dst: wrap(dst.into()),
                                 },
                             ]
                             .into_iter(),
@@ -107,7 +109,7 @@ impl From<tacky::Instructions> for Instructions<Location> {
                             [
                                 Instruction::Mov {
                                     src: src1.into(),
-                                    dst: dst.into(),
+                                    dst: wrap(dst.into()),
                                 },
                                 Instruction::Binary {
                                     op: match op {
@@ -118,7 +120,7 @@ impl From<tacky::Instructions> for Instructions<Location> {
                                         tacky::BinaryOp::Remainder => unreachable!(),
                                     },
                                     src: src2.into(),
-                                    dst: dst.into(),
+                                    dst: wrap(dst.into()),
                                 },
                             ]
                             .into_iter(),
@@ -141,12 +143,12 @@ impl From<tacky::UnaryOp> for UnaryOp {
     }
 }
 
-impl From<tacky::Val> for Operand<Location> {
+impl From<tacky::Val> for Operand<State> {
     fn from(val: tacky::Val) -> Self {
         use tacky::Val::*;
         match val {
-            Constant(i) => Operand::Imm { val: i },
-            Var(t) => Operand::Location { location: t.into() },
+            Constant(i) => Operand::Imm(i),
+            Var(t) => Operand::Location(wrap(t.into())),
         }
     }
 }

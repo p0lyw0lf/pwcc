@@ -1,4 +1,4 @@
-use functional::functor::Functor;
+use functional::Functor;
 
 use super::*;
 
@@ -10,7 +10,7 @@ impl State for Pass {
 }
 
 fn pass<S: State<Location=pseudo::Location>>(instructions: Instructions<S>) -> Instructions<Pass> {
-    instructions.map(&mut |loc: pseudo::Location| -> hardware::Location {
+    instructions.fmap(&mut |loc: pseudo::Location| -> hardware::Location {
         use pseudo::Location::*;
         match loc {
             Pseudo(i) => hardware::Location::Stack(4 * (i + 1)),

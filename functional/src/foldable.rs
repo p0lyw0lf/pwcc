@@ -30,45 +30,54 @@ impl<A> Foldable<A> for Option<A> {
 
 #[macro_export]
 macro_rules! foldable {
-    (type$(<$($type:ident : $trait:ident),+>)? $base:ident) => {
+    (type $base:ident $(<$($type:ident : $trait:ident),+>)?) => {
         impl<$($($type: $trait,)+)?> $crate::foldable::Foldable<$base$(<$($type,)+>)?> for $base$(<$($type,)+>)? {
-    fn foldl<'s, 'f: 's, B>(&'s self, f: &'f mut impl FnMut(B, &'s $base$(<$($type,)+>)?) -> B, mut acc: B) -> B
-    where
-        $base$(<$($type,)+>)?: 's,
-    {
+            fn foldl<'s, 'f: 's, B>(&'s self, f: &'f mut impl FnMut(B, &'s $base$(<$($type,)+>)?) -> B, mut acc: B) -> B
+            where
+                $base$(<$($type,)+>)?: 's,
+            {
                 f(acc, self)
             }
         }
     };
-    (struct$(<$($type:ident : $trait:ident),+>)? $outer:ident for $inner:path {$(
+    (struct $outer:ident $(<$($type:ident : $trait:ident),+>)? for $inner:path | {$(
         $field:ident,
     )+}) => {
         impl<$($($type: $trait,)+)?> $crate::foldable::Foldable<$inner> for $outer$(<$($type,)+>)? {
-    fn foldl<'s, 'f: 's, B>(&'s self, f: &'f mut impl FnMut(B, &'s $inner) -> B, mut acc: B) -> B
-    where
-        $inner: 's,
-    {
+            fn foldl<'s, 'f: 's, B>(&'s self, f: &'f mut impl FnMut(B, &'s $inner) -> B, mut acc: B) -> B
+            where
+                $inner: 's,
+            {
                 $(acc = self.$field.foldl(f, acc);)+
                 acc
             }
        }
     };
-    (enum$(<$($type:ident : $trait:ident),+>)? $outer:ident for $inner:path { $(
-        $case:ident { $($field:ident ,)+ } ,
+    (struct $outer:ident $(<$($type:ident : $trait:ident),+>)? for $inner:path | ($(
+        $index:tt,
+    )+)) => {
+        impl<$($($type: $trait,)+)?> $crate::foldable::Foldable<$inner> for $outer$(<$($type,)+>)? {
+            fn foldl<'s, 'f: 's, B>(&'s self, f: &'f mut impl FnMut(B, &'s $inner) -> B, mut acc: B) -> B
+            where
+                $inner: 's,
+            {
+                $(acc = self.$index.foldl(f, acc);)+
+                acc
+            }
+       }
+    };
+    (enum $outer:ident $(<$($type:ident : $trait:ident),+>)? for $inner:path | { $(
+        $case:ident
+            $({ $($field:ident ,)+ })?
+            $(( $($index:tt ,)+ ))?
+        ,
     )+ }) => {
         impl<$($($type: $trait,)+)?> $crate::foldable::Foldable<$inner> for $outer$(<$($type,)+>)? {
-    fn foldl<'s, 'f: 's, B>(&'s self, f: &'f mut impl FnMut(B, &'s $inner) -> B, mut acc: B) -> B
-    where
-        $inner: 's,
-    {
-                match self {$(
-                    Self::$case { $($field,)+ .. } => {
-                        $(acc = $field.foldl(f, acc);)+
-                        acc
-                    }
-                )+
-                    _ => acc,
-                }
+            fn foldl<'s, 'f: 's, B>(&'s self, f: &'f mut impl FnMut(B, &'s $inner) -> B, mut acc: B) -> B
+            where
+                $inner: 's,
+            {
+                todo!()
             }
         }
     };

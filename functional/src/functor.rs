@@ -5,21 +5,27 @@ pub trait Functor<B> {
     fn fmap(self, f: &mut impl FnMut(Self::Input) -> Self::Output) -> Self::Mapped;
 }
 
-impl<A, B> Functor<B> for Vec<A> {
+impl<T, Inner, A, B> Functor<Inner> for Vec<T>
+where
+    T: Functor<Inner, Input=A, Output=B>,
+{
     type Input = A;
     type Output = B;
-    type Mapped = Vec<B>;
+    type Mapped = Vec<T::Mapped>;
     fn fmap(self, f: &mut impl FnMut(Self::Input) -> Self::Output) -> Self::Mapped {
-        self.into_iter().map(f).collect()
+        self.into_iter().map(&mut |x: T| x.fmap(f)).collect()
     }
 }
 
-impl<A, B> Functor<B> for Option<A> {
+impl<T, Inner, A, B> Functor<Inner> for Option<T>
+where
+    T: Functor<Inner, Input=A, Output=B>,
+{
     type Input = A;
     type Output = B;
-    type Mapped = Option<B>;
+    type Mapped = Option<T::Mapped>;
     fn fmap(self, f: &mut impl FnMut(Self::Input) -> Self::Output) -> Self::Mapped {
-        Option::map(self, f)
+        Option::map(self, &mut |x: T| x.fmap(f))
     }
 }
 

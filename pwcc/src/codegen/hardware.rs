@@ -23,10 +23,13 @@ pub enum Reg {
 }
 
 fn pass<S: State<Location = Location>>(instructions: Instructions<S>) -> Instructions<Pass> {
-    fn count_stack_space(prev_max: usize, l: &super::Location<Pass>) -> usize {
-        match l {
-            super::Location(Location::Reg(_)) => prev_max,
-            super::Location(Location::Stack(s)) => core::cmp::max(*s, prev_max),
+    fn count_stack_space<S: State<Location = Location>>(
+        prev_max: usize,
+        l: &super::Location<S>,
+    ) -> usize {
+        match l.as_ref() {
+            Location::Reg(_) => prev_max,
+            Location::Stack(ref s) => core::cmp::max(*s, prev_max),
         }
     }
     let max_stack_addr = instructions.foldl(&mut count_stack_space, 0);
@@ -39,33 +42,28 @@ fn pass<S: State<Location = Location>>(instructions: Instructions<S>) -> Instruc
                 use Instruction::*;
                 match i {
                     Mov {
-                        src:
-                            src @ Operand::Location {
-                                location: super::Location(Location::Stack(_)),
-                            },
+                        src: src @ Operand::Location(super::Location(Location::Stack(_))),
                         dst: dst @ super::Location(Location::Stack(_)),
                     } => {
                         let i1: Instruction<Pass> = Mov {
-                            src: src.passthrough(),
-                            dst: super::Location(Location::Reg(Reg::R10)),
+                            src: src.identity(),
+                            dst: wrap(Location::Reg(Reg::R10)),
                         };
                         let i2: Instruction<Pass> = Mov {
-                            src: Operand::Location {
-                                location: super::Location(Location::Reg(Reg::R10)),
-                            },
-                            dst: dst.passthrough(),
+                            src: Operand::Location(wrap(Location::Reg(Reg::R10))),
+                            dst: dst.identity(),
                         };
                         Box::new([i1, i2].into_iter())
                     }
-                    other => Box::new([other.passthrough()].into_iter()),
+                    other => Box::new([other.identity()].into_iter()),
                 }
             });
 
-    Instructions {
-        instructions: core::iter::once(Instruction::AllocateStack {
+    Instructions(
+        core::iter::once(Instruction::AllocateStack {
             amount: max_stack_addr,
         })
         .chain(instructions)
         .collect(),
-    }
+    )
 }

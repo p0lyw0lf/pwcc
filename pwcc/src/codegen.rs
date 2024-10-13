@@ -2,6 +2,7 @@ use core::fmt::Debug;
 use std::fmt::Display;
 
 use functional::foldable;
+use functional::functor;
 use functional::Foldable;
 use functional::Functor;
 
@@ -18,7 +19,7 @@ pub trait State: Debug + Sized {
 #[derive(Debug)]
 pub struct Location<S: State>(pub S::Location);
 foldable!(type Location<S: State>);
-// functor!(type<I: State, O: State> Location);
+functor!(type Location<I: State> -> <O: State>);
 
 #[derive(Debug)]
 pub struct Program<S: State> {
@@ -26,8 +27,8 @@ pub struct Program<S: State> {
 }
 
 foldable!(struct Program<S: State> for Location<S> | { function, });
-// functor!(struct<I: State, O: State> Program for Instructions<I> |> Instructions<O> { function, .. });
-// functor!(struct<I: State, O: State> Program for Location<I> |> Location<O> { function, .. });
+functor!(struct Program<I: State> -> <O: State> where Instructions<I> |> Instructions<O> | { function, .., });
+functor!(struct Program<I: State> -> <O: State> where Location<I> |> Location<O> | { function, .., });
 
 #[derive(Debug)]
 pub struct Function<S: State> {
@@ -36,8 +37,16 @@ pub struct Function<S: State> {
 }
 
 foldable!(struct Function<S: State> for Location<S> | { instructions, });
-// functor!(struct<I: State, O: State> Function for Instructions<I> |> Instructions<O> { instructions, .. name, });
-// functor!(struct<I: State, O: State> Function for Location<I> |> Location<O> { instructions, .. name, });
+functor!(struct Function<I: State> -> <O: State> where Instructions<I> |> Instructions<O> | {
+    instructions,
+    ..,
+    name,
+});
+functor!(struct Function<I: State> -> <O: State> where Location<I> |> Location<O> | {
+    instructions,
+    ..,
+    name,
+});
 
 /// We separate this out into a newtype struct so that we can map over it as well as individual
 /// instructions.
@@ -45,8 +54,8 @@ foldable!(struct Function<S: State> for Location<S> | { instructions, });
 pub struct Instructions<S: State>(pub Vec<Instruction<S>>);
 
 foldable!(struct Instructions<S: State> for Location<S> | (0,));
-// functor!(type Instructions<(I: State) -> (O: State)>);
-// functor!(struct Instructions<(I: State) -> (O: State)> for Location<I> |> Location<O> (0,));
+functor!(type Instructions<I: State> -> <O: State>);
+functor!(struct Instructions<I: State> -> <O: State> where Location<I> |> Location<O> | (+0,));
 
 #[derive(Debug)]
 pub enum Instruction<S: State> {
@@ -79,6 +88,15 @@ foldable!(enum Instruction<S: State> for Location<S> | {
     Binary { src, dst, },
     Idiv { denom, },
 });
+functor!(enum Instruction<I: State> -> <O: State> where Location<I> |> Location<O> | {
+    Mov { src, dst, .., },
+    Unary { dst, .., op, },
+    Binary { src, dst, .., op, },
+    Idiv { denom, .., },
+    Cdq,
+    AllocateStack { .., amount, },
+    Ret,
+});
 
 #[derive(Debug, Copy, Clone)]
 pub enum UnaryOp {
@@ -101,6 +119,10 @@ pub enum Operand<S: State> {
 
 foldable!(enum Operand<S: State> for Location<S> | {
     Location (0,),
+});
+functor!(enum Operand<I: State> -> <O: State> where Location<I> |> Location<O> | {
+    Imm(-val,),
+    Location(+loc,),
 });
 
 // Utilities for working with the Location newtype

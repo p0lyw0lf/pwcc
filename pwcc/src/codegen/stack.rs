@@ -10,11 +10,11 @@ impl State for Pass {
 }
 
 fn pass<S: State<Location=pseudo::Location>>(instructions: Instructions<S>) -> Instructions<Pass> {
-    instructions.fmap(&mut |loc: pseudo::Location| -> hardware::Location {
+    Functor::<Location<Pass>>::fmap(instructions, &mut |loc: super::Location<S>| -> super::Location<Pass> {
         use pseudo::Location::*;
-        match loc {
+        wrap(match loc.inner() {
             Pseudo(i) => hardware::Location::Stack(4 * (i + 1)),
             Concrete(c) => c,
-        }
+        })
     })
 }

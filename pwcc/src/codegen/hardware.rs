@@ -22,7 +22,7 @@ pub enum Reg {
     R11,
 }
 
-fn pass<S: State<Location = Location>>(instructions: Instructions<S>) -> Instructions<Pass> {
+pub fn pass<S: State<Location = Location>>(instructions: Instructions<S>) -> Instructions<Pass> {
     fn count_stack_space<S: State<Location = Location>>(
         prev_max: usize,
         l: &super::Location<S>,
@@ -32,7 +32,7 @@ fn pass<S: State<Location = Location>>(instructions: Instructions<S>) -> Instruc
             Location::Stack(ref s) => core::cmp::max(*s, prev_max),
         }
     }
-    let max_stack_addr = instructions.foldl(&mut count_stack_space, 0);
+    let max_stack_addr = instructions.foldl(count_stack_space, 0);
 
     let instructions =
         instructions

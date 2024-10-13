@@ -33,6 +33,7 @@ dependencies = [
 name = "pwcc_bin"
 version = "0.0.2"
 dependencies = [
+ "functional",
  "pwcc",
 ]
 

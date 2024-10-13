@@ -1,23 +1,26 @@
 pub trait Foldable<A> {
-    fn foldl<'s, 'f: 's, B>(&'s self, f: &'f mut impl FnMut(B, &'s A) -> B, acc: B) -> B
+    fn foldl<'s, B>(&'s self, f: fn(B, &'s A) -> B, acc: B) -> B
     where
         A: 's;
 }
 
-impl<A> Foldable<A> for Vec<A> {
-    fn foldl<'s, 'f: 's, B>(&'s self, f: &'f mut impl FnMut(B, &'s A) -> B, mut acc: B) -> B
+impl<T, A> Foldable<A> for Vec<T>
+where
+    T: Foldable<A>
+{
+    fn foldl<'s, B>(&'s self, f: fn(B, &'s A) -> B, mut acc: B) -> B
     where
         A: 's,
     {
         for a in self {
-            acc = f(acc, a);
+            acc = a.foldl(f, acc);
         }
         acc
     }
 }
 
 impl<A> Foldable<A> for Option<A> {
-    fn foldl<'s, 'f: 's, B>(&'s self, f: &'f mut impl FnMut(B, &'s A) -> B, acc: B) -> B
+    fn foldl<'s, B>(&'s self, f: fn(B, &'s A) -> B, acc: B) -> B
     where
         A: 's,
     {
@@ -32,7 +35,7 @@ impl<A> Foldable<A> for Option<A> {
 macro_rules! foldable {
     (type $base:ident $(<$($type:ident : $trait:ident),+>)?) => {
         impl<$($($type: $trait,)+)?> $crate::foldable::Foldable<$base$(<$($type,)+>)?> for $base$(<$($type,)+>)? {
-            fn foldl<'s, 'f: 's, B>(&'s self, f: &'f mut impl FnMut(B, &'s $base$(<$($type,)+>)?) -> B, mut acc: B) -> B
+            fn foldl<'s, B>(&'s self, f: fn(B, &'s $base$(<$($type,)+>)?) -> B, mut acc: B) -> B
             where
                 $base$(<$($type,)+>)?: 's,
             {
@@ -44,7 +47,7 @@ macro_rules! foldable {
         $field:ident,
     )+}) => {
         impl<$($($type: $trait,)+)?> $crate::foldable::Foldable<$inner> for $outer$(<$($type,)+>)? {
-            fn foldl<'s, 'f: 's, B>(&'s self, f: &'f mut impl FnMut(B, &'s $inner) -> B, mut acc: B) -> B
+            fn foldl<'s, B>(&'s self, f: fn(B, &'s $inner) -> B, mut acc: B) -> B
             where
                 $inner: 's,
             {
@@ -57,7 +60,7 @@ macro_rules! foldable {
         $index:tt,
     )+)) => {
         impl<$($($type: $trait,)+)?> $crate::foldable::Foldable<$inner> for $outer$(<$($type,)+>)? {
-            fn foldl<'s, 'f: 's, B>(&'s self, f: &'f mut impl FnMut(B, &'s $inner) -> B, mut acc: B) -> B
+            fn foldl<'s, B>(&'s self, f: fn(B, &'s $inner) -> B, mut acc: B) -> B
             where
                 $inner: 's,
             {
@@ -73,7 +76,7 @@ macro_rules! foldable {
         ,
     )+ }) => {
         impl<$($($type: $trait,)+)?> $crate::foldable::Foldable<$inner> for $outer$(<$($type,)+>)? {
-            fn foldl<'s, 'f: 's, B>(&'s self, f: &'f mut impl FnMut(B, &'s $inner) -> B, mut acc: B) -> B
+            fn foldl<'s, B>(&'s self, f: fn(B, &'s $inner) -> B, mut acc: B) -> B
             where
                 $inner: 's,
             {

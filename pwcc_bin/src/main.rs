@@ -4,6 +4,7 @@ use std::io::Write;
 use std::path::PathBuf;
 
 use pwcc::{lexer, parser, tacky, codegen, printer};
+use functional::Functor;
 
 static STAGES: &'static [&'static str] = &["lex", "parse", "tacky", "codegen"];
 
@@ -73,7 +74,7 @@ fn main() -> Result<(), ()> {
         eprintln!("error reading file: {e}");
     })?;
 
-    if stage.map_or(false, |stage| stage < 0) {
+    if stage.is_some() {
         return Ok(());
     }
 
@@ -107,12 +108,12 @@ fn main() -> Result<(), ()> {
         println!("{pass0:?}");
     }
 
-    let pass1: codegen::Program<codegen::stack::Pass> = pass0.run_pass();
+    let pass1 = Functor::<codegen::Location<codegen::stack::Pass>>::fmap(pass0, &mut codegen::stack::pass);
     if stage.is_some() {
         println!("{pass1:?}");
     }
 
-    let pass2: codegen::Program<codegen::hardware::Pass> = pass1.run_pass();
+    let pass2 = Functor::<codegen::Instructions<codegen::hardware::Pass>>::fmap(pass1, &mut codegen::hardware::pass);
 
     if stage.is_some() {
         println!("{pass2:?}");

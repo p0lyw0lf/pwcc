@@ -7,19 +7,27 @@ impl State for Pass {
     type Location = Location;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Location {
     Reg(Reg),
     Stack(usize),
 }
 foldable!(type Location);
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub enum Reg {
     AX,
     DX,
     R10,
     R11,
+}
+
+fn r10d<S: State<Location = Location>>() -> super::Location<S> {
+    wrap(Location::Reg(Reg::R10))
+}
+
+fn r11d<S: State<Location = Location>>() -> super::Location<S> {
+    wrap(Location::Reg(Reg::R11))
 }
 
 pub fn pass<S: State<Location = Location>>(instructions: Instructions<S>) -> Instructions<Pass> {
@@ -41,19 +49,71 @@ pub fn pass<S: State<Location = Location>>(instructions: Instructions<S>) -> Ins
             .flat_map(|i| -> Box<dyn Iterator<Item = Instruction<Pass>>> {
                 use Instruction::*;
                 match i {
+                    // Memory -> Memory moves are not allowed
                     Mov {
                         src: src @ Operand::Location(super::Location(Location::Stack(_))),
                         dst: dst @ super::Location(Location::Stack(_)),
                     } => {
                         let i1: Instruction<Pass> = Mov {
                             src: src.identity(),
-                            dst: wrap(Location::Reg(Reg::R10)),
+                            dst: r10d(),
                         };
                         let i2: Instruction<Pass> = Mov {
-                            src: Operand::Location(wrap(Location::Reg(Reg::R10))),
+                            src: Operand::Location(r10d()),
                             dst: dst.identity(),
                         };
                         Box::new([i1, i2].into_iter())
+                    }
+                    // Division must take Location as a operand
+                    Idiv {
+                        denom: dst @ Operand::Imm(_),
+                    } => {
+                        let i1: Instruction<Pass> = Mov {
+                            src: dst.identity(),
+                            dst: r10d(),
+                        };
+                        let i2: Instruction<Pass> = Idiv {
+                            denom: Operand::Location(r10d()),
+                        };
+                        Box::new([i1, i2].into_iter())
+                    }
+                    // Memory -> Memory add/sub aren't allowed
+                    Binary {
+                        op: op @ (BinaryOp::Add | BinaryOp::Sub),
+                        src: src @ Operand::Location(super::Location(Location::Stack(_))),
+                        dst: dst @ super::Location(Location::Stack(_)),
+                    } => {
+                        let i1: Instruction<Pass> = Mov {
+                            src: src.identity(),
+                            dst: r10d(),
+                        };
+                        let i2: Instruction<Pass> = Binary {
+                            op,
+                            src: Operand::Location(r10d()),
+                            dst: dst.identity(),
+                        };
+                        Box::new([i1, i2].into_iter())
+                    }
+                    // imull can't have dst be a memory location
+                    Binary {
+                        op: op @ BinaryOp::Mult,
+                        src,
+                        dst: dst @ super::Location(Location::Stack(_)),
+                    } => {
+                        let i1: Instruction<Pass> = Mov {
+                            src: Operand::Location(dst.clone().identity()),
+                            dst: r11d(),
+                        };
+                        let i2: Instruction<Pass> = Binary {
+                            op,
+                            src: src.identity(),
+                            dst: r11d(),
+                        };
+                        let i3: Instruction<Pass> = Mov {
+                            src: Operand::Location(r11d()),
+                            dst: dst.identity(),
+                        };
+                        Box::new([i1, i2, i3].into_iter())
                     }
                     other => Box::new([other.identity()].into_iter()),
                 }

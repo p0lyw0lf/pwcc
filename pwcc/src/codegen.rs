@@ -174,3 +174,12 @@ where
         Display::fmt(&self.0, f)
     }
 }
+
+impl<S: State> Clone for Location<S>
+where
+    S::Location: Clone,
+{
+    fn clone(&self) -> Self {
+        wrap(self.0.clone())
+    }
+}

@@ -57,14 +57,16 @@ macro_rules! foldable {
        }
     };
     (struct $outer:ident $(<$($type:ident : $trait:ident),+>)? for $inner:path | ($(
-        $index:tt,
+        $(+ $good_index:tt)?
+        $(- $bad_index:tt)?
+        ,
     )+)) => {
         impl<$($($type: $trait,)+)?> $crate::foldable::Foldable<$inner> for $outer$(<$($type,)+>)? {
             fn foldl<'s, B>(&'s self, f: fn(B, &'s $inner) -> B, mut acc: B) -> B
             where
                 $inner: 's,
             {
-                $(acc = self.$index.foldl(f, acc);)+
+                $($(acc = self.$good_index.foldl(f, acc);)?)+
                 acc
             }
        }
@@ -72,7 +74,10 @@ macro_rules! foldable {
     (enum $outer:ident $(<$($type:ident : $trait:ident),+>)? for $inner:path | { $(
         $case:ident
             $({ $($field:ident ,)+ })?
-            $(( $($index:tt ,)+ ))?
+            $(( $(
+                $(+ $good_field:ident)?
+                $(- $bad_field:ident)?
+            ,)+ ))?
         ,
     )+ }) => {
         impl<$($($type: $trait,)+)?> $crate::foldable::Foldable<$inner> for $outer$(<$($type,)+>)? {
@@ -80,7 +85,25 @@ macro_rules! foldable {
             where
                 $inner: 's,
             {
-                todo!()
+                match self {$(
+                    Self::$case $({
+                        $($field,)+
+                        ..
+                    })? $(($(
+                        $($good_field,)?
+                        $($bad_field,)?
+                    )+))?=> {
+                    $(
+                        $(acc = $field.foldl(f, acc);)+
+                    )?
+                    $(
+                        $($(acc = $good_field.foldl(f, acc);)?)+
+                    )?
+                    }
+                )+
+                    _ => {}
+                };
+                acc
             }
         }
     };

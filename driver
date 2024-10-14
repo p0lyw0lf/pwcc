@@ -11,7 +11,7 @@ INFO=0
 while [[ $# -gt 0 ]]; do
   case $1 in
     --lex|--parse|--tacky|--codegen)
-      OPTIONS+=("--stage=${1#--}")
+      OPTIONS+=("$1")
       shift
       ;;
     -h|--help|-v|--version)
@@ -31,7 +31,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 cd $DIR
-EXE=$(cargo build --message-format=json-render-diagnostics | jq -js '.[] | select(.reason == "compiler-artifact") | select(.executable != null) | .executable')
+EXE=$(cargo build --bin pwcc_bin --release --message-format=json-render-diagnostics | jq -js '.[] | select(.reason == "compiler-artifact") | select(.executable != null) | .executable')
 
 
 if [[ "${INFO}" -eq "1" ]]; then

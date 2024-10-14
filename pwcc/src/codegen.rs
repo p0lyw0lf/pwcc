@@ -53,7 +53,7 @@ functor!(struct Function<I: State> -> <O: State> where Location<I> |> Location<O
 #[derive(Debug)]
 pub struct Instructions<S: State>(pub Vec<Instruction<S>>);
 
-foldable!(struct Instructions<S: State> for Location<S> | (0,));
+foldable!(struct Instructions<S: State> for Location<S> | (+0,));
 functor!(type Instructions<I: State> -> <O: State>);
 functor!(struct Instructions<I: State> -> <O: State> where Location<I> |> Location<O> | (+0,));
 
@@ -118,7 +118,7 @@ pub enum Operand<S: State> {
 }
 
 foldable!(enum Operand<S: State> for Location<S> | {
-    Location (0,),
+    Location (+loc,),
 });
 functor!(enum Operand<I: State> -> <O: State> where Location<I> |> Location<O> | {
     Imm(-val,),

@@ -34,7 +34,7 @@ nodes! {
     );
     Statement(*KeywordReturn *<exp: Exp> *Semicolon);
     UnaryOp(+Minus +Tilde);
-    BinaryOp(+Plus +Minus +Star +ForwardSlash +Percent);
+    BinaryOp(+Plus +Minus +Star +ForwardSlash +Percent +LeftShift +RightShift+Ampersand +Caret +Pipe);
 }
 
 /// Exp is special, since its AST doesn't exactly correspond with the grammar, so we define it
@@ -60,8 +60,12 @@ impl BinaryOp {
     fn precedence(&self) -> usize {
         use BinaryOp::*;
         match self {
-            Plus | Minus => 45,
             Star | ForwardSlash | Percent => 50,
+            Plus | Minus => 45,
+            LeftShift | RightShift => 40,
+            Ampersand => 35,
+            Caret => 34,
+            Pipe => 33,
         }
     }
 }

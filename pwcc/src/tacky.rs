@@ -63,6 +63,11 @@ pub enum BinaryOp {
     Multiply,
     Divide,
     Remainder,
+    BitAnd,
+    BitXor,
+    BitOr,
+    BitLeftShift,
+    BitRightShift,
 }
 
 impl From<parser::Statement> for Instructions {
@@ -111,6 +116,11 @@ fn chomp_exp(
                 Star => BinaryOp::Multiply,
                 ForwardSlash => BinaryOp::Divide,
                 Percent => BinaryOp::Remainder,
+                LeftShift => BinaryOp::BitLeftShift,
+                RightShift => BinaryOp::BitRightShift,
+                Ampersand => BinaryOp::BitAnd,
+                Caret => BinaryOp::BitXor,
+                Pipe => BinaryOp::BitOr,
             };
             instructions.push(Instruction::Binary { op, src1, src2, dst });
 

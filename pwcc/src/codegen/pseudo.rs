@@ -82,8 +82,6 @@ impl From<tacky::Instructions> for Instructions<State> {
                                     ))),
                                 },
                                 Instruction::Cdq,
-                                // TODO: make it impossible to represent a div acting directly on a
-                                // constant
                                 Instruction::Idiv { denom: src2.into() },
                                 Instruction::Mov {
                                     src: Operand::Location(wrap(Location::Concrete(
@@ -116,6 +114,11 @@ impl From<tacky::Instructions> for Instructions<State> {
                                         tacky::BinaryOp::Add => BinaryOp::Add,
                                         tacky::BinaryOp::Subtract => BinaryOp::Sub,
                                         tacky::BinaryOp::Multiply => BinaryOp::Mult,
+                                        tacky::BinaryOp::BitAnd => BinaryOp::PAnd,
+                                        tacky::BinaryOp::BitOr => BinaryOp::POr,
+                                        tacky::BinaryOp::BitXor => BinaryOp::PXor,
+                                        tacky::BinaryOp::BitLeftShift => BinaryOp::SAL,
+                                        tacky::BinaryOp::BitRightShift => BinaryOp::SAR,
                                         tacky::BinaryOp::Divide => unreachable!(),
                                         tacky::BinaryOp::Remainder => unreachable!(),
                                     },

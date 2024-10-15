@@ -109,6 +109,11 @@ pub enum BinaryOp {
     Add,
     Sub,
     Mult,
+    PAnd,
+    POr,
+    PXor,
+    SAL,
+    SAR,
 }
 
 #[derive(Debug)]

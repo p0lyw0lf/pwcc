@@ -17,9 +17,14 @@ foldable!(type Location);
 #[derive(Debug, Copy, Clone)]
 pub enum Reg {
     AX,
+    CX,
     DX,
     R10,
     R11,
+}
+
+fn rcx<S: State<Location = Location>>() -> super::Location<S> {
+    wrap(Location::Reg(Reg::CX))
 }
 
 fn r10d<S: State<Location = Location>>() -> super::Location<S> {
@@ -77,23 +82,6 @@ pub fn pass<S: State<Location = Location>>(instructions: Instructions<S>) -> Ins
                         };
                         Box::new([i1, i2].into_iter())
                     }
-                    // Memory -> Memory add/sub aren't allowed
-                    Binary {
-                        op: op @ (BinaryOp::Add | BinaryOp::Sub),
-                        src: src @ Operand::Location(super::Location(Location::Stack(_))),
-                        dst: dst @ super::Location(Location::Stack(_)),
-                    } => {
-                        let i1: Instruction<Pass> = Mov {
-                            src: src.identity(),
-                            dst: r10d(),
-                        };
-                        let i2: Instruction<Pass> = Binary {
-                            op,
-                            src: Operand::Location(r10d()),
-                            dst: dst.identity(),
-                        };
-                        Box::new([i1, i2].into_iter())
-                    }
                     // imull can't have dst be a memory location
                     Binary {
                         op: op @ BinaryOp::Mult,
@@ -114,6 +102,54 @@ pub fn pass<S: State<Location = Location>>(instructions: Instructions<S>) -> Ins
                             dst: dst.identity(),
                         };
                         Box::new([i1, i2, i3].into_iter())
+                    }
+                    // sal/sar need to have special register as shift source
+                    Binary {
+                        op: op @ (BinaryOp::SAL | BinaryOp::SAR),
+                        src,
+                        dst,
+                    } => {
+                        // If it's already an immediate or the correct register, just pass through
+                        if matches!(
+                            src,
+                            Operand::Location(super::Location(Location::Reg(Reg::CX)))
+                                | Operand::Imm(_)
+                        ) {
+                            let i: Instruction<Pass> = Binary {
+                                op,
+                                src: src.identity(),
+                                dst: dst.identity(),
+                            };
+                            Box::new([i].into_iter())
+                        } else {
+                            let i1: Instruction<Pass> = Mov {
+                                src: src.identity(),
+                                dst: rcx(),
+                            };
+                            let i2: Instruction<Pass> = Binary {
+                                op,
+                                src: Operand::Location(rcx()),
+                                dst: dst.clone().identity(),
+                            };
+                            Box::new([i1, i2].into_iter())
+                        }
+                    }
+                    // Memory -> Memory binary operations aren't allowed
+                    Binary {
+                        op,
+                        src: src @ Operand::Location(super::Location(Location::Stack(_))),
+                        dst: dst @ super::Location(Location::Stack(_)),
+                    } => {
+                        let i1: Instruction<Pass> = Mov {
+                            src: src.identity(),
+                            dst: r10d(),
+                        };
+                        let i2: Instruction<Pass> = Binary {
+                            op,
+                            src: Operand::Location(r10d()),
+                            dst: dst.identity(),
+                        };
+                        Box::new([i1, i2].into_iter())
                     }
                     other => Box::new([other.identity()].into_iter()),
                 }

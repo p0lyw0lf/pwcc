@@ -22,12 +22,17 @@ Tokenizer for Token with TokenError:
     r";": Semicolon,
     r"\+\+": Increment,
     r"--": Decrement,
+    r">>": LeftShift,
+    r"<<": RightShift,
     r"\+": Plus,
     r"-": Minus,
     r"\*": Star,
     r"/": ForwardSlash,
     r"%": Percent,
     r"~": Tilde,
+    r"&": Ampersand,
+    r"\|": Pipe,
+    r"\^": Caret,
 }
 
 #[derive(Debug)]
@@ -65,6 +70,15 @@ mod test {
         assert_eq!(
             Ok(Vec::from([OpenParen, Constant(3), CloseParen, CloseParen])),
             lex("(3))")
+        );
+    }
+
+    #[test]
+    fn regex_special_chars() {
+        use Token::*;
+        assert_eq!(
+            Ok(Vec::from([Plus, Star, Caret, Pipe])),
+            lex("+*^|")
         );
     }
 }

@@ -64,6 +64,11 @@ impl Display for BinaryOp {
             Add => write!(f, "addl"),
             Sub => write!(f, "subl"),
             Mult => write!(f, "imull"),
+            PAnd => write!(f, "pandl"),
+            POr => write!(f, "porl"),
+            PXor => write!(f, "pxorl"),
+            SAL => write!(f, "sall"),
+            SAR => write!(f, "sarl"),
         }
     }
 }
@@ -93,6 +98,7 @@ impl Display for hardware::Reg {
         use hardware::Reg::*;
         match self {
             AX => write!(f, "%eax"),
+            CX => write!(f, "%ecx"),
             DX => write!(f, "%edx"),
             R10 => write!(f, "%r10d"),
             R11 => write!(f, "%r11d"),

@@ -109,9 +109,9 @@ pub enum BinaryOp {
     Add,
     Sub,
     Mult,
-    PAnd,
-    POr,
-    PXor,
+    And,
+    Or,
+    Xor,
     SAL,
     SAR,
 }

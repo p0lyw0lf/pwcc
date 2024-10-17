@@ -64,9 +64,9 @@ impl Display for BinaryOp {
             Add => write!(f, "addl"),
             Sub => write!(f, "subl"),
             Mult => write!(f, "imull"),
-            PAnd => write!(f, "andl"),
-            POr => write!(f, "orl"),
-            PXor => write!(f, "xorl"),
+            And => write!(f, "andl"),
+            Or => write!(f, "orl"),
+            Xor => write!(f, "xorl"),
             SAL => write!(f, "sall"),
             SAR => write!(f, "sarl"),
         }

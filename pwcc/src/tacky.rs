@@ -15,17 +15,23 @@ impl From<parser::Program> for Program {
     }
 }
 
+// TODO: split this between "real" (in source code) and "fake" (made up by the compiler)
+// identifiers?
+#[derive(Debug, Clone)]
+pub struct Identifier(pub String);
+
 #[derive(Debug)]
 pub struct Function {
-    pub name: String,
+    pub name: Identifier,
     pub body: Instructions,
 }
 
 impl From<parser::Function> for Function {
     fn from(function: parser::Function) -> Self {
+        let name = Identifier(function.name);
         Self {
-            name: function.name,
-            body: function.statement.into(),
+            body: Instructions::from_function(&name, function.statement),
+            name,
         }
     }
 }
@@ -48,12 +54,29 @@ pub enum Instruction {
         src2: Val,
         dst: Temporary,
     },
+    Copy {
+        src: Val,
+        dst: Temporary,
+    },
+    Jump {
+        target: Identifier,
+    },
+    JumpIfZero {
+        condition: Val,
+        target: Identifier,
+    },
+    JumpIfNotZero {
+        condition: Val,
+        target: Identifier,
+    },
+    Label(Identifier),
 }
 
 #[derive(Debug)]
 pub enum UnaryOp {
     Complement,
     Negate,
+    Not,
 }
 
 #[derive(Debug)]
@@ -68,15 +91,21 @@ pub enum BinaryOp {
     BitOr,
     BitLeftShift,
     BitRightShift,
+    Equal,
+    NotEqual,
+    LessThan,
+    LessThanEqual,
+    GreaterThan,
+    GreaterThanEqual,
 }
 
-impl From<parser::Statement> for Instructions {
-    fn from(statement: parser::Statement) -> Self {
+impl Instructions {
+    fn from_function(identifier: &Identifier, statement: parser::Statement) -> Self {
         let mut instructions = Vec::<Instruction>::new();
         let last_val = chomp_exp(
             statement.exp,
             &mut instructions,
-            &mut TemporaryFactory::default(),
+            &mut TemporaryFactory::new(identifier),
         );
         instructions.push(Instruction::Return { val: last_val });
         Self(instructions)
@@ -98,11 +127,69 @@ fn chomp_exp(
             let dst = tf.next();
             use parser::UnaryOp::*;
             let op = match op {
-                Exclamation => todo!(),
+                Exclamation => UnaryOp::Not,
                 Minus => UnaryOp::Negate,
                 Tilde => UnaryOp::Complement,
             };
             instructions.push(Instruction::Unary { op, src, dst });
+
+            Val::Var(dst)
+        }
+        Binary {
+            lhs,
+            op: op @ (parser::BinaryOp::DoubleAmpersand | parser::BinaryOp::DoublePipe),
+            rhs,
+        } => {
+            let is_and = matches!(op, parser::BinaryOp::DoubleAmpersand);
+
+            let shortcut_label = tf.next_label(if is_and { "false" } else { "true" });
+
+            let src1 = chomp_exp(*lhs, instructions, tf);
+            instructions.push(if is_and {
+                Instruction::JumpIfZero {
+                    condition: src1,
+                    target: shortcut_label.clone(),
+                }
+            } else {
+                Instruction::JumpIfNotZero {
+                    condition: src1,
+                    target: shortcut_label.clone(),
+                }
+            });
+
+            let src2 = chomp_exp(*rhs, instructions, tf);
+            instructions.push(if is_and {
+                Instruction::JumpIfZero {
+                    condition: src2,
+                    target: shortcut_label.clone(),
+                }
+            } else {
+                Instruction::JumpIfNotZero {
+                    condition: src2,
+                    target: shortcut_label.clone(),
+                }
+            });
+
+            let dst = tf.next();
+            let end_label = tf.next_label("end");
+            instructions.extend(
+                [
+                    Instruction::Copy {
+                        src: Val::Constant(if is_and { 1 } else { 0 }),
+                        dst: dst.clone(),
+                    },
+                    Instruction::Jump {
+                        target: end_label.clone(),
+                    },
+                    Instruction::Label(shortcut_label),
+                    Instruction::Copy {
+                        src: Val::Constant(if is_and { 0 } else { 1 }),
+                        dst: dst.clone(),
+                    },
+                    Instruction::Label(end_label),
+                ]
+                .into_iter(),
+            );
 
             Val::Var(dst)
         }
@@ -114,24 +201,29 @@ fn chomp_exp(
             let op = match op {
                 Ampersand => BinaryOp::BitAnd,
                 Caret => BinaryOp::BitXor,
-                DoubleAmpersand => todo!(),
-                DoubleEqual => todo!(),
-                DoublePipe => todo!(),
+                DoubleAmpersand => unreachable!(),
+                DoubleEqual => BinaryOp::Equal,
+                DoublePipe => unreachable!(),
                 ForwardSlash => BinaryOp::Divide,
-                GreaterThan => todo!(),
-                GreaterThanEqual => todo!(),
+                GreaterThan => BinaryOp::GreaterThan,
+                GreaterThanEqual => BinaryOp::GreaterThanEqual,
                 LeftShift => BinaryOp::BitLeftShift,
-                LessThan => todo!(),
-                LessThanEqual => todo!(),
+                LessThan => BinaryOp::LessThan,
+                LessThanEqual => BinaryOp::LessThanEqual,
                 Minus => BinaryOp::Subtract,
-                NotEqual => todo!(),
+                NotEqual => BinaryOp::NotEqual,
                 Percent => BinaryOp::Remainder,
                 Pipe => BinaryOp::BitOr,
                 Plus => BinaryOp::Add,
                 RightShift => BinaryOp::BitRightShift,
                 Star => BinaryOp::Multiply,
             };
-            instructions.push(Instruction::Binary { op, src1, src2, dst });
+            instructions.push(Instruction::Binary {
+                op,
+                src1,
+                src2,
+                dst,
+            });
 
             Val::Var(dst)
         }
@@ -147,12 +239,22 @@ pub enum Val {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Temporary(pub usize);
 
-#[derive(Default)]
-pub struct TemporaryFactory(usize);
-impl TemporaryFactory {
+pub struct TemporaryFactory<'a> {
+    parent: &'a Identifier,
+    i: usize,
+}
+impl<'a> TemporaryFactory<'a> {
+    pub fn new(parent: &'a Identifier) -> Self {
+        Self { parent, i: 0 }
+    }
     pub fn next(&mut self) -> Temporary {
-        let out = Temporary(self.0);
-        self.0 += 1;
+        let out = Temporary(self.i);
+        self.i += 1;
         out
+    }
+    pub fn next_label(&mut self, kind: &str) -> Identifier {
+        let out = format!("{}_{}{}", self.parent.0, kind, self.i);
+        self.i += 1;
+        Identifier(out)
     }
 }

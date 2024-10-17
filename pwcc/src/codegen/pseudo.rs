@@ -28,7 +28,7 @@ impl From<tacky::Program> for Program<State> {
 impl From<tacky::Function> for Function<State> {
     fn from(function: tacky::Function) -> Self {
         Self {
-            name: function.name,
+            name: function.name.0,
             instructions: function.body.into(),
         }
     }
@@ -121,6 +121,12 @@ impl From<tacky::Instructions> for Instructions<State> {
                                         tacky::BinaryOp::BitRightShift => BinaryOp::SAR,
                                         tacky::BinaryOp::Divide => unreachable!(),
                                         tacky::BinaryOp::Remainder => unreachable!(),
+                                        tacky::BinaryOp::Equal => todo!(),
+                                        tacky::BinaryOp::NotEqual => todo!(),
+                                        tacky::BinaryOp::LessThan => todo!(),
+                                        tacky::BinaryOp::LessThanEqual => todo!(),
+                                        tacky::BinaryOp::GreaterThan => todo!(),
+                                        tacky::BinaryOp::GreaterThanEqual => todo!(),
                                     },
                                     src: src2.into(),
                                     dst: wrap(dst.into()),
@@ -128,6 +134,11 @@ impl From<tacky::Instructions> for Instructions<State> {
                             ]
                             .into_iter(),
                         ),
+                        Copy { src, dst } => todo!(),
+                        Jump { target } => todo!(),
+                        JumpIfZero { condition, target } => todo!(),
+                        JumpIfNotZero { condition, target } => todo!(),
+                        Label(_) => todo!(),
                     };
                     out
                 })
@@ -142,6 +153,7 @@ impl From<tacky::UnaryOp> for UnaryOp {
         match op {
             Complement => UnaryOp::Not,
             Negate => UnaryOp::Neg,
+            Not => todo!(),
         }
     }
 }

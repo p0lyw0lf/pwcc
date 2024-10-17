@@ -33,8 +33,15 @@ nodes! {
         *CloseBrace
     );
     Statement(*KeywordReturn *<exp: Exp> *Semicolon);
-    UnaryOp(+Minus +Tilde);
-    BinaryOp(+Plus +Minus +Star +ForwardSlash +Percent +LeftShift +RightShift+Ampersand +Caret +Pipe);
+    UnaryOp(+Minus +Tilde +Exclamation);
+    BinaryOp(
+        // Arithmetic operators
+        +Plus +Minus +Star +ForwardSlash +Percent
+        // Bitwise operators
+        +LeftShift +RightShift +Ampersand +Caret +Pipe
+        // Logical operators
+        +DoubleAmpersand +DoublePipe +DoubleEqual +NotEqual +LessThan +LessThanEqual +GreaterThan +GreaterThanEqual
+    );
 }
 
 /// Exp is special, since its AST doesn't exactly correspond with the grammar, so we define it
@@ -62,10 +69,14 @@ impl BinaryOp {
         match self {
             Star | ForwardSlash | Percent => 50,
             Plus | Minus => 45,
-            LeftShift | RightShift => 40,
-            Ampersand => 35,
-            Caret => 34,
-            Pipe => 33,
+            LeftShift | RightShift => 44,
+            Ampersand => 43,
+            Caret => 42,
+            Pipe => 41,
+            LessThan | LessThanEqual | GreaterThan | GreaterThanEqual => 35,
+            DoubleEqual | NotEqual => 30,
+            DoubleAmpersand => 10,
+            DoublePipe => 5,
         }
     }
 }

@@ -15,24 +15,33 @@ Tokenizer for Token with TokenError:
     r"return\b": KeywordReturn,
     r"[a-zA-Z_]\w*\b": Ident(String),
     r"[0-9]+\b": Constant(isize),
-    r"\(": OpenParen,
-    r"\)": CloseParen,
-    r"\{": OpenBrace,
-    r"\}": CloseBrace,
-    r";": Semicolon,
-    r"\+\+": Increment,
+    r"!=": NotEqual,
+    r"&&": DoubleAmpersand,
     r"--": Decrement,
     r"<<": LeftShift,
+    r"<=": LessThanEqual,
+    r"==": DoubleEqual,
+    r">=": GreaterThanEqual,
     r">>": RightShift,
-    r"\+": Plus,
-    r"-": Minus,
-    r"\*": Star,
-    r"/": ForwardSlash,
+    r"\+\+": Increment,
+    r"\|\|": DoublePipe,
+    r"!": Exclamation,
     r"%": Percent,
-    r"~": Tilde,
     r"&": Ampersand,
-    r"\|": Pipe,
+    r"-": Minus,
+    r"/": ForwardSlash,
+    r";": Semicolon,
+    r"<": LessThan,
+    r">": GreaterThan,
+    r"\(": OpenParen,
+    r"\)": CloseParen,
+    r"\*": Star,
+    r"\+": Plus,
     r"\^": Caret,
+    r"\{": OpenBrace,
+    r"\|": Pipe,
+    r"\}": CloseBrace,
+    r"~": Tilde,
 }
 
 #[derive(Debug)]
@@ -77,8 +86,8 @@ mod test {
     fn regex_special_chars() {
         use Token::*;
         assert_eq!(
-            Ok(Vec::from([Plus, Star, Caret, Pipe])),
-            lex("+*^|")
+            Ok(Vec::from([Plus, Star, Caret, DoublePipe, Pipe])),
+            lex("+*^|||")
         );
     }
 }

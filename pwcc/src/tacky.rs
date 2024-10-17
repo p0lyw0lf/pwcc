@@ -98,6 +98,7 @@ fn chomp_exp(
             let dst = tf.next();
             use parser::UnaryOp::*;
             let op = match op {
+                Exclamation => todo!(),
                 Minus => UnaryOp::Negate,
                 Tilde => UnaryOp::Complement,
             };
@@ -111,16 +112,24 @@ fn chomp_exp(
             let dst = tf.next();
             use parser::BinaryOp::*;
             let op = match op {
-                Plus => BinaryOp::Add,
-                Minus => BinaryOp::Subtract,
-                Star => BinaryOp::Multiply,
-                ForwardSlash => BinaryOp::Divide,
-                Percent => BinaryOp::Remainder,
-                LeftShift => BinaryOp::BitLeftShift,
-                RightShift => BinaryOp::BitRightShift,
                 Ampersand => BinaryOp::BitAnd,
                 Caret => BinaryOp::BitXor,
+                DoubleAmpersand => todo!(),
+                DoubleEqual => todo!(),
+                DoublePipe => todo!(),
+                ForwardSlash => BinaryOp::Divide,
+                GreaterThan => todo!(),
+                GreaterThanEqual => todo!(),
+                LeftShift => BinaryOp::BitLeftShift,
+                LessThan => todo!(),
+                LessThanEqual => todo!(),
+                Minus => BinaryOp::Subtract,
+                NotEqual => todo!(),
+                Percent => BinaryOp::Remainder,
                 Pipe => BinaryOp::BitOr,
+                Plus => BinaryOp::Add,
+                RightShift => BinaryOp::BitRightShift,
+                Star => BinaryOp::Multiply,
             };
             instructions.push(Instruction::Binary { op, src1, src2, dst });
 

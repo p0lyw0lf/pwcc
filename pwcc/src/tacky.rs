@@ -259,20 +259,21 @@ pub struct Temporary(pub usize);
 
 pub struct TemporaryFactory<'a> {
     parent: &'a Identifier,
-    i: usize,
+    tmp_i: usize,
+    label_i: usize,
 }
 impl<'a> TemporaryFactory<'a> {
     pub fn new(parent: &'a Identifier) -> Self {
-        Self { parent, i: 0 }
+        Self { parent, tmp_i: 0, label_i: 0 }
     }
     pub fn next(&mut self) -> Temporary {
-        let out = Temporary(self.i);
-        self.i += 1;
+        let out = Temporary(self.tmp_i);
+        self.tmp_i += 1;
         out
     }
     pub fn next_label(&mut self, kind: &str) -> Identifier {
-        let out = format!("{}_{}{}", self.parent.0, kind, self.i);
-        self.i += 1;
+        let out = format!("{}_{}{}", self.parent.0, kind, self.label_i);
+        self.label_i += 1;
         Identifier(out)
     }
 }

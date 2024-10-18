@@ -62,11 +62,11 @@ pub enum Instruction {
         target: Identifier,
     },
     JumpIfZero {
-        condition: Val,
+        condition: Temporary,
         target: Identifier,
     },
     JumpIfNotZero {
-        condition: Val,
+        condition: Temporary,
         target: Identifier,
     },
     Label(Identifier),
@@ -112,6 +112,24 @@ impl Instructions {
     }
 }
 
+fn make_temporary(
+    v: Val,
+    instructions: &mut Vec<Instruction>,
+    tf: &mut TemporaryFactory,
+) -> Temporary {
+    match v {
+        Val::Var(t) => t,
+        c @ Val::Constant(_) => {
+            let dst = tf.next();
+            instructions.push(Instruction::Copy {
+                src: c,
+                dst: dst.clone(),
+            });
+            dst
+        }
+    }
+}
+
 /// Takes in an expression, list of instructions, and the next temporary available, and returns the
 /// final value of the expression.
 fn chomp_exp(
@@ -144,7 +162,7 @@ fn chomp_exp(
 
             let shortcut_label = tf.next_label(if is_and { "false" } else { "true" });
 
-            let src1 = chomp_exp(*lhs, instructions, tf);
+            let src1 = make_temporary(chomp_exp(*lhs, instructions, tf), instructions, tf);
             instructions.push(if is_and {
                 Instruction::JumpIfZero {
                     condition: src1,
@@ -157,7 +175,7 @@ fn chomp_exp(
                 }
             });
 
-            let src2 = chomp_exp(*rhs, instructions, tf);
+            let src2 = make_temporary(chomp_exp(*rhs, instructions, tf), instructions, tf);
             instructions.push(if is_and {
                 Instruction::JumpIfZero {
                     condition: src2,

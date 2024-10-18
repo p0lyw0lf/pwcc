@@ -2,6 +2,7 @@ use core::fmt::Display;
 use core::fmt::Formatter;
 
 use crate::codegen::*;
+use crate::tacky::Identifier;
 
 impl Display for Program<hardware::Pass> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -43,6 +44,11 @@ impl Display for Instruction<hardware::Pass> {
                 writeln!(f, "\tret")?;
                 Ok(())
             }
+            Cmp { left, right } => writeln!(f, "\tcmpl\t{right}, {left}"),
+            Jmp(label) => writeln!(f, "\tjmp\t.L{label}"),
+            JmpCC(cc, label) => writeln!(f, "\tj{cc}\t.L{label}"),
+            SetCC(cc, dst) => writeln!(f, "\tset{cc}\t{dst:1}"),
+            Label(label) => writeln!(f, ".L{label}:"),
         }
     }
 }
@@ -73,6 +79,20 @@ impl Display for BinaryOp {
     }
 }
 
+impl Display for CondCode {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        use CondCode::*;
+        match self {
+            E => write!(f, "e"),
+            NE => write!(f, "ne"),
+            G => write!(f, "g"),
+            GE => write!(f, "ge"),
+            L => write!(f, "l"),
+            LE => write!(f, "le"),
+        }
+    }
+}
+
 impl Display for Operand<hardware::Pass> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use Operand::*;
@@ -96,12 +116,28 @@ impl Display for hardware::Location {
 impl Display for hardware::Reg {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use hardware::Reg::*;
-        match self {
-            AX => write!(f, "%eax"),
-            CX => write!(f, "%ecx"),
-            DX => write!(f, "%edx"),
-            R10 => write!(f, "%r10d"),
-            R11 => write!(f, "%r11d"),
+        if f.width() == Some(1) {
+            match self {
+                AX => write!(f, "%al"),
+                CX => write!(f, "%cl"),
+                DX => write!(f, "%dl"),
+                R10 => write!(f, "%r10b"),
+                R11 => write!(f, "%r11b"),
+            }
+        } else {
+            match self {
+                AX => write!(f, "%eax"),
+                CX => write!(f, "%ecx"),
+                DX => write!(f, "%edx"),
+                R10 => write!(f, "%r10d"),
+                R11 => write!(f, "%r11d"),
+            }
         }
+    }
+}
+
+impl Display for Identifier {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
     }
 }

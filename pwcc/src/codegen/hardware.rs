@@ -151,6 +151,21 @@ pub fn pass<S: State<Location = Location>>(instructions: Instructions<S>) -> Ins
                         };
                         Box::new([i1, i2].into_iter())
                     }
+                    // Memory -> Memory cmp operations aren't allowed
+                    Cmp {
+                        left: left @ super::Location(Location::Stack(_)),
+                        right: right @ Operand::Location(super::Location(Location::Stack(_))),
+                    } => {
+                        let i1: Instruction<Pass> = Mov {
+                            src: Operand::Location(left.identity()),
+                            dst: r10d(),
+                        };
+                        let i2: Instruction<Pass> = Cmp {
+                            left: r10d(),
+                            right: right.identity(),
+                        };
+                        Box::new([i1, i2].into_iter())
+                    }
                     other => Box::new([other.identity()].into_iter()),
                 }
             });

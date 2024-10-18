@@ -6,6 +6,8 @@ use functional::functor;
 use functional::Foldable;
 use functional::Functor;
 
+use crate::tacky::Identifier;
+
 pub mod hardware;
 pub mod pseudo;
 pub mod stack;
@@ -72,10 +74,18 @@ pub enum Instruction<S: State> {
         src: Operand<S>,
         dst: Location<S>,
     },
+    Cmp {
+        left: Location<S>,
+        right: Operand<S>,
+    },
     Idiv {
         denom: Operand<S>,
     },
     Cdq,
+    Jmp(Identifier),
+    JmpCC(CondCode, Identifier),
+    SetCC(CondCode, Location<S>),
+    Label(Identifier),
     AllocateStack {
         amount: usize,
     },
@@ -86,14 +96,20 @@ foldable!(enum Instruction<S: State> for Location<S> | {
     Mov { src, dst, },
     Unary { dst, },
     Binary { src, dst, },
+    Cmp { left, right, },
     Idiv { denom, },
 });
 functor!(enum Instruction<I: State> -> <O: State> where Location<I> |> Location<O> | {
     Mov { src, dst, .., },
     Unary { dst, .., op, },
     Binary { src, dst, .., op, },
+    Cmp { left, right, .., },
     Idiv { denom, .., },
     Cdq,
+    Jmp(-ident,),
+    JmpCC(-cc,-ident,),
+    SetCC(-cc,+loc,),
+    Label(-ident,),
     AllocateStack { .., amount, },
     Ret,
 });
@@ -114,6 +130,16 @@ pub enum BinaryOp {
     Xor,
     SAL,
     SAR,
+}
+
+#[derive(Debug, Copy, Clone)]
+pub enum CondCode {
+    E,
+    NE,
+    G,
+    GE,
+    L,
+    LE,
 }
 
 #[derive(Debug)]

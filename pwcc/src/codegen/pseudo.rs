@@ -55,6 +55,28 @@ impl From<tacky::Instructions> for Instructions<State> {
                             ]
                             .into_iter(),
                         ),
+                        Unary {
+                            op: tacky::UnaryOp::Not,
+                            src,
+                            dst,
+                        } => Box::new(
+                            [
+                                Instruction::Mov {
+                                    src: src.into(),
+                                    dst: wrap(dst.clone().into()),
+                                },
+                                Instruction::Cmp {
+                                    left: wrap(dst.into()),
+                                    right: Operand::Imm(0),
+                                },
+                                Instruction::Mov {
+                                    src: Operand::Imm(0),
+                                    dst: wrap(dst.clone().into()),
+                                },
+                                Instruction::SetCC(CondCode::E, wrap(dst.into())),
+                            ]
+                            .into_iter(),
+                        ),
                         Unary { op, src, dst } => Box::new(
                             [
                                 Instruction::Mov {
@@ -62,9 +84,53 @@ impl From<tacky::Instructions> for Instructions<State> {
                                     dst: wrap(dst.into()),
                                 },
                                 Instruction::Unary {
-                                    op: op.into(),
+                                    op: match op {
+                                        tacky::UnaryOp::Complement => UnaryOp::Not,
+                                        tacky::UnaryOp::Negate => UnaryOp::Neg,
+                                        tacky::UnaryOp::Not => unreachable!(),
+                                    },
                                     dst: wrap(dst.into()),
                                 },
+                            ]
+                            .into_iter(),
+                        ),
+                        Binary {
+                            op:
+                                op @ (tacky::BinaryOp::Equal
+                                | tacky::BinaryOp::NotEqual
+                                | tacky::BinaryOp::LessThan
+                                | tacky::BinaryOp::LessThanEqual
+                                | tacky::BinaryOp::GreaterThan
+                                | tacky::BinaryOp::GreaterThanEqual),
+                            src1,
+                            src2,
+                            dst,
+                        } => Box::new(
+                            [
+                                Instruction::Mov {
+                                    src: src1.into(),
+                                    dst: wrap(dst.clone().into()),
+                                },
+                                Instruction::Cmp {
+                                    left: wrap(dst.clone().into()),
+                                    right: src2.into(),
+                                },
+                                Instruction::Mov {
+                                    src: Operand::Imm(0),
+                                    dst: wrap(dst.clone().into()),
+                                },
+                                Instruction::SetCC(
+                                    match op {
+                                        tacky::BinaryOp::Equal => CondCode::E,
+                                        tacky::BinaryOp::NotEqual => CondCode::NE,
+                                        tacky::BinaryOp::LessThan => CondCode::L,
+                                        tacky::BinaryOp::LessThanEqual => CondCode::LE,
+                                        tacky::BinaryOp::GreaterThan => CondCode::G,
+                                        tacky::BinaryOp::GreaterThanEqual => CondCode::GE,
+                                        _ => unreachable!(),
+                                    },
+                                    wrap(dst.into()),
+                                ),
                             ]
                             .into_iter(),
                         ),
@@ -134,27 +200,40 @@ impl From<tacky::Instructions> for Instructions<State> {
                             ]
                             .into_iter(),
                         ),
-                        Copy { src, dst } => todo!(),
-                        Jump { target } => todo!(),
-                        JumpIfZero { condition, target } => todo!(),
-                        JumpIfNotZero { condition, target } => todo!(),
-                        Label(_) => todo!(),
+                        Copy { src, dst } => Box::new(
+                            [Instruction::Mov {
+                                src: src.into(),
+                                dst: wrap(dst.into()),
+                            }]
+                            .into_iter(),
+                        ),
+                        Jump { target } => Box::new([Instruction::Jmp(target)].into_iter()),
+                        JumpIfZero { condition, target } => Box::new(
+                            [
+                                Instruction::Cmp {
+                                    left: wrap(condition.into()),
+                                    right: Operand::Imm(0),
+                                },
+                                Instruction::JmpCC(CondCode::E, target),
+                            ]
+                            .into_iter(),
+                        ),
+                        JumpIfNotZero { condition, target } => Box::new(
+                            [
+                                Instruction::Cmp {
+                                    left: wrap(condition.into()),
+                                    right: Operand::Imm(0),
+                                },
+                                Instruction::JmpCC(CondCode::NE, target),
+                            ]
+                            .into_iter(),
+                        ),
+                        Label(identifier) => Box::new([Instruction::Label(identifier)].into_iter()),
                     };
                     out
                 })
                 .collect(),
         )
-    }
-}
-
-impl From<tacky::UnaryOp> for UnaryOp {
-    fn from(op: tacky::UnaryOp) -> Self {
-        use tacky::UnaryOp::*;
-        match op {
-            Complement => UnaryOp::Not,
-            Negate => UnaryOp::Neg,
-            Not => todo!(),
-        }
     }
 }
 

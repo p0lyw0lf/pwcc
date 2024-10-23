@@ -81,16 +81,15 @@ macro_rules! node {
 
         impl FromTokens for $node {
             fn from_tokens(ts: &mut (impl Iterator<Item = Token> + Clone)) -> Result<Self, ParseError> {
-                use $node::*;
                 $(
                 let mut iter = ts.clone();
                 if let Ok(out) = (|| -> Result<Self, ParseError> {
                     $(let out = {
                         expect_token!(iter, $itoken);
-                        $itoken
+                        $node::$itoken
                     };)?
-                    $(let out = $subnode($subnode.from_tokens(&mut iter)?);)?
-                    $(let out = $ctoken(expect_token!(iter, $ctoken($pat): $ty));)?
+                    $(let out = $node::$subnode($subnode::from_tokens(&mut iter)?);)?
+                    $(let out = $node::$ctoken(expect_token!(iter, $ctoken($pat): $ty));)?
                     Ok(out)
                 })() {
                     *ts = iter;
@@ -105,14 +104,38 @@ macro_rules! node {
         impl ToTokens for $node {
             fn to_tokens(self) -> impl Iterator<Item = Token> {
                 use $node::*;
-                match self {$(
-                    $($itoken => Box::new(::core::iter::once(Token::$itoken)) as Box<dyn Iterator<Item = Token>>,)?
-                    $($subnode(s) => Box::new(s.to_tokens()) as Box<dyn Iterator<Item = Token>>,)?
-                    $($ctoken(c) => Box::new(::core::iter::once(Token::$ctoken(c.into()))) as Box<dyn Iterator<Item = Token>>,)?
-                )*}
+                let out: Box<dyn Iterator<Item = Token>> = match self {$(
+                    $($itoken => Box::new(::core::iter::once(Token::$itoken)),)?
+                    $($subnode(s) => Box::new(s.to_tokens()),)?
+                    $($ctoken(c) => Box::new(::core::iter::once(Token::$ctoken(c.into()))),)?
+                )*};
+                out
             }
         }
     };
+
+    // Star: repeat node
+    ($node:ident [$subnode:ident]) => {
+        #[derive(Debug)]
+        #[cfg_attr(test, derive(PartialEq))]
+        pub struct $node(Vec<$subnode>);
+
+        impl FromTokens for $node {
+            fn from_tokens(ts: &mut (impl Iterator<Item = Token> + Clone)) -> Result<Self, ParseError> {
+                let mut out = Vec::<$subnode>::new();
+                while let Ok(subnode) = $subnode::from_tokens(ts) {
+                    out.push(subnode);
+                }
+                Ok($node(out))
+            }
+        }
+
+        impl ToTokens for $node {
+            fn to_tokens(self) -> impl Iterator<Item = Token> {
+                self.0.into_iter().flat_map(ToTokens::to_tokens)
+            }
+        }
+    }
 }
 pub(super) use node;
 

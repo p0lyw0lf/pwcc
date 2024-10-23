@@ -30,7 +30,7 @@ impl From<parser::Function> for Function {
     fn from(function: parser::Function) -> Self {
         let name = Identifier(function.name);
         Self {
-            body: Instructions::from_function(&name, function.statement),
+            body: Instructions::from_function(&name, function.body),
             name,
         }
     }
@@ -100,14 +100,9 @@ pub enum BinaryOp {
 }
 
 impl Instructions {
-    fn from_function(identifier: &Identifier, statement: parser::Statement) -> Self {
+    fn from_function(identifier: &Identifier, statement: parser::Body) -> Self {
         let mut instructions = Vec::<Instruction>::new();
-        let last_val = chomp_exp(
-            statement.exp,
-            &mut instructions,
-            &mut TemporaryFactory::new(identifier),
-        );
-        instructions.push(Instruction::Return { val: last_val });
+        todo!();
         Self(instructions)
     }
 }
@@ -245,6 +240,8 @@ fn chomp_exp(
 
             Val::Var(dst)
         }
+        Var { ident } => todo!(),
+        Assignment { lhs, rhs } => todo!(),
     }
 }
 

@@ -7,6 +7,9 @@ use crate::lexer::Token;
 mod macros;
 use macros::*;
 
+#[cfg(test)]
+mod test;
+
 #[derive(Debug)]
 #[cfg_attr(test, derive(PartialEq))]
 pub enum ParseError {
@@ -29,10 +32,20 @@ nodes! {
     Program(*<function: Function>);
     Function(
         *KeywordInt *{name: Ident(_ = String)} *OpenParen *KeywordVoid *CloseParen *OpenBrace
-            *<statement: Statement>
+            *<body: Body>
         *CloseBrace
     );
-    Statement(*KeywordReturn *<exp: Exp> *Semicolon);
+    Body[BlockItem];
+    BlockItem(+<Statement> +<Declaration>);
+    Statement(+<ExpressionStmt> +<ReturnStmt> +<NullStmt>);
+    ExpressionStmt(*<exp: Exp> *Semicolon);
+    ReturnStmt(*KeywordReturn *<exp: Exp> *Semicolon);
+    NullStmt(*Semicolon);
+    Declaration(*KeywordInt *{name: Ident(_ = String)} *<init: Initializer>);
+    Initializer(+<NoInit> +<ExpressionInit>);
+    NoInit(*Semicolon);
+    ExpressionInit(*Equal *<exp: Exp> *Semicolon);
+    // Exp defined separately
     UnaryOp(+Minus +Tilde +Exclamation);
     BinaryOp(
         // Arithmetic operators
@@ -42,6 +55,8 @@ nodes! {
         // Logical operators
         +DoubleAmpersand +DoublePipe +DoubleEqual +NotEqual +LessThan +LessThanEqual +GreaterThan +GreaterThanEqual
     );
+    // Not used in grammar, only for parsing Exp
+    BinaryTok(+<BinaryOp> +Equal);
 }
 
 /// Exp is special, since its AST doesn't exactly correspond with the grammar, so we define it
@@ -52,6 +67,9 @@ pub enum Exp {
     Constant {
         constant: isize,
     },
+    Var {
+        ident: String,
+    },
     Unary {
         op: UnaryOp,
         exp: Box<Exp>,
@@ -61,22 +79,29 @@ pub enum Exp {
         op: BinaryOp,
         rhs: Box<Exp>,
     },
+    Assignment {
+        lhs: Box<Exp>, // Semantic analysis ensures this is a proper LValue
+        rhs: Box<Exp>,
+    },
 }
 
-impl BinaryOp {
+impl BinaryTok {
     fn precedence(&self) -> usize {
         use BinaryOp::*;
         match self {
-            Star | ForwardSlash | Percent => 50,
-            Plus | Minus => 45,
-            LeftShift | RightShift => 44,
-            Ampersand => 43,
-            Caret => 42,
-            Pipe => 41,
-            LessThan | LessThanEqual | GreaterThan | GreaterThanEqual => 35,
-            DoubleEqual | NotEqual => 30,
-            DoubleAmpersand => 10,
-            DoublePipe => 5,
+            BinaryTok::BinaryOp(op) => match op {
+                Star | ForwardSlash | Percent => 50,
+                Plus | Minus => 45,
+                LeftShift | RightShift => 44,
+                Ampersand => 43,
+                Caret => 42,
+                Pipe => 41,
+                LessThan | LessThanEqual | GreaterThan | GreaterThanEqual => 35,
+                DoubleEqual | NotEqual => 30,
+                DoubleAmpersand => 10,
+                DoublePipe => 5,
+            },
+            BinaryTok::Equal => 1,
         }
     }
 }
@@ -88,6 +113,15 @@ impl FromTokens for Exp {
             if let Ok(out) = (|| -> Result<Exp, ParseError> {
                 let constant = expect_token!(iter, Constant(_): isize);
                 Ok(Exp::Constant { constant })
+            })() {
+                *ts = iter;
+                return Ok(out);
+            }
+
+            let mut iter = ts.clone();
+            if let Ok(out) = (|| -> Result<Exp, ParseError> {
+                let ident = expect_token!(iter, Ident(_): String);
+                Ok(Exp::Var { ident })
             })() {
                 *ts = iter;
                 return Ok(out);
@@ -128,21 +162,36 @@ impl FromTokens for Exp {
             let mut left = parse_factor(&mut iter)?;
 
             let mut peek_iter = iter.clone();
-            let mut next_token = BinaryOp::from_tokens(&mut peek_iter);
+            let mut next_token = BinaryTok::from_tokens(&mut peek_iter);
             while let Ok(op) = next_token {
-                if op.precedence() < min_prec {
+                let prec = op.precedence();
+                if prec < min_prec {
                     break;
                 }
                 iter = peek_iter;
-                let right = parse_exp(&mut iter, op.precedence() + 1)?;
-                left = Exp::Binary {
-                    lhs: Box::new(left),
-                    op,
-                    rhs: Box::new(right),
-                };
+
+                match op {
+                    BinaryTok::BinaryOp(op) => {
+                        // Left-associative
+                        let right = parse_exp(&mut iter, prec + 1)?;
+                        left = Exp::Binary {
+                            lhs: Box::new(left),
+                            op,
+                            rhs: Box::new(right),
+                        };
+                    }
+                    BinaryTok::Equal => {
+                        // Right-associative
+                        let right = parse_exp(&mut iter, prec)?;
+                        left = Exp::Assignment {
+                            lhs: Box::new(left),
+                            rhs: Box::new(right),
+                        };
+                    }
+                }
 
                 peek_iter = iter.clone();
-                next_token = BinaryOp::from_tokens(&mut peek_iter);
+                next_token = BinaryTok::from_tokens(&mut peek_iter);
             }
 
             *ts = iter;
@@ -159,6 +208,7 @@ impl ToTokens for Exp {
         use Token::*;
         let out: Box<dyn Iterator<Item = Token>> = match self {
             Exp::Constant { constant } => Box::new(core::iter::once(Token::Constant(constant))),
+            Var { ident } => Box::new(core::iter::once(Ident(ident))),
             Unary { op, exp } => Box::new(
                 op.to_tokens()
                     .chain(core::iter::once(OpenParen))
@@ -173,6 +223,11 @@ impl ToTokens for Exp {
                     .chain(core::iter::once(OpenParen))
                     .chain(rhs.to_tokens())
                     .chain(core::iter::once(CloseParen)),
+            ),
+            Assignment { lhs, rhs } => Box::new(
+                lhs.to_tokens()
+                    .chain(core::iter::once(Equal))
+                    .chain(rhs.to_tokens()),
             ),
         };
         out
@@ -189,111 +244,4 @@ where
         Some(token) => Err(ParseError::ExtraToken { actual: token }),
         None => Ok(p),
     })
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    fn assert_forwards<T: FromTokens + Debug + PartialEq>(tokens: &[Token], expected: &T) {
-        let actual = T::from_tokens(&mut Vec::from(tokens).into_iter());
-        assert_eq!(Ok(expected), actual.as_ref());
-    }
-
-    fn assert_backwards(tree: impl ToTokens + Debug + PartialEq, expected: &[Token]) {
-        let actual = tree.to_tokens().collect::<Vec<_>>();
-        assert_eq!(expected, actual);
-    }
-
-    fn assert_convertible(s: &str, tree: impl ToTokens + FromTokens + Debug + PartialEq) {
-        let tokens = crate::lexer::lex(s).expect("lex failed");
-        assert_forwards(&tokens, &tree);
-        assert_backwards(tree, &tokens);
-    }
-
-    #[test]
-    fn constant() {
-        assert_convertible("2", Exp::Constant { constant: 2 });
-    }
-
-    #[test]
-    fn statement() {
-        assert_convertible(
-            "return 2;",
-            Statement {
-                exp: Exp::Constant { constant: 2 },
-            },
-        );
-    }
-
-    #[test]
-    fn function() {
-        assert_convertible(
-            "int main(void) { return 2; }",
-            Function {
-                name: "main".into(),
-                statement: Statement {
-                    exp: Exp::Constant { constant: 2 },
-                },
-            },
-        );
-    }
-
-    #[test]
-    fn unary() {
-        assert_convertible(
-            "-(-(~(3)))",
-            Exp::Unary {
-                op: UnaryOp::Minus,
-                exp: Box::new(Exp::Unary {
-                    op: UnaryOp::Minus,
-                    exp: Box::new(Exp::Unary {
-                        op: UnaryOp::Tilde,
-                        exp: Box::new(Exp::Constant { constant: 3 }),
-                    }),
-                }),
-            },
-        )
-    }
-
-    #[test]
-    fn binary() {
-        assert_convertible(
-            "((1)+(2))*(3)",
-            Exp::Binary {
-                lhs: Box::new(Exp::Binary {
-                    lhs: Box::new(Exp::Constant { constant: 1 }),
-                    op: BinaryOp::Plus,
-                    rhs: Box::new(Exp::Constant { constant: 2 }),
-                }),
-                op: BinaryOp::Star,
-                rhs: Box::new(Exp::Constant { constant: 3 }),
-            },
-        );
-    }
-
-    #[test]
-    fn binary_precedence() {
-        let tokens = crate::lexer::lex("1*2-3*(4+5)").expect("lex failed");
-        assert_forwards(
-            &tokens,
-            &Exp::Binary {
-                lhs: Box::new(Exp::Binary {
-                    lhs: Box::new(Exp::Constant { constant: 1 }),
-                    op: BinaryOp::Star,
-                    rhs: Box::new(Exp::Constant { constant: 2 }),
-                }),
-                op: BinaryOp::Minus,
-                rhs: Box::new(Exp::Binary {
-                    lhs: Box::new(Exp::Constant { constant: 3 }),
-                    op: BinaryOp::Star,
-                    rhs: Box::new(Exp::Binary {
-                        lhs: Box::new(Exp::Constant { constant: 4 }),
-                        op: BinaryOp::Plus,
-                        rhs: Box::new(Exp::Constant { constant: 5 }),
-                    }),
-                }),
-            },
-        )
-    }
 }

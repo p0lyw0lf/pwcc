@@ -32,6 +32,7 @@ Tokenizer for Token with TokenError:
     r"/": ForwardSlash,
     r";": Semicolon,
     r"<": LessThan,
+    r"=": Equal,
     r">": GreaterThan,
     r"\(": OpenParen,
     r"\)": CloseParen,

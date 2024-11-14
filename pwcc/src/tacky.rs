@@ -15,8 +15,6 @@ impl From<parser::Program> for Program {
     }
 }
 
-// TODO: split this between "real" (in source code) and "fake" (made up by the compiler)
-// identifiers?
 #[derive(Debug, Clone)]
 pub struct Identifier(pub String);
 

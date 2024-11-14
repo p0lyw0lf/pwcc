@@ -3,10 +3,10 @@ use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 
-use pwcc::{lexer, parser, tacky, codegen, printer};
+use pwcc::{lexer, parser, tacky, codegen, printer, semantic};
 use functional::Functor;
 
-static STAGES: &'static [&'static str] = &["lex", "parse", "tacky", "codegen"];
+static STAGES: &'static [&'static str] = &["lex", "parse", "validate", "tacky", "codegen"];
 
 fn print_help() {
     println!(
@@ -77,6 +77,7 @@ fn main() -> Result<(), String> {
     }
 
     let tree = parser::parse(tokens).map_err(|e| format!("error parsing: {e}"))?;
+    let tree = semantic::validate(tree).map_err(|e| format!("error running semantic analysis: {e}"))?;
 
     if stage.map_or(false, |stage| stage < 2) {
         printer::pretty_print(tree);

@@ -4,6 +4,7 @@ use core::iter::Iterator;
 
 use crate::lexer::Token;
 
+mod functor;
 mod macros;
 use macros::*;
 

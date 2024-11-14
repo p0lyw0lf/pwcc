@@ -2,3 +2,6 @@
 name = "functional"
 version = "0.0.1"
 edition = "2021"
+
+[dependencies]
+functional_macros = { path = "../functional_macros" }

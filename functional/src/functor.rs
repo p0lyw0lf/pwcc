@@ -1,7 +1,7 @@
-pub trait Functor<B> {
+pub trait Functor<Inner> {
     type Input;
     type Output;
-    type Mapped; // : Functor<B, Input=B, Mapped=Self::Mapped> + Functor<Self::Input, Input=B, Mapped=Self>;
+    type Mapped;
     fn fmap(self, f: &mut impl FnMut(Self::Input) -> Self::Output) -> Self::Mapped;
 }
 
@@ -26,32 +26,6 @@ where
     type Mapped = Option<T::Mapped>;
     fn fmap(self, f: &mut impl FnMut(Self::Input) -> Self::Output) -> Self::Mapped {
         Option::map(self, &mut |x: T| x.fmap(f))
-    }
-}
-
-impl<T, E, Inner, A, B> Functor<Inner> for Result<T, E>
-where
-    T: Functor<Inner, Input=A, Output=B>,
-{
-    type Input = A;
-    type Output = B;
-    type Mapped = Result<T::Mapped, E>;
-    fn fmap(self, f: &mut impl FnMut(Self::Input) -> Self::Output) -> Self::Mapped {
-        Result::map(self, &mut |x: T| x.fmap(f))
-    }
-}
-
-
-impl<T, E, Inner, A, B> Functor<Result<Inner, E>> for Vec<Result<T, E>>
-where
-    T: Functor<Inner, Input=A, Output=B>,
-{
-    type Input = A;
-    type Output = B;
-    type Mapped = Result<Vec<T::Mapped>, E>;
-    fn fmap(self, f: &mut impl FnMut(Self::Input) -> Self::Output) -> Self::Mapped {
-        // Result::map(self, &mut |x: T| x.fmap(f))
-        todo!()
     }
 }
 
@@ -85,23 +59,6 @@ macro_rules! functor {
             }
         }
     };
-    (struct $outer:ident try for $inner:ident | {
-        $($field:ident,)+
-        ..,
-        $($other_field:ident,)*
-    }) => {
-        impl<E> $crate::Functor<Result<$inner, E>> for $outer {
-            type Input = $inner;
-            type Output = Result<$inner, E>;
-            type Mapped = Result<$outer, E>;
-            fn fmap(self, f: &mut impl FnMut(Self::Input) -> Self::Output) -> Self::Mapped {
-                Ok($outer {
-                    $($field: $crate::functor::Functor::<Result<$inner, E>>::fmap(self.$field, f)?,)+
-                    $($other_field: self.$other_field,)*
-                })
-            }
-        }
-    };
     (struct $outer:ident <$input_type:ident : $input_trait:ident> -> <$output_type:ident : $output_trait:ident> where $input_inner:path |> $output_inner:path | {
         $($field:ident,)+
         ..,
@@ -119,23 +76,6 @@ macro_rules! functor {
             }
         }
     };
-    (struct $outer:ident try for $inner:ident | ($(
-        $(+ $good_index:tt)?
-        $(- $bad_index:tt)?
-        ,
-    )+)) => {
-        impl<E> $crate::functor::Functor<Result<$inner, E>> for $outer {
-            type Input = $inner;
-            type Output = Result<$inner, E>;
-            type Mapped = Result<$outer, E>;
-            fn fmap(self, f: &mut impl FnMut(Self::Input) -> Self::Output) -> Self::Mapped {
-                Ok($outer ($(
-                    $($crate::functor::Functor::<Result<$inner, E>>::fmap(self.$good_index, f)?,)?
-                    $(self.$bad_index,)?
-                )+))
-            }
-        }
-    };
     (struct $outer:ident <$input_type:ident : $input_trait:ident> -> <$output_type:ident : $output_trait:ident> where $input_inner:path |> $output_inner:path | ($(
         $(+ $good_index:tt)?
         $(- $bad_index:tt)?
@@ -150,51 +90,6 @@ macro_rules! functor {
                     $($crate::functor::Functor::<$output_inner>::fmap(self.$good_index, f),)?
                     $(self.$bad_index,)?
                 )+)
-            }
-        }
-    };
-    (enum $outer:ident try for $inner:ident | { $(
-        $case:ident
-        $({
-            $($field:ident,)*
-            ..,
-            $($other_field:ident,)*
-        })?
-        $(($(
-            $(+ $good_field:ident)?
-            $(- $bad_field:ident)?
-            ,
-        )+))?
-        ,
-    )+ }) => {
-        impl<E> $crate::functor::Functor<Result<$inner, E>> for $outer {
-            type Input = $inner;
-            type Output = Result<$inner, E>;
-            type Mapped = Result<$outer, E>;
-            fn fmap(self, f: &mut impl FnMut(Self::Input) -> Self::Output) -> Self::Mapped {
-                Ok(match self {
-                $(
-                    Self::$case
-                    $({
-                        $($field,)*
-                        $($other_field,)*
-                    })?
-                    $(($(
-                        $($good_field,)?
-                        $($bad_field,)?
-                    )+))?
-                    => Self::Mapped::$case
-                    $({
-                        $($field: $crate::functor::Functor::<Result<$inner, E>>::fmap($field, f)?,)*
-                        $($other_field,)*
-                    })?
-                    $(($(
-                        $($crate::functor::Functor::<Result<$inner, E>>::fmap($good_field, f)?,)?
-                        $($bad_field,)?
-                    )+))?
-                    ,
-                )+
-                })
             }
         }
     };

@@ -9,7 +9,10 @@ mod ast {
     }
 
     #[derive(Debug, PartialEq)]
-    pub struct Exp(pub isize);
+    pub enum Exp {
+        Lit(isize),
+        Add { lhs: Box<Exp>, rhs: Box<Exp> },
+    }
 
     #[derive(Debug, PartialEq)]
     pub enum Statement {
@@ -25,13 +28,13 @@ use ast::*;
 fn base_traits() {
     let x = Function {
         name: "main".into(),
-        body: [Statement::Return(Exp(42))].into(),
+        body: [Statement::Return(Exp::Lit(42))].into(),
     };
     assert_eq!(
         x,
         Function {
             name: "main".into(),
-            body: [Statement::Return(Exp(42))].into(),
+            body: [Statement::Return(Exp::Lit(42))].into(),
         }
     );
 }

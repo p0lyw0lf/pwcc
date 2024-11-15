@@ -20,22 +20,27 @@ pub enum ParseError {
         expected_chs: Vec<char>,
         actual: TokenTree,
     },
+    Context(String, ParseErrors),
+    NotImplemented,
 }
 
 impl Display for ParseError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         use ParseError::*;
+        let indent_level = f.width().unwrap_or(0);
+        let indent_str = core::iter::repeat(" ")
+            .take(indent_level)
+            .collect::<String>();
         match self {
             ExpectedKeyword { expected, actual } => {
                 write!(
                     f,
-                    "expected ident \"{}\", got {}",
-                    expected,
-                    actual,
+                    "{indent_str}expected ident \"{}\", got {}",
+                    expected, actual,
                 )
             }
             ExpectedIdent { actual } => {
-                write!(f, "expected ident, got {}", actual)
+                write!(f, "{indent_str}expected ident, got {}", actual)
             }
             ExpectedGroup {
                 expected_delim,
@@ -43,9 +48,8 @@ impl Display for ParseError {
             } => {
                 write!(
                     f,
-                    "expected group with delimiter \"{:?}\", got {}",
-                    expected_delim,
-                    actual,
+                    "{indent_str}expected group with delimiter \"{:?}\", got {}",
+                    expected_delim, actual,
                 )
             }
             ExpectedPunct {
@@ -54,7 +58,7 @@ impl Display for ParseError {
             } => {
                 write!(
                     f,
-                    "expected punctuation '{}', got {}",
+                    "{indent_str}expected punctuation '{}', got {}",
                     expected_chs
                         .iter()
                         .map(|p| p.to_string())
@@ -63,6 +67,10 @@ impl Display for ParseError {
                     actual,
                 )
             }
+            Context(ctx, errs) => {
+                write!(f, "{indent_str}{ctx}: {errs}")
+            }
+            NotImplemented => write!(f, "not implemented"),
         }
     }
 }
@@ -71,6 +79,12 @@ impl Error for ParseError {}
 
 #[derive(Debug)]
 pub struct ParseErrors(Vec<ParseError>);
+
+impl ParseErrors {
+    pub fn context(self, context: impl ToString) -> ParseErrors {
+        ParseError::Context(context.to_string(), self).into()
+    }
+}
 
 impl From<ParseError> for ParseErrors {
     fn from(value: ParseError) -> Self {
@@ -122,7 +136,7 @@ impl core::ops::Add<ParseErrors> for ParseError {
 
 impl Error for ParseErrors {}
 
-/// Ok(Some(t)) == parse was successful
-/// Ok(None)    == end of stream found
-/// Err(e)      == encountered parse error
-pub type ParseResult<T> = Result<Option<T>, ParseErrors>;
+/// Some(Ok((t)) == parse was successful
+/// Some(Err(e)) == encountered parse error
+/// None         == end of stream found
+pub type ParseResult<T = ()> = Option<Result<T, ParseErrors>>;

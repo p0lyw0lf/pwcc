@@ -10,222 +10,279 @@ use proc_macro::TokenTree;
 
 use crate::errors::ParseError;
 use crate::errors::ParseResult;
+use crate::types::Struct;
+use crate::types::StructField;
+use crate::types::StructStruct;
 
-/// Turns a ParseResult<T> into a Result<T>, early-returning if it's an Ok(None)
-macro_rules! expect {
+/// Turns a ParseResult<T> into a T, early-returning if it's a None or Some(Err)
+macro_rules! always {
+    ($e:expr) => {{
+        match $e {
+            Some(Ok(t)) => t,
+            Some(Err(e)) => return Some(Err(e)),
+            None => return None,
+        }
+    }};
+}
+
+/// Turns a ParseResult<T> into a Result<T, ParseError>, early-returning if its None
+macro_rules! maybe {
     ($e:expr) => {
+        match $e {
+            Some(v) => v,
+            None => return None,
+        }
+    };
+}
+
+/// If all the expressions are Some(Err), returns Some(Err) with all their errors joined. If any
+/// return None, cause the containing function to return None as well. Otherwise, break as soon as
+/// we encounter one that returns Some(Ok).
+macro_rules! any {
+    ($iter:expr, $($f:ident ($($arg:expr),*)),+ $(,)?) => {
         {
-            let e = $e;
-            match e {
-                Ok(Some(t)) => Ok(t),
-                Ok(None) => {
-                    return Ok(None);
-                }
-                Err(e) => Err(e),
-            }
+        let outer_iter = $iter;
+        'outer: {
+            let mut err = Option::<$crate::errors::ParseErrors>::None;
+            $(
+                let mut inner_iter = outer_iter.clone();
+                let iter = &mut inner_iter;
+                match $f(iter, $($arg,)*) {
+                    None => break 'outer None,
+                    Some(Ok(_)) => {
+                        *outer_iter = inner_iter;
+                        break 'outer Some(Ok(()));
+                    }
+                    Some(Err(b)) => match err {
+                        Some(a) => err = Some(a + b),
+                        None => err = Some(b.into()),
+                    }
+                };
+            )+
+            Some(Err(err.unwrap()))
+        }
         }
     }
 }
 
 /// Returns Some(()) if the ident is found and the iter has been advanced, otherwise returns None
-fn parse_keyword(iter: &mut token_stream::IntoIter, ident: &str) -> ParseResult<()> {
+fn keyword(iter: &mut token_stream::IntoIter, ident: &str) -> ParseResult {
     let mut p = iter.clone();
-    match p.next() {
-        Some(TokenTree::Ident(i)) if i.to_string() == ident => {
+    Some(match p.next()? {
+        TokenTree::Ident(i) if i.to_string() == ident => {
             *iter = p;
-            Ok(Some(()))
+            Ok(())
         }
-        Some(other) => Err(ParseError::ExpectedKeyword {
+        other => Err(ParseError::ExpectedKeyword {
             expected: ident.into(),
             actual: other,
-        }.into()),
-        None => Ok(None),
-    }
+        }
+        .into()),
+    })
 }
 
 /// Returns Some w/ the ident and advance the iter if it's found, otherwise returns None
-fn parse_ident(iter: &mut token_stream::IntoIter) -> ParseResult<Ident> {
+fn ident(iter: &mut token_stream::IntoIter) -> ParseResult<Ident> {
     let mut p = iter.clone();
-    match p.next() {
-        Some(TokenTree::Ident(i)) => {
+    Some(match p.next()? {
+        TokenTree::Ident(i) => {
             *iter = p;
-            Ok(Some(i))
+            Ok(i)
         }
-        Some(other) => Err(ParseError::ExpectedIdent { actual: other }.into()),
-        None => Ok(None),
-    }
+        other => Err(ParseError::ExpectedIdent { actual: other }.into()),
+    })
 }
 
 /// Returns Some w/ the group's TokenStream and advances `iter` if the next token is a group,
 /// otherwise returns None
-fn parse_group(
-    iter: &mut token_stream::IntoIter,
-    delimiter: Delimiter,
-) -> ParseResult<Group> {
+fn group(iter: &mut token_stream::IntoIter, delimiter: Delimiter) -> ParseResult<Group> {
     let mut p = iter.clone();
-    match p.next() {
-        Some(TokenTree::Group(g)) if g.delimiter() == delimiter => {
+    Some(match p.next()? {
+        TokenTree::Group(g) if g.delimiter() == delimiter => {
             *iter = p;
-            Ok(Some(g))
+            Ok(g)
         }
-        Some(other) => Err(ParseError::ExpectedGroup {
+        other => Err(ParseError::ExpectedGroup {
             expected_delim: delimiter,
             actual: other,
-        }.into()),
-        None => Ok(None),
-    }
+        }
+        .into()),
+    })
 }
 
-fn parse_punct(iter: &mut token_stream::IntoIter, punct: &[char]) -> ParseResult<()> {
+fn punct(iter: &mut token_stream::IntoIter, punct: &[char]) -> ParseResult {
     let mut p = iter.clone();
     for ch in punct {
-        match p.next() {
-            Some(TokenTree::Punct(p)) if p == *ch => {}
-            Some(other) => {
-                return Err(ParseError::ExpectedPunct {
+        match p.next()? {
+            TokenTree::Punct(p) if p == *ch => {}
+            other => {
+                return Some(Err(ParseError::ExpectedPunct {
                     expected_chs: punct.into(),
                     actual: other,
-                }.into());
-            },
-            None => {
-                return Ok(None);
-            },
+                }
+                .into()));
+            }
         }
     }
 
     *iter = p;
-    Ok(Some(()))
+    Some(Ok(()))
 }
 
-pub fn parse_item(iter: &mut token_stream::IntoIter) -> ParseResult<()> {
+pub fn item(iter: &mut token_stream::IntoIter) -> ParseResult {
     // Chomp as many outer attributes as we can
     loop {
-        let res = expect!(parse_outer_attribute(iter));
+        let res = maybe!(outer_attribute(iter));
         if res.is_err() {
             break;
         }
     }
 
     // Doesn't matter if we find visibility or not
-    let _ = expect!(parse_visibility(iter));
+    let _ = maybe!(visibility(iter));
 
-    let module = expect!(parse_module(iter));
-    let s = expect!(parse_struct(iter));
-    let e = expect!(parse_enum(iter));
-
-
-    Ok(Some(()))
+    any! {
+        iter,
+        module(),
+        r#struct(),
+        r#enum(),
+    }
 }
 
-pub fn parse_visibility(iter: &mut token_stream::IntoIter) -> ParseResult<TokenStream> {
-    expect!(parse_keyword(iter, "pub"))?;
-    let group = parse_group(iter, Delimiter::Parenthesis)?;
-    Ok(Some(group
-        .map(|g| g.stream())
-        .unwrap_or(TokenStream::new())))
+pub fn visibility(iter: &mut token_stream::IntoIter) -> ParseResult<TokenStream> {
+    always!(keyword(iter, "pub"));
+    let group = maybe!(group(iter, Delimiter::Parenthesis));
+    Some(Ok(group.map(|g| g.stream()).unwrap_or(TokenStream::new())))
 }
 
-pub fn parse_module(iter: &mut token_stream::IntoIter) -> ParseResult<()> {
-    expect!(parse_keyword(iter, "mod"))?;
-    let _ = expect!(parse_ident(iter))?;
-    let group = expect!(parse_group(iter, Delimiter::Brace))?;
+pub fn module(iter: &mut token_stream::IntoIter) -> ParseResult {
+    always!(keyword(iter, "mod"));
+    let _ = always!(ident(iter));
+    let group = always!(group(iter, Delimiter::Brace));
 
     let iter = &mut group.stream().into_iter();
     loop {
-        let inner_attr = parse_inner_attribute(iter);
-        let item = parse_item(iter);
-
-        let inner_attr_err = match inner_attr {
-            Ok(Some(_inner_attr)) => {
-                println!("parsed inner attribute");
-                None
-            },
-            Ok(None) => {
-                // Parsing complete
-                break;
-            }
-            Err(a) => Some(a),
-        };
-
-        match item {
-            Ok(Some(_item)) => {
-                println!("parsed item");
-            },
-            Ok(None) => {
-                // Parsing complete
-                break;
-            }
-            Err(b) => {
-                if let Some(a) = inner_attr_err {
-                    return Err(a + b);
-                }
-            }
-        };
+        match any! {
+            &mut *iter,
+            inner_attribute(),
+            item(),
+        } {
+            // Finished parsing the module, return successfully
+            None => break,
+            // Error parsing the module, return
+            Some(Err(e)) => return Some(Err(e)),
+            Some(Ok(())) => {}
+        }
     }
 
-    Ok(Some(()))
+    Some(Ok(()))
 }
 
-pub fn parse_inner_attribute(iter: &mut token_stream::IntoIter) -> ParseResult<TokenStream> {
-    expect!(parse_punct(
+pub fn inner_attribute(iter: &mut token_stream::IntoIter) -> ParseResult<TokenStream> {
+    always!(punct(iter, &['#', '!']));
+    let group = always!(group(iter, Delimiter::Bracket));
+    Some(Ok(group.stream()))
+}
+
+pub fn outer_attribute(iter: &mut token_stream::IntoIter) -> ParseResult<TokenStream> {
+    always!(punct(iter, &['#']));
+    let group = always!(group(iter, Delimiter::Bracket));
+    Some(Ok(group.stream()))
+}
+
+pub fn r#struct(iter: &mut token_stream::IntoIter) -> ParseResult {
+    always!(keyword(iter, "struct"));
+    let ident = always!(ident(iter));
+
+    let generic_params = maybe!(generic_params(iter)).ok();
+    let where_clause = maybe!(where_clause(iter)).ok();
+
+    let base = &Struct {
+        ident,
+        generic_params,
+        where_clause,
+    };
+
+    any! {
         iter,
-        &[
-            '#',
-            '!',
-        ],
-    ))?;
-    let group = expect!(parse_group(iter, Delimiter::Bracket))?;
-    Ok(Some(group.stream()))
+        struct_struct(base.clone()),
+        struct_singleton(base.clone()),
+        tuple_struct(base.clone()),
+    }
 }
 
-pub fn parse_outer_attribute(iter: &mut token_stream::IntoIter) -> ParseResult<TokenStream> {
-    expect!(parse_punct(
-        iter,
-        &[
-            '#',
-        ],
-    ))?;
-    let group = expect!(parse_group(iter, Delimiter::Bracket))?;
-    Ok(Some(group.stream()))
+fn struct_struct(iter: &mut token_stream::IntoIter, base: Struct) -> ParseResult {
+    let group = always!(group(iter, Delimiter::Brace));
+
+    let iter = &mut group.stream().into_iter();
+    let mut fields = Vec::<StructField>::new();
+
+    loop {
+        match struct_field(iter) {
+            None => break,
+            Some(Err(e)) => return Some(Err(e)),
+            Some(Ok(f)) => fields.push(f),
+        }
+        let _ = maybe!(punct(iter, &[',']));
+    }
+
+    let s = StructStruct { base, fields };
+
+    println!("parsed {s:?}");
+
+    Some(Ok(()))
 }
 
-pub fn parse_struct(iter: &mut token_stream::IntoIter) -> ParseResult<()> {
-    expect!(parse_keyword(iter, "struct"))?;
-    let ident = expect!(parse_ident(iter))?;
-
-    let _ = expect!(parse_generic_params(iter));
-    let _ = expect!(parse_where_clause(iter));
-
-    let named_group = expect!(parse_group(iter, Delimiter::Brace));
-    let singleton = expect!(parse_punct(iter, &[';']));
-    let tuple_group = expect!(parse_group(iter, Delimiter::Parenthesis));
-
-    if named_group.is_ok() {
-        println!("parsed named struct {ident}");
+fn struct_field(iter: &mut token_stream::IntoIter) -> ParseResult<StructField> {
+    loop {
+        let res = maybe!(outer_attribute(iter));
+        if res.is_err() {
+            break;
+        }
     }
+    let _ = maybe!(visibility(iter));
 
-    if singleton.is_ok() {
-        println!("parsed singleton struct {ident}");
-    }
+    let field_ident = always!(ident(iter));
+    always!(punct(iter, &[':']));
 
-    if tuple_group.is_ok() {
-        expect!(parse_punct(iter, &[';']))?;
-        println!("parsed tuple struct {ident}");
-    }
+    // NOTE: we're simplifying the type parsing for convenience.
+    let r#type = always!(ident(iter));
+    let generic_params = maybe!(generic_params(iter)).ok();
 
-    Ok(Some(()))
+    Some(Ok(StructField {
+        ident: field_ident,
+        r#type,
+        generic_params,
+    }))
 }
 
-pub fn parse_generic_params(iter: &mut token_stream::IntoIter) -> ParseResult<()> {
-    let _ = expect!(parse_punct(iter, &['<']))?;
+fn struct_singleton(iter: &mut token_stream::IntoIter, base: Struct) -> ParseResult {
+    always!(punct(iter, &[';']));
+
+    println!("parsed {base:?}");
+
+    Some(Ok(()))
+}
+
+fn tuple_struct(iter: &mut token_stream::IntoIter, base: Struct) -> ParseResult {
+    let group = always!(group(iter, Delimiter::Parenthesis));
+    always!(punct(iter, &[';']));
+
+    println!("parsed tuple struct: {group}");
+
+    Some(Ok(()))
+}
+
+pub fn generic_params(iter: &mut token_stream::IntoIter) -> ParseResult<TokenStream> {
+    // TODO: may need to make some version of this that 
+    always!(punct(iter, &['<']));
+
+    let mut out = TokenStream::new();
 
     let mut level: usize = 0;
     loop {
-        let tok = match iter.next() {
-            Some(t) => t,
-            None => return Ok(None),
-        };
-        match tok {
+        let tok = iter.next()?;
+        match tok.clone() {
             TokenTree::Punct(p) if p.as_char() == '<' => {
                 level += 1;
             }
@@ -237,26 +294,26 @@ pub fn parse_generic_params(iter: &mut token_stream::IntoIter) -> ParseResult<()
             }
             _ => {}
         }
+        out.extend([tok]);
     }
 
-    Ok(Some(()))
+    Some(Ok(out))
 }
 
-pub fn parse_where_clause(_iter: &mut token_stream::IntoIter) -> ParseResult<()> {
-    // TODO: implement
-    Ok(Some(()))
+pub fn where_clause(_iter: &mut token_stream::IntoIter) -> ParseResult<TokenStream> {
+    Some(Err(ParseError::NotImplemented.into()))
 }
 
-pub fn parse_enum(iter: &mut token_stream::IntoIter) -> ParseResult<()> {
-    expect!(parse_keyword(iter, "enum"))?;
-    let ident = expect!(parse_ident(iter))?;
+pub fn r#enum(iter: &mut token_stream::IntoIter) -> ParseResult {
+    always!(keyword(iter, "enum"));
+    let ident = always!(ident(iter));
 
-    let _ = expect!(parse_generic_params(iter));
-    let _ = expect!(parse_where_clause(iter));
+    let _ = maybe!(generic_params(iter));
+    let _ = maybe!(where_clause(iter));
 
-    let _cases = expect!(parse_group(iter, Delimiter::Brace))?;
+    let cases = always!(group(iter, Delimiter::Brace));
 
-    println!("parsed enum {ident}");
+    println!("parsed enum {ident}: {cases}");
 
-    Ok(Some(()))
+    Some(Ok(()))
 }

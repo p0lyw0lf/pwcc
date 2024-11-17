@@ -117,7 +117,12 @@ fn emit_base_case(out: &mut TokenStream2, ident: &Ident, generics: &Generics) {
 
 /// Emit the impl Functor<Inner> for Container implementation for the given inner type and
 /// container, applying all generic arguments as applicable.
-fn emit_inductive_case<'ast>(out: &mut TokenStream2, container: &Node<'ast>, inner: &Node<'ast>) {
+fn emit_inductive_case<'ast>(
+    out: &mut TokenStream2,
+    lattice: &Lattice,
+    container: &Node<'ast>,
+    inner: &Node<'ast>,
+) {
     let ident = container.ident();
     let generics = container.generics();
 
@@ -135,7 +140,7 @@ fn emit_inductive_case<'ast>(out: &mut TokenStream2, container: &Node<'ast>, inn
 
     let inner_ident = inner.ident();
     let output_inner = quote! { #inner_ident #output_inner_generics };
-    let fn_body = make_fn_body(container, inner, output_inner);
+    let fn_body = make_fn_body(lattice, container, inner, output_inner);
 
     let inner = inner_ident;
 
@@ -226,6 +231,7 @@ fn make_destructure_fields(ident: TokenStream2, fields: &Fields) -> TokenStream2
 /// For a given field, decides if it should be fmapped or not, and returns the appropriate
 /// expression
 fn make_field(
+    lattice: &Lattice,
     field: &Field,
     index: usize,
     inner: &Ident,
@@ -233,7 +239,16 @@ fn make_field(
 ) -> TokenStream2 {
     let idents = crate::type_to_idents(&field.ty);
     let target_ident = inner.to_string();
-    let has_inner = idents.into_iter().any(|ident| ident == target_ident);
+
+    let has_inner = idents.into_iter().any(|ident| {
+        // Check if direct child
+        ident == target_ident
+        // Check if indirect child
+            || lattice
+                .0
+                .get(&ident.to_string())
+                .map_or(false, |below| below.contains(&target_ident))
+    });
 
     // This logic could be simplified further, but for the sake of clarity, I'd rather keep it in
     // separate cases like this
@@ -261,6 +276,7 @@ fn make_field(
 /// Makes a list of transformed fields, with the appropriate delimiter type based on whether the
 /// fields are named or unnamed
 fn make_constructor_fields(
+    lattice: &Lattice,
     container: TokenStream2,
     fields: &Fields,
     inner: &Ident,
@@ -272,7 +288,7 @@ fn make_constructor_fields(
                 .named
                 .iter()
                 .enumerate()
-                .map(|(i, f)| make_field(f, i, inner, output_inner.clone()));
+                .map(|(i, f)| make_field(lattice, f, i, inner, output_inner.clone()));
             quote! { #container { #(#fields),* } }
         }
         Fields::Unnamed(fields) => {
@@ -280,7 +296,7 @@ fn make_constructor_fields(
                 .unnamed
                 .iter()
                 .enumerate()
-                .map(|(i, f)| make_field(f, i, inner, output_inner.clone()));
+                .map(|(i, f)| make_field(lattice, f, i, inner, output_inner.clone()));
             quote! { #container ( #(#fields),* ) }
         }
         Fields::Unit => container,
@@ -289,6 +305,7 @@ fn make_constructor_fields(
 
 /// Writes the body of the functor implementation
 fn make_fn_body<'ast>(
+    lattice: &Lattice,
     container: &Node<'ast>,
     inner: &Node<'ast>,
     output_inner: TokenStream2,
@@ -301,8 +318,13 @@ fn make_fn_body<'ast>(
             out.append_all(quote! { let #destructure = self; });
 
             let inner = inner.ident();
-            let constructor =
-                make_constructor_fields(quote! { Self::Mapped }, &s.fields, inner, output_inner);
+            let constructor = make_constructor_fields(
+                lattice,
+                quote! { Self::Mapped },
+                &s.fields,
+                inner,
+                output_inner,
+            );
             out.append_all(constructor)
         }
         Node::Enum(e) => {
@@ -312,6 +334,7 @@ fn make_fn_body<'ast>(
 
                 let inner = inner.ident();
                 let constructor = make_constructor_fields(
+                    lattice,
                     quote! { Self::Mapped::#ident },
                     &variant.fields,
                     inner,
@@ -347,7 +370,7 @@ pub fn emit<'ast>(out: &mut TokenStream2, nodes: &Nodes<'ast>, lattice: &Lattice
         let container = nodes.0.get(node_name).unwrap();
         for inner in children.iter().map(|c| nodes.0.get(c).unwrap()) {
             if container.ident() != inner.ident() {
-                emit_inductive_case(out, container, inner);
+                emit_inductive_case(out, lattice, container, inner);
             }
         }
     }

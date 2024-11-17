@@ -1,4 +1,5 @@
 use functional_macros::ast;
+use functional_macros::specialize;
 
 #[ast]
 mod ast {
@@ -23,6 +24,9 @@ mod ast {
         Return(Exp),
     }
 }
+
+#[specialize(A, B, C)]
+const T: isize = 5;
 
 use ast::*;
 

@@ -2,12 +2,12 @@
 
 use proc_macro::token_stream;
 use proc_macro::Delimiter;
-use proc_macro::Spacing;
-use proc_macro::TokenTree;
-use proc_macro::TokenStream;
-use proc_macro::Ident;
 use proc_macro::Group;
+use proc_macro::Ident;
 use proc_macro::Punct;
+use proc_macro::Spacing;
+use proc_macro::TokenStream;
+use proc_macro::TokenTree;
 
 use core::error::Error;
 use core::fmt::Display;
@@ -26,7 +26,7 @@ pub enum ParseError {
         actual: TokenTree,
     },
     ExpectedPunct {
-        expected_chs: Vec<char>,
+        expected_chs: Vec<Punct>,
         actual: TokenTree,
     },
 }
@@ -36,11 +36,7 @@ impl Display for ParseError {
         use ParseError::*;
         match self {
             ExpectedKeyword { expected, actual } => {
-                write!(
-                    f,
-                    "expected ident \"{}\", got {}",
-                    expected, actual,
-                )
+                write!(f, "expected ident \"{}\", got {}", expected, actual,)
             }
             ExpectedIdent { actual } => {
                 write!(f, "expected ident, got {}", actual)
@@ -103,14 +99,20 @@ macro_rules! maybe {
 }
 
 /// Returns if the ident is found and the iter has been advanced
-pub fn keyword(out: &mut TokenStream, iter: &mut token_stream::IntoIter, ident: &str) -> ParseResult {
+pub fn keyword(
+    out: &mut TokenStream,
+    iter: &mut token_stream::IntoIter,
+    ident: &str,
+) -> ParseResult {
     let mut p = iter.clone();
     let i = match p.next()? {
-        TokenTree::Ident(i) if i.to_string() == ident => i, 
-        other => return Some(Err(ParseError::ExpectedKeyword {
-            expected: ident.into(),
-            actual: other,
-        })),
+        TokenTree::Ident(i) if i.to_string() == ident => i,
+        other => {
+            return Some(Err(ParseError::ExpectedKeyword {
+                expected: ident.into(),
+                actual: other,
+            }))
+        }
     };
 
     *iter = p;
@@ -122,7 +124,7 @@ pub fn keyword(out: &mut TokenStream, iter: &mut token_stream::IntoIter, ident: 
 pub fn ident(out: &mut TokenStream, iter: &mut token_stream::IntoIter) -> ParseResult<Ident> {
     let mut p = iter.clone();
     let i = match p.next()? {
-        TokenTree::Ident(i) => i, 
+        TokenTree::Ident(i) => i,
         other => return Some(Err(ParseError::ExpectedIdent { actual: other }.into())),
     };
 
@@ -147,14 +149,16 @@ pub fn group(iter: &mut token_stream::IntoIter, delimiter: Delimiter) -> ParseRe
     })
 }
 
-/// Returns if the next token is the specified sequence of punctuation, otherwise 
-fn punct(out: &mut TokenStream, iter: &mut token_stream::IntoIter, punct: &[char]) -> ParseResult {
+/// Returns if the next token is the specified sequence of punctuation, otherwise
+pub fn punct(
+    out: &mut TokenStream,
+    iter: &mut token_stream::IntoIter,
+    punct: &[Punct],
+) -> ParseResult {
     let mut p = iter.clone();
-    for (i, ch) in punct.iter().enumerate() {
+    for ch in punct.iter() {
         match p.next()? {
-            TokenTree::Punct(p) if p == *ch && 
-            // Only when we're at the end, should we have Spacing::Alone
-                ((p.spacing() == Spacing::Alone) == (i == punct.len())) => {}
+            TokenTree::Punct(p) if p.as_char() == ch.as_char() && p.spacing() == ch.spacing() => {}
             other => {
                 return Some(Err(ParseError::ExpectedPunct {
                     expected_chs: punct.into(),
@@ -165,13 +169,12 @@ fn punct(out: &mut TokenStream, iter: &mut token_stream::IntoIter, punct: &[char
     }
 
     *iter = p;
-    out.extend(punct.iter().enumerate().map(|(i, ch)| TokenTree::Punct(Punct::new(*ch, if i == punct.len() { Spacing::Alone } else { Spacing::Joint }))));
+    out.extend(punct.iter().map(|p| TokenTree::from(p.clone())));
     Some(Ok(()))
 }
 
-
 pub fn outer_attribute(out: &mut TokenStream, iter: &mut token_stream::IntoIter) -> ParseResult {
-    always!(punct(out, iter, &['#']));
+    always!(punct(out, iter, &[Punct::new('#', Spacing::Joint)]));
     let group = always!(group(iter, Delimiter::Bracket));
     out.extend([TokenTree::from(group)]);
     Some(Ok(()))

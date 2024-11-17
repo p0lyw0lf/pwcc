@@ -2,8 +2,9 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 
 use proc_macro::TokenStream;
-use proc_macro2::TokenStream as TokenStream2;
+use proc_macro::TokenTree;
 
+use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use quote::TokenStreamExt;
 use syn::visit;
@@ -424,6 +425,43 @@ pub fn ast(_attr: TokenStream, item: TokenStream) -> TokenStream {
     // There shouldn't be anything left in the iterator
     if let Some(remaining) = iter.next() {
         panic!("unexpected continuation of stream after module: {remaining}");
+    }
+
+    out
+}
+
+/// Turns a ParseResult<T> into a T, breaking from the loop if None, and panicking if Some(Err)
+macro_rules! break_none {
+    ($e:expr) => {
+        match $e {
+            None => break,
+            Some(Err(e)) => panic!("{e}"),
+            Some(Ok(t)) => t,
+        }
+    };
+}
+
+/// Helper macro for manually writing Functor instances, avoiding coherence conflicts by manually
+/// specifying what types it will apply to. All this macro does is replace all instances of the
+/// ident `T` with all of the idents it's passed as arguments.
+#[proc_macro_attribute]
+pub fn specialize(attrs: TokenStream, item: TokenStream) -> TokenStream {
+    let mut out = TokenStream::new();
+    let iter = &mut attrs.into_iter();
+
+    loop {
+        let ident = break_none!(syntax::ident(&mut TokenStream::new(), iter));
+
+        out.extend(item.clone().into_iter().map(|token| match token {
+            TokenTree::Ident(i) if i.to_string() == "T" => TokenTree::Ident(ident.clone()),
+            otherwise => otherwise,
+        }));
+
+        break_none!(syntax::punct(
+            &mut TokenStream::new(),
+            iter,
+            &[proc_macro::Punct::new(',', proc_macro::Spacing::Alone)]
+        ));
     }
 
     out

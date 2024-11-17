@@ -1,9 +1,12 @@
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use quote::TokenStreamExt;
+use syn::spanned::Spanned;
 use syn::visit_mut;
 use syn::visit_mut::VisitMut;
 use syn::ConstParam;
+use syn::Field;
+use syn::Fields;
 use syn::Generics;
 use syn::Ident;
 use syn::Lifetime;
@@ -11,9 +14,9 @@ use syn::Token;
 use syn::TypeParam;
 use syn::WhereClause;
 
-use crate::Nodes;
 use crate::Lattice;
 use crate::Node;
+use crate::Nodes;
 
 /// Visitor that will append a suffix to all generic parameters it finds
 struct AddSuffix<'a>(&'a str);
@@ -130,9 +133,11 @@ fn emit_inductive_case<'ast>(out: &mut TokenStream2, container: &Node<'ast>, inn
     let input_inner_generics = generics_add_suffix(inner.generics(), "Input");
     let output_inner_generics = generics_add_suffix(inner.generics(), "Output");
 
-    let fn_body = make_fn_body(container, inner);
+    let inner_ident = inner.ident();
+    let output_inner = quote! { #inner_ident #output_inner_generics };
+    let fn_body = make_fn_body(container, inner, output_inner);
 
-    let inner = inner.ident();
+    let inner = inner_ident;
 
     // TODO: currently, this doesn't work for things like
     //
@@ -175,9 +180,158 @@ fn emit_inductive_case<'ast>(out: &mut TokenStream2, container: &Node<'ast>, inn
     });
 }
 
+/// Creates a temporary name for a unnamed field. Used to ensure consistency between declaration
+/// and usage
+fn make_temporary_ident(field: &Field, index: usize) -> Ident {
+    Ident::new(&format!("tmp_{index}"), field.ty.span())
+}
+
+/// Makes a line like
+///
+/// ```rust
+/// Ident { x, y, z }
+/// ```
+///
+/// or
+///
+/// ```rust
+/// Ident(tmp_0, tmp_1)
+/// ```
+///
+/// or
+///
+/// ```rust
+/// Ident
+/// ```
+///
+/// depending on the variant of the passed in fields.
+fn make_destructure_fields(ident: TokenStream2, fields: &Fields) -> TokenStream2 {
+    match fields {
+        Fields::Named(fields) => {
+            let fields = fields.named.iter().map(|f| f.ident.clone());
+            quote! { #ident { #(#fields),* } }
+        }
+        Fields::Unnamed(fields) => {
+            let fields = fields
+                .unnamed
+                .iter()
+                .enumerate()
+                .map(|(i, f)| make_temporary_ident(f, i));
+            quote! { #ident ( #(#fields),* ) }
+        }
+        Fields::Unit => ident,
+    }
+}
+
+/// For a given field, decides if it should be fmapped or not, and returns the appropriate
+/// expression
+fn make_field(
+    field: &Field,
+    index: usize,
+    inner: &Ident,
+    output_inner: TokenStream2,
+) -> TokenStream2 {
+    let idents = crate::type_to_idents(&field.ty);
+    let target_ident = inner.to_string();
+    let has_inner = idents.into_iter().any(|ident| ident == target_ident);
+
+    // This logic could be simplified further, but for the sake of clarity, I'd rather keep it in
+    // separate cases like this
+    match &field.ident {
+        // Named field
+        Some(field) => {
+            if has_inner {
+                quote! { #field: Functor::<#output_inner>::fmap(#field, f) }
+            } else {
+                quote! { #field }
+            }
+        }
+        // Unnamed field, use created name
+        None => {
+            let field = make_temporary_ident(field, index);
+            if has_inner {
+                quote! { Functor::<#output_inner>::fmap(#field, f) }
+            } else {
+                quote! { #field }
+            }
+        }
+    }
+}
+
+/// Makes a list of transformed fields, with the appropriate delimiter type based on whether the
+/// fields are named or unnamed
+fn make_constructor_fields(
+    container: TokenStream2,
+    fields: &Fields,
+    inner: &Ident,
+    output_inner: TokenStream2,
+) -> TokenStream2 {
+    match fields {
+        Fields::Named(fields) => {
+            let fields = fields
+                .named
+                .iter()
+                .enumerate()
+                .map(|(i, f)| make_field(f, i, inner, output_inner.clone()));
+            quote! { #container { #(#fields),* } }
+        }
+        Fields::Unnamed(fields) => {
+            let fields = fields
+                .unnamed
+                .iter()
+                .enumerate()
+                .map(|(i, f)| make_field(f, i, inner, output_inner.clone()));
+            quote! { #container ( #(#fields),* ) }
+        }
+        Fields::Unit => container,
+    }
+}
+
 /// Writes the body of the functor implementation
-fn make_fn_body<'ast>(container: &Node<'ast>, inner: &Node<'ast>) -> TokenStream2 {
-    quote! { todo!() }
+fn make_fn_body<'ast>(
+    container: &Node<'ast>,
+    inner: &Node<'ast>,
+    output_inner: TokenStream2,
+) -> TokenStream2 {
+    let mut out = TokenStream2::new();
+
+    match container {
+        Node::Struct(s) => {
+            let destructure = make_destructure_fields(quote! { Self }, &s.fields);
+            out.append_all(quote! { let #destructure = self; });
+
+            let inner = inner.ident();
+            let constructor =
+                make_constructor_fields(quote! { Self::Mapped }, &s.fields, inner, output_inner);
+            out.append_all(constructor)
+        }
+        Node::Enum(e) => {
+            let variants = e.variants.iter().map(|variant| {
+                let ident = &variant.ident;
+                let destructure = make_destructure_fields(quote! { Self::#ident }, &variant.fields);
+
+                let inner = inner.ident();
+                let constructor = make_constructor_fields(
+                    quote! { Self::Mapped::#ident },
+                    &variant.fields,
+                    inner,
+                    output_inner.clone(),
+                );
+
+                quote! {
+                    #destructure => #constructor
+                }
+            });
+
+            out.append_all(quote! {
+                match self {
+                    #(#variants),*
+                }
+            })
+        }
+    };
+
+    out
 }
 
 /// Emits all the code we need to generate into a TokenStream representing the interior of the

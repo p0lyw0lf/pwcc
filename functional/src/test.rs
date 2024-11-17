@@ -70,3 +70,20 @@ fn uniplate() {
     let y_actual = y.fmap(&mut transform);
     assert_eq!(y_expected, y_actual);
 }
+
+#[test]
+fn biplate() {
+    let x = Function {
+        name: "main".into(),
+        body: [Statement::Return(Exp::Lit(42))].into(),
+    };
+    let x_expected = Function {
+        name: "main".into(),
+        body: [Statement::Return(Exp::Lit(69))].into(),
+    };
+    let x_actual = Functor::<Exp>::fmap(x, &mut |e| match e {
+        Exp::Lit(42) => Exp::Lit(69),
+        other => other,
+    });
+    assert_eq!(x_expected, x_actual);
+}

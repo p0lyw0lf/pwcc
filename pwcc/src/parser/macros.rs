@@ -118,7 +118,7 @@ macro_rules! node {
     ($node:ident [$subnode:ident]) => {
         #[derive(Debug)]
         #[cfg_attr(test, derive(PartialEq))]
-        pub struct $node(Vec<$subnode>);
+        pub struct $node(pub Vec<$subnode>);
 
         impl FromTokens for $node {
             fn from_tokens(ts: &mut (impl Iterator<Item = Token> + Clone)) -> Result<Self, ParseError> {
@@ -141,7 +141,12 @@ pub(super) use node;
 
 macro_rules! nodes {
     ($($node:ident $tt:tt;)*) => {
-        $(node!($node $tt);)*
+        #[functional_macros::ast]
+        mod ast {
+            use super::*;
+            $(node!($node $tt);)*
+        }
+        pub use ast::*;
     };
 }
 pub(super) use nodes;

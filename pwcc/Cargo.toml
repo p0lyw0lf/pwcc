@@ -6,3 +6,4 @@ edition = "2021"
 [dependencies]
 regex = "1.10.*"
 functional = { path = "../functional" }
+functional_macros = { path = "../functional_macros" }

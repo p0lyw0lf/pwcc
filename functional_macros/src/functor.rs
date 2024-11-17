@@ -135,14 +135,17 @@ fn emit_inductive_case<'ast>(
     let (_, input_ty_generics, _) = input_generics.split_for_impl();
     let (_, output_ty_generics, _) = output_generics.split_for_impl();
 
-    let input_inner_generics = generics_add_suffix(inner.generics(), "Input");
-    let output_inner_generics = generics_add_suffix(inner.generics(), "Output");
-
     let inner_ident = inner.ident();
-    let output_inner = quote! { #inner_ident #output_inner_generics };
-    let fn_body = make_fn_body(lattice, container, inner, output_inner);
+    let input_inner_generics = generics_add_suffix(inner.generics(), "Input");
+    let (_, input_inner_ty_generics, _) = input_inner_generics.split_for_impl();
+    let input_inner = quote! { #inner_ident #input_inner_ty_generics };
 
-    let inner = inner_ident;
+    let output_inner_generics = generics_add_suffix(inner.generics(), "Output");
+    let (_, output_inner_ty_generics, _) = output_inner_generics.split_for_impl();
+
+    let output_inner = quote! { #inner_ident #output_inner_ty_generics };
+
+    let fn_body = make_fn_body(lattice, container, inner, output_inner.clone());
 
     // TODO: currently, this doesn't work for things like
     //
@@ -173,16 +176,19 @@ fn emit_inductive_case<'ast>(
     // type parameters from the parent node are used in children fields, which is too much effort.
     // Best I can do is make it work only when the entire tree has the same number of generic args,
     // with the same bounds.
-    out.append_all(quote! {
-        impl #impl_generics Functor<#inner #output_inner_generics> for #ident #input_ty_generics #where_clause {
-            type Input = #inner #input_inner_generics;
-            type Output = #inner #output_inner_generics;
+
+    let out_toks = quote! {
+        impl #impl_generics Functor<#output_inner> for #ident #input_ty_generics #where_clause {
+            type Input = #input_inner;
+            type Output = #output_inner;
             type Mapped = #ident #output_ty_generics;
             fn fmap(self, f: &mut impl FnMut(Self::Input) -> Self::Output) -> Self::Mapped {
                 #fn_body
             }
         }
-    });
+    };
+    println!("{out_toks}");
+    out.append_all(out_toks);
 }
 
 /// Creates a temporary name for a unnamed field. Used to ensure consistency between declaration
@@ -254,20 +260,20 @@ fn make_field(
     // separate cases like this
     match &field.ident {
         // Named field
-        Some(field) => {
+        Some(ident) => {
             if has_inner {
-                quote! { #field: Functor::<#output_inner>::fmap(#field, f) }
+                quote! { #ident: Functor::<#output_inner>::fmap(#ident, f) }
             } else {
-                quote! { #field }
+                quote! { #ident }
             }
         }
-        // Unnamed field, use created name
+        // Unnamed ident, use created name
         None => {
-            let field = make_temporary_ident(field, index);
+            let ident = make_temporary_ident(field, index);
             if has_inner {
-                quote! { Functor::<#output_inner>::fmap(#field, f) }
+                quote! { Functor::<#output_inner>::fmap(#ident, f) }
             } else {
-                quote! { #field }
+                quote! { #ident }
             }
         }
     }

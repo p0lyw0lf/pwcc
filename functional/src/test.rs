@@ -5,8 +5,8 @@ mod ast {
     use crate::Functor;
 
     #[derive(Debug, PartialEq)]
-    pub struct Function {
-        pub name: String,
+    pub struct Function<T> {
+        pub name: T,
         pub body: Vec<Statement>,
     }
 
@@ -31,13 +31,13 @@ use crate::Functor;
 #[test]
 fn base_traits() {
     let x = Function {
-        name: "main".into(),
+        name: "main",
         body: [Statement::Return(Exp::Lit(42))].into(),
     };
     assert_eq!(
         x,
         Function {
-            name: "main".into(),
+            name: "main",
             body: [Statement::Return(Exp::Lit(42))].into(),
         }
     );

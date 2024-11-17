@@ -2,7 +2,6 @@ use core::fmt::Debug;
 use std::fmt::Display;
 
 use functional::foldable;
-use functional::functor;
 use functional::Foldable;
 use functional::Functor;
 
@@ -17,144 +16,118 @@ pub trait State: Debug + Sized {
     type Location: Debug + Sized + foldable::Foldable<Self::Location>;
 }
 
-/// Newtype needed to avoid "unconstrained type" errors
-#[derive(Debug)]
-pub struct Location<S: State>(pub S::Location);
-foldable!(type Location<S: State>);
-functor!(type Location<I: State> -> <O: State>);
+#[functional_macros::ast]
+mod ast {
+    use super::*;
 
-#[derive(Debug)]
-pub struct Program<S: State> {
-    pub function: Function<S>,
+    /// Newtype needed to avoid "unconstrained type" errors
+    #[derive(Debug)]
+    pub struct Location<S: State>(pub S::Location);
+    foldable!(type Location<S: State>);
+
+    #[derive(Debug)]
+    pub struct Program<S: State> {
+        pub function: Function<S>,
+    }
+
+    foldable!(struct Program<S: State> for Location<S> | { function, });
+
+    #[derive(Debug)]
+    pub struct Function<S: State> {
+        pub name: String,
+        pub instructions: Instructions<S>,
+    }
+
+    foldable!(struct Function<S: State> for Location<S> | { instructions, });
+
+    /// We separate this out into a newtype struct so that we can map over it as well as individual
+    /// instructions.
+    #[derive(Debug)]
+    pub struct Instructions<S: State>(pub Vec<Instruction<S>>);
+
+    foldable!(struct Instructions<S: State> for Location<S> | (+0,));
+
+    #[derive(Debug)]
+    pub enum Instruction<S: State> {
+        Mov {
+            src: Operand<S>,
+            dst: Location<S>,
+        },
+        Unary {
+            op: UnaryOp,
+            dst: Location<S>,
+        },
+        Binary {
+            op: BinaryOp,
+            src: Operand<S>,
+            dst: Location<S>,
+        },
+        Cmp {
+            left: Location<S>,
+            right: Operand<S>,
+        },
+        Idiv {
+            denom: Operand<S>,
+        },
+        Cdq,
+        Jmp(Identifier),
+        JmpCC(CondCode, Identifier),
+        SetCC(CondCode, Location<S>),
+        Label(Identifier),
+        AllocateStack {
+            amount: usize,
+        },
+        Ret,
+    }
+
+    foldable!(enum Instruction<S: State> for Location<S> | {
+        Mov { src, dst, },
+        Unary { dst, },
+        Binary { src, dst, },
+        Cmp { left, right, },
+        Idiv { denom, },
+    });
+
+    #[derive(Debug, Copy, Clone)]
+    pub enum UnaryOp {
+        Neg,
+        Not,
+    }
+
+    #[derive(Debug, Copy, Clone)]
+    pub enum BinaryOp {
+        Add,
+        Sub,
+        Mult,
+        And,
+        Or,
+        Xor,
+        SAL,
+        SAR,
+    }
+
+    #[derive(Debug, Copy, Clone)]
+    pub enum CondCode {
+        E,
+        NE,
+        G,
+        GE,
+        L,
+        LE,
+    }
+
+    #[derive(Debug)]
+    pub enum Operand<S: State> {
+        Imm(isize),
+        Location(Location<S>),
+    }
+
+    foldable!(enum Operand<S: State> for Location<S> | {
+        Location (+loc,),
+    });
 }
 
-foldable!(struct Program<S: State> for Location<S> | { function, });
-functor!(struct Program<I: State> -> <O: State> where Instructions<I> |> Instructions<O> | { function, .., });
-functor!(struct Program<I: State> -> <O: State> where Location<I> |> Location<O> | { function, .., });
-
-#[derive(Debug)]
-pub struct Function<S: State> {
-    pub name: String,
-    pub instructions: Instructions<S>,
-}
-
-foldable!(struct Function<S: State> for Location<S> | { instructions, });
-functor!(struct Function<I: State> -> <O: State> where Instructions<I> |> Instructions<O> | {
-    instructions,
-    ..,
-    name,
-});
-functor!(struct Function<I: State> -> <O: State> where Location<I> |> Location<O> | {
-    instructions,
-    ..,
-    name,
-});
-
-/// We separate this out into a newtype struct so that we can map over it as well as individual
-/// instructions.
-#[derive(Debug)]
-pub struct Instructions<S: State>(pub Vec<Instruction<S>>);
-
-foldable!(struct Instructions<S: State> for Location<S> | (+0,));
-functor!(type Instructions<I: State> -> <O: State>);
-functor!(struct Instructions<I: State> -> <O: State> where Location<I> |> Location<O> | (+0,));
-
-#[derive(Debug)]
-pub enum Instruction<S: State> {
-    Mov {
-        src: Operand<S>,
-        dst: Location<S>,
-    },
-    Unary {
-        op: UnaryOp,
-        dst: Location<S>,
-    },
-    Binary {
-        op: BinaryOp,
-        src: Operand<S>,
-        dst: Location<S>,
-    },
-    Cmp {
-        left: Location<S>,
-        right: Operand<S>,
-    },
-    Idiv {
-        denom: Operand<S>,
-    },
-    Cdq,
-    Jmp(Identifier),
-    JmpCC(CondCode, Identifier),
-    SetCC(CondCode, Location<S>),
-    Label(Identifier),
-    AllocateStack {
-        amount: usize,
-    },
-    Ret,
-}
-
-foldable!(enum Instruction<S: State> for Location<S> | {
-    Mov { src, dst, },
-    Unary { dst, },
-    Binary { src, dst, },
-    Cmp { left, right, },
-    Idiv { denom, },
-});
-functor!(enum Instruction<I: State> -> <O: State> where Location<I> |> Location<O> | {
-    Mov { src, dst, .., },
-    Unary { dst, .., op, },
-    Binary { src, dst, .., op, },
-    Cmp { left, right, .., },
-    Idiv { denom, .., },
-    Cdq,
-    Jmp(-ident,),
-    JmpCC(-cc,-ident,),
-    SetCC(-cc,+loc,),
-    Label(-ident,),
-    AllocateStack { .., amount, },
-    Ret,
-});
-
-#[derive(Debug, Copy, Clone)]
-pub enum UnaryOp {
-    Neg,
-    Not,
-}
-
-#[derive(Debug, Copy, Clone)]
-pub enum BinaryOp {
-    Add,
-    Sub,
-    Mult,
-    And,
-    Or,
-    Xor,
-    SAL,
-    SAR,
-}
-
-#[derive(Debug, Copy, Clone)]
-pub enum CondCode {
-    E,
-    NE,
-    G,
-    GE,
-    L,
-    LE,
-}
-
-#[derive(Debug)]
-pub enum Operand<S: State> {
-    Imm(isize),
-    Location(Location<S>),
-}
-
-foldable!(enum Operand<S: State> for Location<S> | {
-    Location (+loc,),
-});
-functor!(enum Operand<I: State> -> <O: State> where Location<I> |> Location<O> | {
-    Imm(-val,),
-    Location(+loc,),
-});
+pub use ast::*;
 
 // Utilities for working with the Location newtype
 

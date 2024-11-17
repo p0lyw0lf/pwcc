@@ -47,6 +47,7 @@ name = "pwcc"
 version = "0.0.3"
 dependencies = [
  "functional",
+ "functional_macros",
  "regex",
 ]
 

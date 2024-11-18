@@ -6,8 +6,15 @@ mod ast {
 
     #[derive(Debug, PartialEq)]
     pub struct Function<T> {
-        pub name: T,
-        pub body: Vec<Statement>,
+        pub name: String,
+        pub body: Vec<Statement<T>>,
+    }
+
+    #[derive(Debug, PartialEq)]
+    pub enum Statement<T> {
+        Null,
+        Declare { var: String, init: Option<T> },
+        Return(Exp),
     }
 
     #[derive(Debug, PartialEq)]
@@ -16,12 +23,6 @@ mod ast {
         Add { lhs: Box<Exp>, rhs: Box<Exp> },
     }
 
-    #[derive(Debug, PartialEq)]
-    pub enum Statement {
-        Null,
-        Declare { var: String, init: Option<Exp> },
-        Return(Exp),
-    }
 }
 
 use ast::*;

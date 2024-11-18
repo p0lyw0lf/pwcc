@@ -1,12 +1,16 @@
+use std::collections::HashSet;
+
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use quote::TokenStreamExt;
 use syn::spanned::Spanned;
+use syn::visit::Visit;
 use syn::visit_mut;
 use syn::visit_mut::VisitMut;
 use syn::ConstParam;
 use syn::Field;
 use syn::Fields;
+use syn::GenericParam;
 use syn::Generics;
 use syn::Ident;
 use syn::Lifetime;
@@ -14,50 +18,58 @@ use syn::Token;
 use syn::TypeParam;
 use syn::WhereClause;
 
+use crate::nodes::AField;
+use crate::nodes::AType;
+use crate::nodes::AVariant;
+use crate::nodes::GenericContext;
 use crate::Lattice;
-use crate::Node;
-use crate::Nodes;
 
-/// Visitor that will append a suffix to all generic parameters it finds
-struct AddSuffix<'a>(&'a str);
-impl<'a> AddSuffix<'a> {
-    fn append_to(&self, i: &mut Ident) {
-        *i = Ident::new(&{ i.to_string() + self.0 }, i.span())
-    }
+/// Visitor that will append a suffix to all generic parameters in a set of idents
+struct AddSuffix<'suffix, 'hashset> {
+    // Should be CamelCase
+    suffix: &'suffix str,
+    params: &'hashset GenericContext,
 }
-impl<'a> VisitMut for AddSuffix<'a> {
+
+impl<'a, 'b> VisitMut for AddSuffix<'a, 'b> {
     fn visit_lifetime_mut(&mut self, l: &mut Lifetime) {
-        self.append_to(&mut l.ident);
+        if self.params.lifetimes.contains(&l.ident.to_string()) {
+            l.ident = Ident::new(
+                &format!("{}_{}", l.ident, self.suffix.to_lowercase()),
+                l.ident.span(),
+            );
+        }
         visit_mut::visit_lifetime_mut(self, l);
     }
 
+    // TODO: also need to make the type and constant suffix-ification work for
+    // instantiated type parameters, not just declared ones
     fn visit_type_param_mut(&mut self, tp: &mut TypeParam) {
-        // If the bound looks something like Type: Trait, we should return something like
-        // TypeOutput: Trait
-        if tp.colon_token.is_some() {
-            self.append_to(&mut tp.ident);
+        if self.params.types.contains(&tp.ident.to_string()) {
+            tp.ident = Ident::new(&format!("{}{}", tp.ident, self.suffix), tp.ident.span());
         }
-        // TODO: it's more difficult to handle bounds like I: Iterator<Item = Type>. We could
-        // have transformed Type earlier in the param, or Type could be something from external
-        // context. For now, let's just always assume it's in external context and
-        // (confusingly) fail if it's a more complex bound.
         visit_mut::visit_type_param_mut(self, tp);
     }
 
     fn visit_const_param_mut(&mut self, cp: &mut ConstParam) {
-        self.append_to(&mut cp.ident);
+        if self.params.consts.contains(&cp.ident.to_string()) {
+            cp.ident = Ident::new(
+                &format!("{}_{}", cp.ident, self.suffix.to_uppercase()),
+                cp.ident.span(),
+            );
+        }
         visit_mut::visit_const_param_mut(self, cp);
     }
 }
 
+/// Removes all generic params that aren't present in GenericsIdents
+
 /// AddSuffixs a string to the idents of all of the given generic arguments, returning the resulting generics
 fn generics_add_suffix(generics: &Generics, suffix: &str) -> Generics {
-    let mut generics = generics.clone();
-    AddSuffix(suffix).visit_generics_mut(&mut generics);
-    generics
+    todo!()
 }
 
-/// Merge two Generics into a single one
+/// Merges two sets of generic parameters together
 fn generics_merge(a: &Generics, b: &Generics) -> Generics {
     let params = a
         .params
@@ -124,26 +136,25 @@ fn emit_inductive_case<'ast>(
     inner: &Node<'ast>,
 ) {
     let ident = container.ident();
+    let inner_ident = inner.ident();
     let generics = container.generics();
 
     let input_generics = generics_add_suffix(generics, "Input");
     let output_generics = generics_add_suffix(generics, "Output");
 
-    let all_generics = generics_merge(&input_generics, &output_generics);
-
-    let (impl_generics, _, where_clause) = all_generics.split_for_impl();
-    let (_, input_ty_generics, _) = input_generics.split_for_impl();
-    let (_, output_ty_generics, _) = output_generics.split_for_impl();
-
-    let inner_ident = inner.ident();
     let input_inner_generics = generics_add_suffix(inner.generics(), "Input");
     let (_, input_inner_ty_generics, _) = input_inner_generics.split_for_impl();
     let input_inner = quote! { #inner_ident #input_inner_ty_generics };
 
     let output_inner_generics = generics_add_suffix(inner.generics(), "Output");
     let (_, output_inner_ty_generics, _) = output_inner_generics.split_for_impl();
-
     let output_inner = quote! { #inner_ident #output_inner_ty_generics };
+
+    let all_generics = generics_merge(&input_generics, &output_generics);
+
+    let (impl_generics, _, where_clause) = all_generics.split_for_impl();
+    let (_, input_ty_generics, _) = input_generics.split_for_impl();
+    let (_, output_ty_generics, _) = output_generics.split_for_impl();
 
     let fn_body = make_fn_body(lattice, container, inner, output_inner.clone());
 
@@ -216,96 +227,67 @@ fn make_temporary_ident(field: &Field, index: usize) -> Ident {
 /// ```
 ///
 /// depending on the variant of the passed in fields.
-fn make_destructure_fields(ident: TokenStream2, fields: &Fields) -> TokenStream2 {
-    match fields {
-        Fields::Named(fields) => {
-            let fields = fields.named.iter().map(|f| f.ident.clone());
-            quote! { #ident { #(#fields),* } }
-        }
-        Fields::Unnamed(fields) => {
-            let fields = fields
-                .unnamed
-                .iter()
-                .enumerate()
-                .map(|(i, f)| make_temporary_ident(f, i));
-            quote! { #ident ( #(#fields),* ) }
-        }
-        Fields::Unit => ident,
+fn make_variant_destructor<'ast>(ident: TokenStream2, variant: &AVariant<'ast>) -> TokenStream2 {
+    if variant.unit {
+        return ident;
+    }
+
+    let fields = variant.fields.iter().map(|field| &field.ident);
+    if variant.named {
+        quote! { #ident { #(#fields),* } }
+    } else {
+        quote! { #ident ( #(#fields),* ) }
     }
 }
 
 /// For a given field, decides if it should be fmapped or not, and returns the appropriate
 /// expression
-fn make_field(
-    lattice: &Lattice,
-    field: &Field,
-    index: usize,
-    inner: &Ident,
+fn make_field<'ast>(
+    named: bool,
+    field: &AField<'ast>,
+    inner: &AType<'ast>,
     output_inner: TokenStream2,
 ) -> TokenStream2 {
-    let idents = crate::type_to_idents(&field.ty);
-    let target_ident = inner.to_string();
-
-    let has_inner = idents.into_iter().any(|ident| {
-        // Check if direct child
-        ident == target_ident
-        // Check if indirect child
-            || lattice
-                .0
-                .get(&ident.to_string())
-                .map_or(false, |below| below.contains(&target_ident))
-    });
+    let has_inner = field.types.iter().any(|ty| ty == inner);
+    let ident = &field.ident;
 
     // This logic could be simplified further, but for the sake of clarity, I'd rather keep it in
     // separate cases like this
-    match &field.ident {
-        // Named field
-        Some(ident) => {
-            if has_inner {
-                quote! { #ident: Functor::<#output_inner>::fmap(#ident, f) }
-            } else {
-                quote! { #ident }
-            }
+    if named {
+        if has_inner {
+            quote! { #ident: Functor::<#output_inner>::fmap(#ident, f) }
+        } else {
+            quote! { #ident }
         }
-        // Unnamed ident, use created name
-        None => {
-            let ident = make_temporary_ident(field, index);
-            if has_inner {
-                quote! { Functor::<#output_inner>::fmap(#ident, f) }
-            } else {
-                quote! { #ident }
-            }
+    } else {
+        if has_inner {
+            quote! { Functor::<#output_inner>::fmap(#ident, f) }
+        } else {
+            quote! { #ident }
         }
     }
 }
 
 /// Makes a list of transformed fields, with the appropriate delimiter type based on whether the
 /// fields are named or unnamed
-fn make_constructor_fields(
-    lattice: &Lattice,
+fn make_variant_constructor<'ast>(
     container: TokenStream2,
-    fields: &Fields,
-    inner: &Ident,
+    variant: &AVariant<'ast>,
+    inner: &AType<'ast>,
     output_inner: TokenStream2,
 ) -> TokenStream2 {
-    match fields {
-        Fields::Named(fields) => {
-            let fields = fields
-                .named
-                .iter()
-                .enumerate()
-                .map(|(i, f)| make_field(lattice, f, i, inner, output_inner.clone()));
-            quote! { #container { #(#fields),* } }
-        }
-        Fields::Unnamed(fields) => {
-            let fields = fields
-                .unnamed
-                .iter()
-                .enumerate()
-                .map(|(i, f)| make_field(lattice, f, i, inner, output_inner.clone()));
-            quote! { #container ( #(#fields),* ) }
-        }
-        Fields::Unit => container,
+    if variant.unit {
+        return container;
+    }
+
+    let fields = variant
+        .fields
+        .iter()
+        .map(|field| make_field(variant.named, field, inner, output_inner.clone()));
+    if variant.named {
+        quote! { #container { #(#fields),* } }
+    } else {
+        quote! { #container ( #(#fields),* ) }
     }
 }
 

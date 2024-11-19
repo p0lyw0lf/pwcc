@@ -1,16 +1,11 @@
-use std::collections::HashSet;
-
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use quote::TokenStreamExt;
 use syn::spanned::Spanned;
-use syn::visit::Visit;
 use syn::visit_mut;
 use syn::visit_mut::VisitMut;
 use syn::ConstParam;
 use syn::Field;
-use syn::Fields;
-use syn::GenericParam;
 use syn::Generics;
 use syn::Ident;
 use syn::Lifetime;
@@ -21,19 +16,20 @@ use syn::WhereClause;
 use crate::nodes::AField;
 use crate::nodes::AType;
 use crate::nodes::AVariant;
+use crate::nodes::ANode;
 use crate::nodes::GenericContext;
-use crate::Lattice;
+use crate::nodes::ANodes;
 
 /// Visitor that will append a suffix to all generic parameters in a set of idents
-struct AddSuffix<'suffix, 'hashset> {
+struct AddSuffix<'ast, 'suffix, 'hashset> {
     // Should be CamelCase
     suffix: &'suffix str,
-    params: &'hashset GenericContext,
+    params: &'hashset GenericContext<'ast>,
 }
 
-impl<'a, 'b> VisitMut for AddSuffix<'a, 'b> {
+impl<'ast, 'suffix, 'hashset> VisitMut for AddSuffix<'ast, 'suffix, 'hashset> {
     fn visit_lifetime_mut(&mut self, l: &mut Lifetime) {
-        if self.params.lifetimes.contains(&l.ident.to_string()) {
+        if self.params.lifetimes.contains(&l.ident) {
             l.ident = Ident::new(
                 &format!("{}_{}", l.ident, self.suffix.to_lowercase()),
                 l.ident.span(),
@@ -45,14 +41,14 @@ impl<'a, 'b> VisitMut for AddSuffix<'a, 'b> {
     // TODO: also need to make the type and constant suffix-ification work for
     // instantiated type parameters, not just declared ones
     fn visit_type_param_mut(&mut self, tp: &mut TypeParam) {
-        if self.params.types.contains(&tp.ident.to_string()) {
+        if self.params.types.contains(&tp.ident) {
             tp.ident = Ident::new(&format!("{}{}", tp.ident, self.suffix), tp.ident.span());
         }
         visit_mut::visit_type_param_mut(self, tp);
     }
 
     fn visit_const_param_mut(&mut self, cp: &mut ConstParam) {
-        if self.params.consts.contains(&cp.ident.to_string()) {
+        if self.params.consts.contains(&cp.ident) {
             cp.ident = Ident::new(
                 &format!("{}_{}", cp.ident, self.suffix.to_uppercase()),
                 cp.ident.span(),
@@ -62,11 +58,10 @@ impl<'a, 'b> VisitMut for AddSuffix<'a, 'b> {
     }
 }
 
-/// Removes all generic params that aren't present in GenericsIdents
-
 /// AddSuffixs a string to the idents of all of the given generic arguments, returning the resulting generics
 fn generics_add_suffix(generics: &Generics, suffix: &str) -> Generics {
-    todo!()
+    // TODO
+    generics.clone()
 }
 
 /// Merges two sets of generic parameters together
@@ -105,7 +100,8 @@ fn generics_merge(a: &Generics, b: &Generics) -> Generics {
 
 /// Emits the impl Functor<T> for T implementation for the given type, applying generic arguments
 /// as applicable
-fn emit_base_case(out: &mut TokenStream2, ident: &Ident, generics: &Generics) {
+fn emit_base_case<'ast>(out: &mut TokenStream2, node: &ANode<'ast>) {
+    /*
     let input_generics = generics_add_suffix(generics, "Input");
     let output_generics = generics_add_suffix(generics, "Output");
 
@@ -125,19 +121,22 @@ fn emit_base_case(out: &mut TokenStream2, ident: &Ident, generics: &Generics) {
             }
         }
     })
+*/
 }
 
 /// Emit the impl Functor<Inner> for Container implementation for the given inner type and
 /// container, applying all generic arguments as applicable.
 fn emit_inductive_case<'ast>(
     out: &mut TokenStream2,
-    lattice: &Lattice,
-    container: &Node<'ast>,
-    inner: &Node<'ast>,
+    lattice: &ANodes<'ast>,
+    container: &ANode<'ast>,
+    inner: &AType<'ast>,
 ) {
     let ident = container.ident();
-    let inner_ident = inner.ident();
-    let generics = container.generics();
+    let inner_ident = &inner.key;
+    let generics = container.ctx();
+
+    /*
 
     let input_generics = generics_add_suffix(generics, "Input");
     let output_generics = generics_add_suffix(generics, "Output");
@@ -157,6 +156,7 @@ fn emit_inductive_case<'ast>(
     let (_, output_ty_generics, _) = output_generics.split_for_impl();
 
     let fn_body = make_fn_body(lattice, container, inner, output_inner.clone());
+*/
 
     // TODO: currently, this doesn't work for things like
     //
@@ -188,6 +188,7 @@ fn emit_inductive_case<'ast>(
     // Best I can do is make it work only when the entire tree has the same number of generic args,
     // with the same bounds.
 
+    /*
     let out_toks = quote! {
         impl #impl_generics Functor<#output_inner> for #ident #input_ty_generics #where_clause {
             type Input = #input_inner;
@@ -200,6 +201,7 @@ fn emit_inductive_case<'ast>(
     };
     println!("{out_toks}");
     out.append_all(out_toks);
+*/
 }
 
 /// Creates a temporary name for a unnamed field. Used to ensure consistency between declaration
@@ -293,13 +295,14 @@ fn make_variant_constructor<'ast>(
 
 /// Writes the body of the functor implementation
 fn make_fn_body<'ast>(
-    lattice: &Lattice,
-    container: &Node<'ast>,
-    inner: &Node<'ast>,
+    lattice: &ANodes<'ast>,
+    container: &ANode<'ast>,
+    inner: &AType<'ast>,
     output_inner: TokenStream2,
 ) -> TokenStream2 {
     let mut out = TokenStream2::new();
 
+    /*
     match container {
         Node::Struct(s) => {
             let destructure = make_destructure_fields(quote! { Self }, &s.fields);
@@ -341,25 +344,28 @@ fn make_fn_body<'ast>(
             })
         }
     };
+*/
 
     out
 }
 
 /// Emits all the code we need to generate into a TokenStream representing the interior of the
 /// module.
-pub fn emit<'ast>(out: &mut TokenStream2, nodes: &Nodes<'ast>, lattice: &Lattice) {
+pub fn emit<'ast>(out: &mut TokenStream2, lattice: &ANodes<'ast>) {
     // Emit all base cases
-    for node in nodes.0.values() {
-        emit_base_case(out, node.ident(), node.generics());
+    for node in lattice.0.values() {
+        emit_base_case(out, node);
     }
 
     // Emit all inductive cases
+    /*
     for (node_name, children) in lattice.0.iter() {
-        let container = nodes.0.get(node_name).unwrap();
+        let container = lattice.0.get(node_name).unwrap();
         for inner in children.iter().map(|c| nodes.0.get(c).unwrap()) {
             if container.ident() != inner.ident() {
                 emit_inductive_case(out, lattice, container, inner);
             }
         }
     }
+*/
 }

@@ -1,3 +1,4 @@
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::collections::HashSet;
 
@@ -13,26 +14,11 @@ use syn::Ident;
 use syn::ItemEnum;
 use syn::ItemStruct;
 use syn::PathArguments;
+use syn::WhereClause;
 
 enum BaseNode<'ast> {
     Struct(&'ast ItemStruct),
     Enum(&'ast ItemEnum),
-}
-
-impl<'ast> BaseNode<'ast> {
-    fn ident(&self) -> &'ast Ident {
-        match self {
-            BaseNode::Struct(s) => &s.ident,
-            BaseNode::Enum(e) => &e.ident,
-        }
-    }
-
-    fn generics(&self) -> &'ast Generics {
-        match self {
-            BaseNode::Struct(s) => &s.generics,
-            BaseNode::Enum(e) => &e.generics,
-        }
-    }
 }
 
 /// Maps ident string to original definition
@@ -64,21 +50,21 @@ impl<'ast> Visit<'ast> for BaseNodes<'ast> {
 /// Then the GenericContext inside the `Result` body is `<T, E>`, and the GenericContext used by
 /// the `Ok` variant is `T`.
 #[derive(Debug, Default, PartialEq)]
-pub(crate) struct GenericContext {
-    pub lifetimes: HashSet<String>,
-    pub types: HashSet<String>,
-    pub consts: HashSet<String>,
+pub(crate) struct GenericContext<'ast> {
+    pub lifetimes: HashSet<&'ast Ident>,
+    pub types: HashSet<&'ast Ident>,
+    pub consts: HashSet<&'ast Ident>,
 }
 
 /// Collects all the idents found in a Generics node
-fn generics_collect_context(generics: &Generics) -> GenericContext {
+fn generics_collect_context<'ast>(generics: &'ast Generics) -> GenericContext<'ast> {
     let mut out = GenericContext::default();
 
     for param in generics.params.iter() {
         match param {
-            GenericParam::Lifetime(lp) => out.lifetimes.insert(lp.lifetime.ident.to_string()),
-            GenericParam::Type(tp) => out.types.insert(tp.ident.to_string()),
-            GenericParam::Const(cp) => out.consts.insert(cp.ident.to_string()),
+            GenericParam::Lifetime(lp) => out.lifetimes.insert(&lp.lifetime.ident),
+            GenericParam::Type(tp) => out.types.insert(&tp.ident),
+            GenericParam::Const(cp) => out.consts.insert(&cp.ident),
         };
     }
 
@@ -103,12 +89,12 @@ pub(crate) struct AType<'ast> {
     /// The instantiation of generic arguments for this type
     pub instantiation: Vec<&'ast GenericArgument>,
     /// All generics from the surrounding context that are used by this type
-    pub ctx: GenericContext,
+    pub ctx: GenericContext<'ast>,
 }
 
 fn convert_field<'ast>(
     nodes: &BaseNodes<'ast>,
-    ctx: &GenericContext,
+    ctx: &GenericContext<'ast>,
     field: &'ast Field,
     index: usize,
 ) -> AField<'ast> {
@@ -118,10 +104,10 @@ fn convert_field<'ast>(
         /// All the collected types we've seen so far
         types: &'a mut Vec<AType<'ast>>,
         /// The parent generic context
-        parent_ctx: &'a GenericContext,
+        parent_ctx: &'a GenericContext<'ast>,
         /// The current context we're trying to add to. Keeps track of what parts of the
         /// parrent_ctx are used in the instantiation of the current type.
-        current_ctx: GenericContext,
+        current_ctx: GenericContext<'ast>,
     }
     impl<'ast, 'a> Visit<'ast> for TypeVisitor<'ast, 'a> {
         fn visit_type_path(&mut self, ty: &'ast syn::TypePath) {
@@ -159,8 +145,8 @@ fn convert_field<'ast>(
             // Otherwise, check if the first type in the segment is in the generic context. If it
             // is, record that
             if let Some(segment) = ty.path.segments.first() {
-                let ident = segment.ident.to_string();
-                if self.parent_ctx.types.contains(&ident) {
+                let ident = &segment.ident;
+                if self.parent_ctx.types.contains(ident) {
                     self.current_ctx.types.insert(ident);
                 }
             }
@@ -169,8 +155,8 @@ fn convert_field<'ast>(
         }
 
         fn visit_lifetime(&mut self, i: &'ast syn::Lifetime) {
-            let ident = i.ident.to_string();
-            if self.parent_ctx.lifetimes.contains(&ident) {
+            let ident = &i.ident;
+            if self.parent_ctx.lifetimes.contains(ident) {
                 self.current_ctx.lifetimes.insert(ident);
             }
             visit::visit_lifetime(self, i);
@@ -179,9 +165,8 @@ fn convert_field<'ast>(
         // Unfortunately, there's not really a better way to check for consts...
         // TODO: could maybe make it more efficient by only starting to look whenever we're in an Expr context?
         fn visit_ident(&mut self, i: &'ast proc_macro2::Ident) {
-            let ident = i.to_string();
-            if self.parent_ctx.consts.contains(&ident) {
-                self.current_ctx.consts.insert(ident);
+            if self.parent_ctx.consts.contains(i) {
+                self.current_ctx.consts.insert(i);
             }
             visit::visit_ident(self, i);
         }
@@ -220,7 +205,7 @@ pub(crate) struct AVariant<'ast> {
 fn convert_variant<'nodes, 'ast>(
     nodes: &'nodes BaseNodes<'ast>,
     ident: &'ast Ident,
-    ctx: &GenericContext,
+    ctx: &GenericContext<'ast>,
     fields: &'ast Fields,
 ) -> AVariant<'ast> {
     let named = matches!(fields, syn::Fields::Named(_));
@@ -244,7 +229,8 @@ fn convert_variant<'nodes, 'ast>(
 pub(crate) struct AStruct<'ast> {
     pub data: AVariant<'ast>,
     /// The generic context defined by this struct
-    pub ctx: GenericContext,
+    pub ctx: GenericContext<'ast>,
+    pub where_clause: Option<&'ast WhereClause>,
 }
 
 /// An "annotated enum", representing a standalone enum
@@ -255,13 +241,30 @@ pub(crate) struct AEnum<'ast> {
     /// All of the variants in the enum
     pub variants: Vec<AVariant<'ast>>,
     /// The generic context defined by this enum
-    pub ctx: GenericContext,
+    pub ctx: GenericContext<'ast>,
+    pub where_clause: Option<&'ast WhereClause>,
 }
 
 #[derive(Debug)]
 pub(crate) enum ANode<'ast> {
     Struct(AStruct<'ast>),
     Enum(AEnum<'ast>),
+}
+
+impl<'ast> ANode<'ast> {
+    pub fn ident(&self) -> &'ast Ident {
+        match self {
+            ANode::Struct(s) => s.data.ident,
+            ANode::Enum(s) => s.ident,
+        }
+    }
+
+    pub fn ctx(&self) -> &GenericContext {
+        match self {
+            ANode::Struct(s) => &s.ctx,
+            ANode::Enum(s) => &s.ctx,
+        }
+    }
 }
 
 fn convert_struct<'nodes, 'ast>(
@@ -271,7 +274,7 @@ fn convert_struct<'nodes, 'ast>(
     let ctx = generics_collect_context(&item_struct.generics);
     let data = convert_variant(nodes, &item_struct.ident, &ctx, &item_struct.fields);
 
-    AStruct { data, ctx }
+    AStruct { data, ctx, where_clause: item_struct.generics.where_clause.as_ref() }
 }
 
 fn convert_enum<'ast>(nodes: &BaseNodes<'ast>, item_enum: &'ast ItemEnum) -> AEnum<'ast> {
@@ -287,6 +290,83 @@ fn convert_enum<'ast>(nodes: &BaseNodes<'ast>, item_enum: &'ast ItemEnum) -> AEn
         ident,
         variants,
         ctx,
+        where_clause: item_enum.generics.where_clause.as_ref(),
+    }
+}
+
+/// Checks a struct for coherence.
+///
+/// Concretely, what this means is, if we have a struct like so:
+///
+/// ```rust
+/// struct Both<A, B> {
+///     a: Exp<A>,
+///     b: Exp<B>,
+/// }
+/// ```
+///
+/// Then it's not possible for us to, without outside context, emit a useful implementations
+/// mapping over `Exp` both `Both`. If we were to try, they might look something like:
+///
+/// ```rust
+/// impl<A, B> Trait<Exp<A>> for Both<A, B> {
+///     // ...
+/// }
+/// impl<A, B> Trait<Exp<B>> for Both<A, B> {
+///    // ...
+/// }
+/// ```
+///
+/// This obviously runs afoul of coherence rules; we could have A == B after all! We don't have
+/// specialization and we don't have negative trait bounds, so there's no getting out of this
+/// pickle. If the user really wants a struct like this, they'll have to implement it manually with
+/// the `#[specialize]` macro.
+fn check_coherence_struct<'ast>(s: &AStruct<'ast>) {
+    let mut found = HashMap::new();
+    check_coherence_variant(&mut found, &s.data);
+}
+
+/// See `check_coherence_struct`
+fn check_coherence_enum<'ast>(e: &AEnum<'ast>) {
+    let mut found = HashMap::new();
+    for variant in e.variants.iter() {
+        check_coherence_variant(&mut found, variant);
+    }
+}
+
+/// Checks if a given variant coheres with the contexts for all the previous variants
+fn check_coherence_variant<'ast, 'parent>(
+    previous: &mut HashMap<&'parent str, &'parent GenericContext<'ast>>,
+    variant: &'parent AVariant<'ast>,
+) {
+    for field in variant.fields.iter() {
+        for ty in field.types.iter() {
+            check_coherence_type(previous, ty);
+        }
+    }
+}
+
+/// Checks if a given type coheres with the contexts for all the previous types
+fn check_coherence_type<'ast, 'parent>(
+    previous: &mut HashMap<&'parent str, &'parent GenericContext<'ast>>,
+    ty: &'parent AType<'ast>,
+) {
+    match previous.entry(&ty.key) {
+        Entry::Occupied(e) => {
+            // The automatically-derived PartialEq implementation works here
+            if e.get() != &&ty.ctx {
+                // TODO: make this compiler error better
+                panic!(
+                    "{} with context {:?} won't cohere with previously found context {:?}",
+                    ty.key,
+                    ty.ctx,
+                    e.get()
+                );
+            }
+        }
+        Entry::Vacant(e) => {
+            e.insert(&ty.ctx);
+        }
     }
 }
 
@@ -294,11 +374,11 @@ fn convert_enum<'ast>(nodes: &BaseNodes<'ast>, item_enum: &'ast ItemEnum) -> AEn
 pub(crate) struct ANodes<'ast>(pub HashMap<String, ANode<'ast>>);
 
 pub(crate) fn make_nodes<'ast>(m: &'ast syn::ItemMod) -> ANodes<'ast> {
-    // Pass 1: read in most basic data by visiting all structs/enums
+    // Pass 1: Read in most basic data by visiting all structs/enums
     let mut base = BaseNodes::default();
     base.visit_item_mod(m);
 
-    // Pass 2: annotate nodes with generic context data for their direct children
+    // Pass 2: Annotate nodes with generic context data for their direct children.
     let nodes = ANodes(
         base.0
             .iter()
@@ -313,6 +393,14 @@ pub(crate) fn make_nodes<'ast>(m: &'ast syn::ItemMod) -> ANodes<'ast> {
             })
             .collect(),
     );
+
+    // Pass 2.1: Check all nodes for coherence.
+    for node in nodes.0.values() {
+        match node {
+            ANode::Struct(s) => check_coherence_struct(s),
+            ANode::Enum(e) => check_coherence_enum(e),
+        }
+    }
 
     // Pass 3: propagate children data to all nodes, recording, for every field, all of the
     // instantiations that can happen below it

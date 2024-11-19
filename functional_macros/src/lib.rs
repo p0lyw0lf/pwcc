@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::collections::HashSet;
 use std::error::Error;
 use std::fmt::Display;
@@ -7,59 +6,12 @@ use std::str::FromStr;
 use proc_macro::TokenStream;
 use proc_macro::TokenTree;
 
-use syn::visit;
-use syn::visit::Visit;
-use syn::Fields;
-use syn::GenericArgument;
-use syn::Generics;
-use syn::Ident;
-use syn::ItemEnum;
 use syn::ItemMod;
-use syn::ItemStruct;
-use syn::PathArguments;
-use syn::Type;
 
 #[cfg(feature = "functor")]
 mod functor;
-mod syntax;
 mod nodes;
-
-#[derive(Default, Debug)]
-struct Lattice(HashMap<String, HashSet<String>>);
-
-/// Repeatedly propagate upwards, making so that if there exists a path from
-/// A -...-> B in the original graph, the output lattice will have a direct edge A -> B
-/// We do this by repeatedly collapsing all A -> B -> C edges into an A -> C edge.
-fn make_lattice(graph: Graph) -> Lattice {
-    let mut lattice = Lattice::default();
-
-    // initialize the lattice from the graph
-    for (ident, children) in graph.0.into_iter() {
-        lattice.0.insert(ident, children.into_iter().collect());
-    }
-
-    let mut changed = true;
-    while changed {
-        let mut next = HashMap::with_capacity(lattice.0.len());
-        changed = false;
-        for (ident, children) in lattice.0.iter() {
-            // Expand reachable set by 1 step
-            let next_children = children
-                .iter()
-                .filter_map(|i| lattice.0.get(i))
-                .fold(children.clone(), |acc, more| {
-                    acc.union(more).map(Clone::clone).collect()
-                });
-            if children.len() != next_children.len() {
-                changed = true;
-            }
-            next.insert(ident.clone(), next_children);
-        }
-        lattice = Lattice(next);
-    }
-
-    lattice
-}
+mod syntax;
 
 /// All the typeclasses we support
 #[derive(PartialEq, Eq, Hash)]
@@ -111,8 +63,10 @@ macro_rules! break_none {
 
 /// Expects attrs to be formatted as a comma-separated list of idents. Calls `f` on each ident in
 /// the list.
-fn for_each_ident(attrs: TokenStream, f: &mut impl FnMut(proc_macro::Ident)) {
-    let iter = &mut attrs.into_iter();
+fn for_each_ident(
+    iter: &mut proc_macro::token_stream::IntoIter,
+    f: &mut impl FnMut(proc_macro::Ident),
+) {
     loop {
         let ident = break_none!(syntax::ident(&mut TokenStream::new(), iter));
 
@@ -130,7 +84,7 @@ impl EnabledTypeclasses {
     fn parse_attrs(attrs: TokenStream) -> Self {
         let mut hs = HashSet::new();
 
-        for_each_ident(attrs, &mut |ident| {
+        for_each_ident(&mut attrs.into_iter(), &mut |ident| {
             let typeclass = Typeclass::from_str(&ident.to_string()).expect("parsing typeclass");
             hs.insert(typeclass);
         });
@@ -178,11 +132,7 @@ pub fn ast(attrs: TokenStream, item: TokenStream) -> TokenStream {
 
     let r#mod: ItemMod = syn::parse(item.clone()).expect("must be applied to module");
 
-    let mut nodes = Nodes::default();
-    nodes.visit_item_mod(&r#mod);
-
-    let graph = make_graph(&nodes);
-    let lattice = make_lattice(graph);
+    let nodes = crate::nodes::make_nodes(&r#mod);
 
     let mut out = TokenStream::new();
     let iter = &mut item.into_iter();
@@ -206,7 +156,7 @@ pub fn ast(attrs: TokenStream, item: TokenStream) -> TokenStream {
 
         #[cfg(feature = "functor")]
         if enabled.functor() {
-            functor::emit(&mut out, &nodes, &lattice);
+            functor::emit(&mut out, &nodes);
         }
 
         proc_macro::Group::new(proc_macro::Delimiter::Brace, out.into())
@@ -223,17 +173,40 @@ pub fn ast(attrs: TokenStream, item: TokenStream) -> TokenStream {
 
 /// Helper macro for manually writing Functor instances, avoiding coherence conflicts by manually
 /// specifying what types it will apply to. All this macro does is replace all instances of the
-/// string `_T_` in idents with all of the idents it's passed as arguments.
+/// given in idents with all of the idents it's passed as arguments. Usage:
+///
+/// ```rust
+/// #[specialize(T -> A, B, C)]
+/// const FOO_T = BAR_T + BAZ_T;
+///
+/// #[specialize(_T_ -> Foo, Bar, Baz)]
+/// impl Display for _T_ {
+///     fn fmt(&self, f: Formatter<'_>) -> fmt::Result {
+///         write!(f, "{}", self.0)
+///     }
+/// }
+/// ```
 #[proc_macro_attribute]
 pub fn specialize(attrs: TokenStream, item: TokenStream) -> TokenStream {
+    let iter = &mut attrs.into_iter();
+    let magic = always!(syntax::ident(&mut TokenStream::new(), iter));
+    let _ = always!(syntax::punct(
+        &mut TokenStream::new(),
+        iter,
+        &[
+            proc_macro::Punct::new('-', proc_macro::Spacing::Joint),
+            proc_macro::Punct::new('>', proc_macro::Spacing::Alone)
+        ]
+    ));
+    let magic = &magic.to_string();
+
     let mut out = TokenStream::new();
 
-    const MAGIC: &str = "_T_";
-    for_each_ident(attrs, &mut |ident| {
+    for_each_ident(iter, &mut |ident| {
         out.extend(item.clone().into_iter().map(|token| match token {
-            TokenTree::Ident(i) if i.to_string().contains(MAGIC) => {
+            TokenTree::Ident(i) if i.to_string().contains(magic) => {
                 TokenTree::Ident(proc_macro::Ident::new(
-                    &i.to_string().replace("_T_", &ident.to_string()),
+                    &i.to_string().replace(magic, &ident.to_string()),
                     ident.span(),
                 ))
             }

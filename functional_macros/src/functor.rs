@@ -29,7 +29,7 @@ struct AddSuffix<'ast, 'suffix, 'hashset> {
 
 impl<'ast, 'suffix, 'hashset> VisitMut for AddSuffix<'ast, 'suffix, 'hashset> {
     fn visit_lifetime_mut(&mut self, l: &mut Lifetime) {
-        if self.params.lifetimes.contains(&l.ident) {
+        if self.params.has_lifetime(&l.ident) {
             l.ident = Ident::new(
                 &format!("{}_{}", l.ident, self.suffix.to_lowercase()),
                 l.ident.span(),
@@ -41,14 +41,14 @@ impl<'ast, 'suffix, 'hashset> VisitMut for AddSuffix<'ast, 'suffix, 'hashset> {
     // TODO: also need to make the type and constant suffix-ification work for
     // instantiated type parameters, not just declared ones
     fn visit_type_param_mut(&mut self, tp: &mut TypeParam) {
-        if self.params.types.contains(&tp.ident) {
+        if self.params.has_type(&tp.ident) {
             tp.ident = Ident::new(&format!("{}{}", tp.ident, self.suffix), tp.ident.span());
         }
         visit_mut::visit_type_param_mut(self, tp);
     }
 
     fn visit_const_param_mut(&mut self, cp: &mut ConstParam) {
-        if self.params.consts.contains(&cp.ident) {
+        if self.params.has_const(&cp.ident) {
             cp.ident = Ident::new(
                 &format!("{}_{}", cp.ident, self.suffix.to_uppercase()),
                 cp.ident.span(),

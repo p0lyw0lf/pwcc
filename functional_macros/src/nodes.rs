@@ -5,6 +5,9 @@ use std::collections::HashSet;
 use syn::spanned::Spanned;
 use syn::visit;
 use syn::visit::Visit;
+use syn::visit_mut;
+use syn::visit_mut::VisitMut;
+use syn::Expr;
 use syn::Field;
 use syn::Fields;
 use syn::GenericArgument;
@@ -14,7 +17,8 @@ use syn::Ident;
 use syn::ItemEnum;
 use syn::ItemStruct;
 use syn::PathArguments;
-use syn::WhereClause;
+use syn::Token;
+use syn::Type;
 
 enum BaseNode<'ast> {
     Struct(&'ast ItemStruct),
@@ -51,9 +55,21 @@ impl<'ast> Visit<'ast> for BaseNodes<'ast> {
 /// the `Ok` variant is `T`.
 #[derive(Debug, Default, PartialEq)]
 pub(crate) struct GenericContext<'ast> {
-    pub lifetimes: HashSet<&'ast Ident>,
-    pub types: HashSet<&'ast Ident>,
-    pub consts: HashSet<&'ast Ident>,
+    lifetimes: HashSet<&'ast Ident>,
+    types: HashSet<&'ast Ident>,
+    consts: HashSet<&'ast Ident>,
+}
+
+impl<'ast> GenericContext<'ast> {
+    pub fn has_lifetime(&self, i: &'ast Ident) -> bool {
+        self.lifetimes.contains(i)
+    }
+    pub fn has_type(&self, i: &'ast Ident) -> bool {
+        self.types.contains(i)
+    }
+    pub fn has_const(&self, i: &'ast Ident) -> bool {
+        self.consts.contains(i)
+    }
 }
 
 /// Collects all the idents found in a Generics node
@@ -82,14 +98,29 @@ pub(crate) struct AField<'ast> {
 }
 
 /// An "annotated type" of a field that corresponds to one of our lattice types.
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub(crate) struct AType<'ast> {
     /// An index into the outer Nodes structure
     pub key: String,
-    /// The instantiation of generic arguments for this type
-    pub instantiation: Vec<&'ast GenericArgument>,
-    /// All generics from the surrounding context that are used by this type
+    /// The instantiation of generic arguments for this type. May correspond to the instantion
+    /// defined in the field, or may be created as a result of propagating child relationships.
+    pub instantiation: Vec<GenericArgument>,
+    /// All generics from the surrounding context that are used by this type.
+    /// INVARIANT: can be derived exactly from `instantiation`
     pub ctx: GenericContext<'ast>,
+}
+
+impl<'ast> std::hash::Hash for AType<'ast> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.key.hash(state);
+        self.instantiation.hash(state);
+    }
+}
+
+impl<'ast> std::cmp::PartialEq for AType<'ast> {
+    fn eq(&self, other: &Self) -> bool {
+        self.key == other.key && self.instantiation == other.instantiation
+    }
 }
 
 fn convert_field<'ast>(
@@ -131,7 +162,7 @@ fn convert_field<'ast>(
                         instantiation: if let PathArguments::AngleBracketed(args) =
                             &segment.arguments
                         {
-                            args.args.iter().collect()
+                            args.args.iter().map(Clone::clone).collect()
                         } else {
                             Vec::default()
                         },
@@ -156,7 +187,7 @@ fn convert_field<'ast>(
 
         fn visit_lifetime(&mut self, i: &'ast syn::Lifetime) {
             let ident = &i.ident;
-            if self.parent_ctx.lifetimes.contains(ident) {
+            if self.parent_ctx.has_lifetime(ident) {
                 self.current_ctx.lifetimes.insert(ident);
             }
             visit::visit_lifetime(self, i);
@@ -230,7 +261,8 @@ pub(crate) struct AStruct<'ast> {
     pub data: AVariant<'ast>,
     /// The generic context defined by this struct
     pub ctx: GenericContext<'ast>,
-    pub where_clause: Option<&'ast WhereClause>,
+    /// The exact order of generic arguments
+    pub generics: &'ast Generics,
 }
 
 /// An "annotated enum", representing a standalone enum
@@ -242,7 +274,8 @@ pub(crate) struct AEnum<'ast> {
     pub variants: Vec<AVariant<'ast>>,
     /// The generic context defined by this enum
     pub ctx: GenericContext<'ast>,
-    pub where_clause: Option<&'ast WhereClause>,
+    /// The exact order of generic arguments
+    pub generics: &'ast Generics,
 }
 
 #[derive(Debug)]
@@ -256,6 +289,13 @@ impl<'ast> ANode<'ast> {
         match self {
             ANode::Struct(s) => s.data.ident,
             ANode::Enum(s) => s.ident,
+        }
+    }
+
+    pub fn generics(&self) -> &'ast Generics {
+        match self {
+            ANode::Struct(s) => s.generics,
+            ANode::Enum(s) => s.generics,
         }
     }
 
@@ -274,7 +314,11 @@ fn convert_struct<'nodes, 'ast>(
     let ctx = generics_collect_context(&item_struct.generics);
     let data = convert_variant(nodes, &item_struct.ident, &ctx, &item_struct.fields);
 
-    AStruct { data, ctx, where_clause: item_struct.generics.where_clause.as_ref() }
+    AStruct {
+        data,
+        ctx,
+        generics: &item_struct.generics,
+    }
 }
 
 fn convert_enum<'ast>(nodes: &BaseNodes<'ast>, item_enum: &'ast ItemEnum) -> AEnum<'ast> {
@@ -290,7 +334,7 @@ fn convert_enum<'ast>(nodes: &BaseNodes<'ast>, item_enum: &'ast ItemEnum) -> AEn
         ident,
         variants,
         ctx,
-        where_clause: item_enum.generics.where_clause.as_ref(),
+        generics: &item_enum.generics,
     }
 }
 
@@ -370,6 +414,177 @@ fn check_coherence_type<'ast, 'parent>(
     }
 }
 
+/// Given a path like A -> B -> C, collapse it into A -> C
+///
+/// The edges A -> B and B -> C are represented by AType items, and we need the
+/// intermediate ANode item B to find out how to translate the idents in B -> C.
+///
+/// REQUIRIES: `b` is actually the node pointed to by `ab`, and `bc` is actually an outgoing edge
+/// of `b`
+///
+/// Say you have an AST like so:
+///
+/// ```rust
+/// struct LevelZero<A> {
+///     one: LevelOne<A>,
+/// }
+/// struct LevelOne<B> {
+///     two: LevelTwo<B>,
+/// }
+/// struct LevelTwo<C>(C);
+/// ```
+///
+/// Then, when you want to generate an implementation over `LevelTwo` for `LevelZero`, you'll need
+/// to substitute in the correct type parameter. But! If we were do this naively, i.e. just reuse
+/// the definition inside `LevelOne`, we'd end up with something like:
+///
+/// ```rust
+/// impl<A> Trait<LevelTwo<B>> for LevelOne<A> {
+///     // ...
+/// }
+/// ```
+///
+/// So, we need to do something smarter. Given the definition in `LevelZero` substitutes `A` for
+/// the parameter `B` in `LevelOne`, we need to replace all instantiations of `B` with `A` if we're
+/// to move `LevelTwo` up to `LevelZero`. That's what this function does.
+fn collapse_ty_edge<'ast>(ab: &AType<'ast>, b: &ANode<'ast>, bc: &AType<'ast>) -> AType<'ast> {
+    /// There's considerations like:
+    /// one: LevelOne<A::Mapped>, two: LevelTwo<B::Mapped> needs to turn into
+    /// LevelOne<(A::Mapped)::Mapped>. Similarly, we could have generic expressions instead of just
+    /// raw generics (tho I'm not sure that's 100% supported. anyways). So, we need to operate at a
+    /// higher level than just ident -> ident substitutions, we need ident -> type and ident ->
+    /// expr substitutions too!
+    struct Substituter<'ast> {
+        /// Maps the lifetime used in b to the lifetime used in a
+        lifetime_map: HashMap<&'ast Ident, &'ast Ident>,
+        /// Maps the generic type variable used in b to the type substitution as passed in from a
+        type_map: HashMap<&'ast Ident, &'ast Type>,
+        /// Maps the generic constant as used in b to the constant expression as passed in from a
+        constant_map: HashMap<&'ast Ident, &'ast Expr>,
+    }
+    impl<'ast> VisitMut for Substituter<'ast> {
+        fn visit_type_mut(&mut self, ty: &mut syn::Type) {
+            // Visit inner parts of path first. If we visited afterwards, we might get confused and
+            // replace things inside of a part we've already replaced.
+            visit_mut::visit_type_mut(self, ty);
+            if let Type::Path(path) = ty {
+                // If the first type in the path is in the generic context, we should substitute it.
+                let mut rest = path.path.segments.iter();
+                let first = rest.next().expect("empty type path");
+                if let Some(substitution) = self.type_map.get(&first.ident) {
+                    assert!(path.qself.is_none());
+                    *ty = Type::Path(syn::TypePath {
+                        qself: Some(syn::QSelf {
+                            lt_token: <Token![<]>::default(),
+                            ty: Box::new((*substitution).clone()),
+                            position: 0,
+                            as_token: None,
+                            gt_token: <Token![>]>::default(),
+                        }),
+                        path: syn::Path {
+                            leading_colon: Some(<Token![::]>::default()),
+                            segments: rest.map(Clone::clone).collect(),
+                        },
+                    })
+                }
+            }
+        }
+
+        fn visit_lifetime_mut(&mut self, i: &mut syn::Lifetime) {
+            visit_mut::visit_lifetime_mut(self, i);
+            if let Some(substitution) = self.lifetime_map.get(&i.ident) {
+                i.ident = (*substitution).clone();
+            }
+        }
+
+        fn visit_expr_mut(&mut self, e: &mut syn::Expr) {
+            visit_mut::visit_expr_mut(self, e);
+            if let Expr::Path(path) = e {
+                if path.qself.is_none() && path.path.segments.len() == 1 {
+                    let ident = path.path.get_ident().unwrap();
+                    if let Some(substitution) = self.constant_map.get(&ident) {
+                        *e = (*substitution).clone();
+                    }
+                }
+            }
+        }
+    }
+
+    let mut lifetime_map = HashMap::new();
+    let mut type_map = HashMap::new();
+    let mut constant_map = HashMap::new();
+
+    // Make substituter maps by iterating over the definition and instantiation at the same time
+    assert_eq!(b.generics().params.len(), ab.instantiation.len());
+    for (key, value) in b.generics().params.iter().zip(ab.instantiation.iter()) {
+        match key {
+            GenericParam::Lifetime(key) => {
+                if let GenericArgument::Lifetime(value) = value {
+                    lifetime_map.insert(&key.lifetime.ident, &value.ident);
+                } else {
+                    panic!("got unexpected arg {:?} trying to match against {} in the definition of {}", value, key.lifetime, b.ident());
+                }
+            }
+            GenericParam::Type(key) => {
+                if let GenericArgument::Type(value) = value {
+                    type_map.insert(&key.ident, value);
+                } else {
+                    panic!("got unexpected arg {:?} trying to match against {} in the definition of {}", value, key.ident, b.ident());
+                }
+            }
+            GenericParam::Const(key) => {
+                if let GenericArgument::Const(value) = value {
+                    constant_map.insert(&key.ident, value);
+                } else {
+                    panic!("got unexpected arg {:?} trying to match against {} in the definition of {}", value, key.ident, b.ident());
+                }
+            }
+        }
+    }
+
+    let mut substituter = Substituter {
+        lifetime_map,
+        type_map,
+        constant_map,
+    };
+
+    let ac_instantiation = bc
+        .instantiation
+        .iter()
+        .map(|generic_arg| match generic_arg {
+            GenericArgument::Lifetime(l) => GenericArgument::Lifetime({
+                let mut l = l.clone();
+                substituter.visit_lifetime_mut(&mut l);
+                l
+            }),
+            GenericArgument::Type(t) => GenericArgument::Type({
+                let mut t = t.clone();
+                substituter.visit_type_mut(&mut t);
+                t
+            }),
+            GenericArgument::Const(e) => GenericArgument::Const({
+                let mut e = e.clone();
+                substituter.visit_expr_mut(&mut e);
+                e
+            }),
+            other => panic!(
+                "got unexpected generic argument {:?} while parsing item{}",
+                other,
+                b.ident()
+            ),
+        })
+        .collect();
+
+    // We need this to check for coherence later. TODO: actually implement the transform for it
+    let ac_ctx = GenericContext::default();
+
+    AType {
+        key: bc.key.clone(),
+        instantiation: ac_instantiation,
+        ctx: ac_ctx,
+    }
+}
+
 #[derive(Default, Debug)]
 pub(crate) struct ANodes<'ast>(pub HashMap<String, ANode<'ast>>);
 
@@ -394,17 +609,17 @@ pub(crate) fn make_nodes<'ast>(m: &'ast syn::ItemMod) -> ANodes<'ast> {
             .collect(),
     );
 
-    // Pass 2.1: Check all nodes for coherence.
+    // Pass 3: propagate children data to all nodes, recording, for every field, all of the
+    // instantiations that can happen below it
+    // TODO: this seems pretty hard. Glad I at least wrote a comment about it lol
+
+    // Pass 3.1: Check all nodes for coherence.
     for node in nodes.0.values() {
         match node {
             ANode::Struct(s) => check_coherence_struct(s),
             ANode::Enum(e) => check_coherence_enum(e),
         }
     }
-
-    // Pass 3: propagate children data to all nodes, recording, for every field, all of the
-    // instantiations that can happen below it
-    // TODO: this seems pretty hard. Glad I at least wrote a comment about it lol
 
     nodes
 }

@@ -7,7 +7,7 @@ pub trait Functor<Inner> {
 
 impl<T, Inner, A, B> Functor<Inner> for Vec<T>
 where
-    T: Functor<Inner, Input=A, Output=B>,
+    T: Functor<Inner, Input = A, Output = B>,
 {
     type Input = A;
     type Output = B;
@@ -19,12 +19,24 @@ where
 
 impl<T, Inner, A, B> Functor<Inner> for Option<T>
 where
-    T: Functor<Inner, Input=A, Output=B>,
+    T: Functor<Inner, Input = A, Output = B>,
 {
     type Input = A;
     type Output = B;
     type Mapped = Option<T::Mapped>;
     fn fmap(self, f: &mut impl FnMut(Self::Input) -> Self::Output) -> Self::Mapped {
         Option::map(self, &mut |x: T| x.fmap(f))
+    }
+}
+
+impl<T, Inner, A, B> Functor<Inner> for Box<T>
+where
+    T: Functor<Inner, Input = A, Output = B>,
+{
+    type Input = A;
+    type Output = B;
+    type Mapped = Box<T::Mapped>;
+    fn fmap(self, f: &mut impl FnMut(Self::Input) -> Self::Output) -> Self::Mapped {
+        Box::new((*self).fmap(f))
     }
 }

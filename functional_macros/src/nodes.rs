@@ -75,7 +75,7 @@ impl<'ast> GenericContext<'ast> {
 }
 
 /// Collects all the idents found in a Generics node
-fn generics_collect_context<'ast>(generics: &'ast Generics) -> GenericContext<'ast> {
+pub fn generics_collect_context<'ast>(generics: &'ast Generics) -> GenericContext<'ast> {
     let mut out = GenericContext::default();
 
     for param in generics.params.iter() {
@@ -87,6 +87,50 @@ fn generics_collect_context<'ast>(generics: &'ast Generics) -> GenericContext<'a
     }
 
     out
+}
+
+/// Collects all the idents found in an instantiation, given a parent `ctx`
+pub fn instantiation_collect_context<'ast>(
+    ctx: &GenericContext<'ast>,
+    args: impl Iterator<Item = &'ast GenericArgument>,
+) -> GenericContext<'ast> {
+    struct Collect<'ast, 'outer> {
+        parent_ctx: &'outer GenericContext<'ast>,
+        ctx: GenericContext<'ast>,
+    }
+
+    impl<'ast, 'outer> Visit<'ast> for Collect<'ast, 'outer> {
+        fn visit_lifetime(&mut self, l: &'ast syn::Lifetime) {
+            if self.parent_ctx.has_lifetime(&l.ident) {
+                self.ctx.lifetimes.insert(&l.ident);
+            }
+            visit::visit_lifetime(self, l);
+        }
+
+        fn visit_type_path(&mut self, t: &'ast syn::TypePath) {
+            let first = t.path.segments.first().expect("empty type path");
+            if t.qself.is_none() && self.parent_ctx.has_type(&first.ident) {
+                self.ctx.types.insert(&first.ident);
+            }
+            visit::visit_type_path(self, t);
+        }
+
+        fn visit_ident(&mut self, i: &'ast syn::Ident) {
+            if self.parent_ctx.has_const(&i) {
+                self.ctx.consts.insert(&i);
+            }
+            visit::visit_ident(self, i);
+        }
+    }
+
+    let mut c = Collect {
+        parent_ctx: ctx,
+        ctx: GenericContext::default(),
+    };
+    for arg in args {
+        c.visit_generic_argument(arg);
+    }
+    c.ctx
 }
 
 /// An "annotated field" in a struct/enum annotated with the requisite data to do introspection on.

@@ -1,35 +1,38 @@
+use std::collections::HashSet;
+use std::ops::Deref;
+
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use quote::TokenStreamExt;
+use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::visit_mut;
 use syn::visit_mut::VisitMut;
-use syn::ConstParam;
-use syn::Field;
+use syn::GenericArgument;
+use syn::GenericParam;
 use syn::Generics;
 use syn::Ident;
-use syn::Lifetime;
 use syn::Token;
-use syn::TypeParam;
 use syn::WhereClause;
 
+use crate::nodes::instantiation_collect_context;
 use crate::nodes::AField;
+use crate::nodes::ANode;
+use crate::nodes::ANodes;
 use crate::nodes::AType;
 use crate::nodes::AVariant;
-use crate::nodes::ANode;
 use crate::nodes::GenericContext;
-use crate::nodes::ANodes;
 
 /// Visitor that will append a suffix to all generic parameters in a set of idents
 struct AddSuffix<'ast, 'suffix, 'hashset> {
     // Should be CamelCase
     suffix: &'suffix str,
-    params: &'hashset GenericContext<'ast>,
+    ctx: &'hashset GenericContext<'ast>,
 }
 
 impl<'ast, 'suffix, 'hashset> VisitMut for AddSuffix<'ast, 'suffix, 'hashset> {
-    fn visit_lifetime_mut(&mut self, l: &mut Lifetime) {
-        if self.params.has_lifetime(&l.ident) {
+    fn visit_lifetime_mut(&mut self, l: &mut syn::Lifetime) {
+        if self.ctx.has_lifetime(&l.ident) {
             l.ident = Ident::new(
                 &format!("{}_{}", l.ident, self.suffix.to_lowercase()),
                 l.ident.span(),
@@ -38,30 +41,68 @@ impl<'ast, 'suffix, 'hashset> VisitMut for AddSuffix<'ast, 'suffix, 'hashset> {
         visit_mut::visit_lifetime_mut(self, l);
     }
 
-    // TODO: also need to make the type and constant suffix-ification work for
-    // instantiated type parameters, not just declared ones
-    fn visit_type_param_mut(&mut self, tp: &mut TypeParam) {
-        if self.params.has_type(&tp.ident) {
-            tp.ident = Ident::new(&format!("{}{}", tp.ident, self.suffix), tp.ident.span());
+    fn visit_type_param_mut(&mut self, t: &mut syn::TypeParam) {
+        if self.ctx.has_type(&t.ident) {
+            t.ident = Ident::new(&format!("{}{}", t.ident, self.suffix), t.ident.span());
         }
-        visit_mut::visit_type_param_mut(self, tp);
     }
 
-    fn visit_const_param_mut(&mut self, cp: &mut ConstParam) {
-        if self.params.has_const(&cp.ident) {
-            cp.ident = Ident::new(
-                &format!("{}_{}", cp.ident, self.suffix.to_uppercase()),
-                cp.ident.span(),
+    fn visit_type_path_mut(&mut self, t: &mut syn::TypePath) {
+        let first = t.path.segments.first_mut().expect("empty type path");
+        if t.qself.is_none() && self.ctx.has_type(&first.ident) {
+            first.ident = Ident::new(
+                &format!("{}{}", first.ident, self.suffix),
+                first.ident.span(),
             );
         }
-        visit_mut::visit_const_param_mut(self, cp);
+        visit_mut::visit_type_path_mut(self, t);
+    }
+
+    fn visit_ident_mut(&mut self, i: &mut syn::Ident) {
+        if self.ctx.has_const(&i) {
+            *i = Ident::new(&format!("{}_{}", i, self.suffix.to_uppercase()), i.span());
+        }
+        visit_mut::visit_ident_mut(self, i);
     }
 }
 
-/// AddSuffixs a string to the idents of all of the given generic arguments, returning the resulting generics
-fn generics_add_suffix(generics: &Generics, suffix: &str) -> Generics {
-    // TODO
-    generics.clone()
+/// Adds a string to the idents of all of the given generic arguments present in `ctx`, returning the resulting generics.
+/// If `remove` is true, removes all parameters that don't correspond to anything in `ctx`.
+fn generics_add_suffix<'ast>(
+    generics: &Generics,
+    suffix: &str,
+    ctx: &GenericContext<'ast>,
+    remove: bool,
+) -> Generics {
+    let mut generics = generics.clone();
+    let mut v = AddSuffix { suffix, ctx };
+    generics.params = generics
+        .params
+        .into_iter()
+        .filter_map(|param| match param {
+            GenericParam::Lifetime(l) if remove && !ctx.has_lifetime(&l.lifetime.ident) => None,
+            GenericParam::Type(t) if remove && !ctx.has_type(&t.ident) => None,
+            GenericParam::Const(c) if remove && !ctx.has_const(&c.ident) => None,
+            mut param => {
+                v.visit_generic_param_mut(&mut param);
+                Some(param)
+            }
+        })
+        .collect();
+    generics
+}
+
+/// Adds a string to all identifiers found in `ctx`
+fn instantiation_add_suffix<'ast>(
+    instantiation: impl Iterator<Item = &'ast GenericArgument> + 'ast,
+    suffix: &'ast str,
+    ctx: &'ast GenericContext<'ast>,
+) -> impl Iterator<Item = GenericArgument> + 'ast {
+    instantiation.map(|arg| {
+        let mut arg = arg.clone();
+        AddSuffix { suffix, ctx }.visit_generic_argument_mut(&mut arg);
+        arg
+    })
 }
 
 /// Merges two sets of generic parameters together
@@ -101,9 +142,25 @@ fn generics_merge(a: &Generics, b: &Generics) -> Generics {
 /// Emits the impl Functor<T> for T implementation for the given type, applying generic arguments
 /// as applicable
 fn emit_base_case<'ast>(out: &mut TokenStream2, node: &ANode<'ast>) {
-    /*
-    let input_generics = generics_add_suffix(generics, "Input");
-    let output_generics = generics_add_suffix(generics, "Output");
+    let ident = node.ident();
+
+    let generics = node.generics();
+    let ctx = node.ctx();
+
+    // If this is a recursive type, we should _not_ generate a base case, and instead let the
+    // inductive case take care of that.
+    let ident_str = ident.to_string();
+    if node
+        .fields()
+        .map(|field| field.types.iter())
+        .flatten()
+        .any(|ty| ty.key == ident_str)
+    {
+        return;
+    }
+
+    let input_generics = generics_add_suffix(generics, "Input", &ctx, false);
+    let output_generics = generics_add_suffix(generics, "Output", &ctx, false);
 
     let all_generics = generics_merge(&input_generics, &output_generics);
 
@@ -121,7 +178,6 @@ fn emit_base_case<'ast>(out: &mut TokenStream2, node: &ANode<'ast>) {
             }
         }
     })
-*/
 }
 
 /// Emit the impl Functor<Inner> for Container implementation for the given inner type and
@@ -133,62 +189,44 @@ fn emit_inductive_case<'ast>(
     inner: &AType<'ast>,
 ) {
     let ident = container.ident();
-    let inner_ident = &inner.key;
-    let generics = container.ctx();
+    let inner_node = lattice.0.get(&inner.key).expect("missing node");
+    let inner_ident = inner_node.ident();
 
-    /*
+    let container_ctx = container.ctx();
+    let inner_ctx =
+        instantiation_collect_context(container_ctx, inner.instantiation.iter().map(Deref::deref));
 
-    let input_generics = generics_add_suffix(generics, "Input");
-    let output_generics = generics_add_suffix(generics, "Output");
+    let container_generics = container.generics();
 
-    let input_inner_generics = generics_add_suffix(inner.generics(), "Input");
-    let (_, input_inner_ty_generics, _) = input_inner_generics.split_for_impl();
-    let input_inner = quote! { #inner_ident #input_inner_ty_generics };
+    let container_input_generics_partial =
+        generics_add_suffix(container_generics, "Input", &inner_ctx, true);
+    let container_input_generics_full =
+        generics_add_suffix(container_generics, "Input", &inner_ctx, false);
+    let container_output_generics =
+        generics_add_suffix(container_generics, "Output", &inner_ctx, false);
 
-    let output_inner_generics = generics_add_suffix(inner.generics(), "Output");
-    let (_, output_inner_ty_generics, _) = output_inner_generics.split_for_impl();
-    let output_inner = quote! { #inner_ident #output_inner_ty_generics };
-
-    let all_generics = generics_merge(&input_generics, &output_generics);
+    let all_generics = generics_merge(
+        &container_input_generics_partial,
+        &container_output_generics,
+    );
 
     let (impl_generics, _, where_clause) = all_generics.split_for_impl();
-    let (_, input_ty_generics, _) = input_generics.split_for_impl();
-    let (_, output_ty_generics, _) = output_generics.split_for_impl();
+    let (_, input_ty_generics, _) = container_input_generics_full.split_for_impl();
+    let (_, output_ty_generics, _) = container_output_generics.split_for_impl();
 
-    let fn_body = make_fn_body(lattice, container, inner, output_inner.clone());
-*/
+    let inner_instantiation = inner.instantiation.iter().map(Deref::deref);
+    let input_inner_instantiation =
+        instantiation_add_suffix(inner_instantiation.clone(), "Input", &inner_ctx)
+            .collect::<Punctuated<_, Token![,]>>();
+    let input_inner = quote! { #inner_ident < #input_inner_instantiation > };
 
-    // TODO: currently, this doesn't work for things like
-    //
-    // ```rust
-    // struct LeftExp<T>(T);
-    // struct RightExp<T>(T);
-    // enum Either<A, B> {
-    //     Left(LeftExp<A>),
-    //     Right(RightExp<B>),
-    // }
-    // ```
-    //
-    // when going from `Either` to `LeftExp` or `RightExp`, because #all_generics is too broad.
-    // Unfortunately, fixing this bug requires keeping track of how each child type uses each
-    // generic, which seems pretty hard...
-    //
-    // This _also_ won't work for things like
-    //
-    // ```rust
-    // struct Exp<T>(T);
-    // enum Statement {
-    //     Return(Exp<String>),
-    // }
-    // ```
-    //
-    // because now we accidentally transform the type parameter of `Exp` to
-    // `StringInner`/`StringOuter`. Again, properly handling this requires keeping track of if/how
-    // type parameters from the parent node are used in children fields, which is too much effort.
-    // Best I can do is make it work only when the entire tree has the same number of generic args,
-    // with the same bounds.
+    let output_inner_instantiation =
+        instantiation_add_suffix(inner_instantiation, "Output", &inner_ctx)
+            .collect::<Punctuated<_, Token![,]>>();
+    let output_inner = quote! { #inner_ident < #output_inner_instantiation > };
 
-    /*
+    let fn_body = make_fn_body(container, inner, output_inner.clone());
+
     let out_toks = quote! {
         impl #impl_generics Functor<#output_inner> for #ident #input_ty_generics #where_clause {
             type Input = #input_inner;
@@ -201,13 +239,6 @@ fn emit_inductive_case<'ast>(
     };
     println!("{out_toks}");
     out.append_all(out_toks);
-*/
-}
-
-/// Creates a temporary name for a unnamed field. Used to ensure consistency between declaration
-/// and usage
-fn make_temporary_ident(field: &Field, index: usize) -> Ident {
-    Ident::new(&format!("tmp_{index}"), field.ty.span())
 }
 
 /// Makes a line like
@@ -295,45 +326,36 @@ fn make_variant_constructor<'ast>(
 
 /// Writes the body of the functor implementation
 fn make_fn_body<'ast>(
-    lattice: &ANodes<'ast>,
     container: &ANode<'ast>,
     inner: &AType<'ast>,
     output_inner: TokenStream2,
 ) -> TokenStream2 {
     let mut out = TokenStream2::new();
 
-    /*
     match container {
-        Node::Struct(s) => {
-            let destructure = make_destructure_fields(quote! { Self }, &s.fields);
-            out.append_all(quote! { let #destructure = self; });
-
-            let inner = inner.ident();
-            let constructor = make_constructor_fields(
-                lattice,
-                quote! { Self::Mapped },
-                &s.fields,
-                inner,
-                output_inner,
-            );
-            out.append_all(constructor)
+        ANode::Struct(s) => {
+            let destructor = make_variant_destructor(quote! { Self }, &s.data);
+            let constructor =
+                make_variant_constructor(quote! { Self::Mapped }, &s.data, inner, output_inner);
+            out.append_all(quote! {
+                let #destructor = self;
+                #constructor
+            });
         }
-        Node::Enum(e) => {
+        ANode::Enum(e) => {
             let variants = e.variants.iter().map(|variant| {
                 let ident = &variant.ident;
-                let destructure = make_destructure_fields(quote! { Self::#ident }, &variant.fields);
+                let destructor = make_variant_destructor(quote! { Self::#ident }, variant);
 
-                let inner = inner.ident();
-                let constructor = make_constructor_fields(
-                    lattice,
+                let constructor = make_variant_constructor(
                     quote! { Self::Mapped::#ident },
-                    &variant.fields,
+                    variant,
                     inner,
                     output_inner.clone(),
                 );
 
                 quote! {
-                    #destructure => #constructor
+                    #destructor => #constructor
                 }
             });
 
@@ -344,7 +366,6 @@ fn make_fn_body<'ast>(
             })
         }
     };
-*/
 
     out
 }
@@ -358,14 +379,14 @@ pub fn emit<'ast>(out: &mut TokenStream2, lattice: &ANodes<'ast>) {
     }
 
     // Emit all inductive cases
-    /*
-    for (node_name, children) in lattice.0.iter() {
-        let container = lattice.0.get(node_name).unwrap();
-        for inner in children.iter().map(|c| nodes.0.get(c).unwrap()) {
-            if container.ident() != inner.ident() {
-                emit_inductive_case(out, lattice, container, inner);
-            }
+    for container in lattice.0.values() {
+        let types = container
+            .fields()
+            .map(|field| field.types.iter())
+            .flatten()
+            .collect::<HashSet<_>>();
+        for inner in types.into_iter() {
+            emit_inductive_case(out, lattice, container, inner)
         }
     }
-*/
 }

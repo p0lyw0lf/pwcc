@@ -5,15 +5,15 @@ mod ast {
     use crate::Functor;
 
     #[derive(Debug, PartialEq)]
-    pub struct Function<T> {
-        pub name: String,
-        pub body: Vec<Statement<T>>,
+    pub struct Function<'a, T> {
+        pub name: &'a str,
+        pub body: Vec<Statement<T, usize>>,
     }
 
     #[derive(Debug, PartialEq)]
-    pub enum Statement<T> {
+    pub enum Statement<A, B> {
         Null,
-        Declare { var: String, init: Option<T> },
+        Declare { var: String, init: Option<A>, decl: Option<B> },
         Return(Exp),
     }
 
@@ -24,7 +24,6 @@ mod ast {
     }
 
 }
-/*
 
 use ast::*;
 
@@ -34,7 +33,7 @@ use crate::Functor;
 fn base_traits() {
     let x = Function {
         name: "main",
-        body: [Statement::Return(Exp::Lit(42))].into(),
+        body: [Statement::<(), usize>::Return(Exp::Lit(42))].into(),
     };
     assert_eq!(
         x,
@@ -45,6 +44,7 @@ fn base_traits() {
     );
 }
 
+/*
 #[test]
 fn uniplate() {
     let x = Exp::Add {

@@ -1,6 +1,8 @@
-use std::collections::hash_map::Entry;
+use std::borrow::Cow;
+use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::ops::Deref;
 
 use syn::spanned::Spanned;
 use syn::visit;
@@ -91,54 +93,28 @@ fn generics_collect_context<'ast>(generics: &'ast Generics) -> GenericContext<'a
 #[derive(Debug)]
 pub(crate) struct AField<'ast> {
     /// Corresponds to the declared ident if in a named struct/enum variant, otherwise corresponds to an anonymous ident if in an unnamed struct/enum variant.
-    pub ident: Ident,
+    pub ident: Cow<'ast, Ident>,
     /// All the lattice types that appear in this field. We need this to be a Vec because it tracks
     /// _all_ types that are at or below the one defined for the field.
-    pub types: Vec<AType<'ast>>,
+    pub types: HashSet<AType<'ast>>,
 }
 
 /// An "annotated type" of a field that corresponds to one of our lattice types.
-#[derive(Debug)]
+#[derive(Debug, Hash, PartialEq, Eq)]
 pub(crate) struct AType<'ast> {
     /// An index into the outer Nodes structure
     pub key: String,
     /// The instantiation of generic arguments for this type. May correspond to the instantion
     /// defined in the field, or may be created as a result of propagating child relationships.
-    pub instantiation: Vec<GenericArgument>,
-    /// All generics from the surrounding context that are used by this type.
-    /// INVARIANT: can be derived exactly from `instantiation`
-    pub ctx: GenericContext<'ast>,
+    pub instantiation: Vec<Cow<'ast, GenericArgument>>,
 }
 
-impl<'ast> std::hash::Hash for AType<'ast> {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.key.hash(state);
-        self.instantiation.hash(state);
-    }
-}
-
-impl<'ast> std::cmp::PartialEq for AType<'ast> {
-    fn eq(&self, other: &Self) -> bool {
-        self.key == other.key && self.instantiation == other.instantiation
-    }
-}
-
-fn convert_field<'ast>(
-    nodes: &BaseNodes<'ast>,
-    ctx: &GenericContext<'ast>,
-    field: &'ast Field,
-    index: usize,
-) -> AField<'ast> {
+fn convert_field<'ast>(nodes: &BaseNodes<'ast>, field: &'ast Field, index: usize) -> AField<'ast> {
     struct TypeVisitor<'ast, 'a> {
         /// The types we're looking for
         nodes: &'a BaseNodes<'ast>,
         /// All the collected types we've seen so far
-        types: &'a mut Vec<AType<'ast>>,
-        /// The parent generic context
-        parent_ctx: &'a GenericContext<'ast>,
-        /// The current context we're trying to add to. Keeps track of what parts of the
-        /// parrent_ctx are used in the instantiation of the current type.
-        current_ctx: GenericContext<'ast>,
+        types: &'a mut HashSet<AType<'ast>>,
     }
     impl<'ast, 'a> Visit<'ast> for TypeVisitor<'ast, 'a> {
         fn visit_type_path(&mut self, ty: &'ast syn::TypePath) {
@@ -148,73 +124,33 @@ fn convert_field<'ast>(
                 let segment = ty.path.segments.first().unwrap();
                 let ident = segment.ident.to_string();
                 if self.nodes.0.contains_key(&ident) {
-                    // We found a type! put ourselves into a new context and recur
-
-                    let old_ctx =
-                        std::mem::replace(&mut self.current_ctx, GenericContext::default());
-
-                    visit::visit_type_path(self, ty);
-
-                    let ctx = std::mem::replace(&mut self.current_ctx, old_ctx);
-
-                    self.types.push(AType {
+                    self.types.insert(AType {
                         key: ident,
                         instantiation: if let PathArguments::AngleBracketed(args) =
                             &segment.arguments
                         {
-                            args.args.iter().map(Clone::clone).collect()
+                            args.args.iter().map(Cow::Borrowed).collect()
                         } else {
                             Vec::default()
                         },
-                        ctx,
                     });
-
-                    return;
-                }
-            }
-
-            // Otherwise, check if the first type in the segment is in the generic context. If it
-            // is, record that
-            if let Some(segment) = ty.path.segments.first() {
-                let ident = &segment.ident;
-                if self.parent_ctx.types.contains(ident) {
-                    self.current_ctx.types.insert(ident);
                 }
             }
 
             visit::visit_type_path(self, ty);
         }
-
-        fn visit_lifetime(&mut self, i: &'ast syn::Lifetime) {
-            let ident = &i.ident;
-            if self.parent_ctx.has_lifetime(ident) {
-                self.current_ctx.lifetimes.insert(ident);
-            }
-            visit::visit_lifetime(self, i);
-        }
-
-        // Unfortunately, there's not really a better way to check for consts...
-        // TODO: could maybe make it more efficient by only starting to look whenever we're in an Expr context?
-        fn visit_ident(&mut self, i: &'ast proc_macro2::Ident) {
-            if self.parent_ctx.consts.contains(i) {
-                self.current_ctx.consts.insert(i);
-            }
-            visit::visit_ident(self, i);
-        }
     }
 
-    let mut types = Vec::new();
+    let mut types = HashSet::new();
     let mut visitor = TypeVisitor {
         nodes,
         types: &mut types,
-        parent_ctx: ctx,
-        current_ctx: GenericContext::default(),
     };
     visitor.visit_field(field);
 
     let ident = field.ident.as_ref().map_or_else(
-        || Ident::new(&format!("tmp_{index}"), field.ty.span()),
-        Clone::clone,
+        || Cow::Owned(Ident::new(&format!("tmp_{index}"), field.ty.span())),
+        Cow::Borrowed,
     );
 
     AField { ident, types }
@@ -236,7 +172,6 @@ pub(crate) struct AVariant<'ast> {
 fn convert_variant<'nodes, 'ast>(
     nodes: &'nodes BaseNodes<'ast>,
     ident: &'ast Ident,
-    ctx: &GenericContext<'ast>,
     fields: &'ast Fields,
 ) -> AVariant<'ast> {
     let named = matches!(fields, syn::Fields::Named(_));
@@ -244,7 +179,7 @@ fn convert_variant<'nodes, 'ast>(
     let fields = fields
         .iter()
         .enumerate()
-        .map(|(index, field)| convert_field(nodes, &ctx, field, index))
+        .map(|(index, field)| convert_field(nodes, field, index))
         .collect();
 
     AVariant {
@@ -305,14 +240,38 @@ impl<'ast> ANode<'ast> {
             ANode::Enum(s) => &s.ctx,
         }
     }
+
+    pub fn fields(&self) -> Box<dyn Iterator<Item = &'_ AField<'ast>> + '_> {
+        match self {
+            ANode::Struct(s) => Box::new(s.data.fields.iter()),
+            ANode::Enum(s) => Box::new(
+                s.variants
+                    .iter()
+                    .map(|variant| variant.fields.iter())
+                    .flatten(),
+            ),
+        }
+    }
+
+    pub fn fields_mut(&mut self) -> Box<dyn Iterator<Item = &'_ mut AField<'ast>> + '_> {
+        match self {
+            ANode::Struct(s) => Box::new(s.data.fields.iter_mut()),
+            ANode::Enum(s) => Box::new(
+                s.variants
+                    .iter_mut()
+                    .map(|variant| variant.fields.iter_mut())
+                    .flatten(),
+            ),
+        }
+    }
 }
 
 fn convert_struct<'nodes, 'ast>(
     nodes: &'nodes BaseNodes<'ast>,
     item_struct: &'ast ItemStruct,
 ) -> AStruct<'ast> {
+    let data = convert_variant(nodes, &item_struct.ident, &item_struct.fields);
     let ctx = generics_collect_context(&item_struct.generics);
-    let data = convert_variant(nodes, &item_struct.ident, &ctx, &item_struct.fields);
 
     AStruct {
         data,
@@ -323,94 +282,18 @@ fn convert_struct<'nodes, 'ast>(
 
 fn convert_enum<'ast>(nodes: &BaseNodes<'ast>, item_enum: &'ast ItemEnum) -> AEnum<'ast> {
     let ident = &item_enum.ident;
-    let ctx = generics_collect_context(&item_enum.generics);
     let variants = item_enum
         .variants
         .iter()
-        .map(|variant| convert_variant(nodes, &variant.ident, &ctx, &variant.fields))
+        .map(|variant| convert_variant(nodes, &variant.ident, &variant.fields))
         .collect();
+    let ctx = generics_collect_context(&item_enum.generics);
 
     AEnum {
         ident,
         variants,
         ctx,
         generics: &item_enum.generics,
-    }
-}
-
-/// Checks a struct for coherence.
-///
-/// Concretely, what this means is, if we have a struct like so:
-///
-/// ```rust
-/// struct Both<A, B> {
-///     a: Exp<A>,
-///     b: Exp<B>,
-/// }
-/// ```
-///
-/// Then it's not possible for us to, without outside context, emit a useful implementations
-/// mapping over `Exp` both `Both`. If we were to try, they might look something like:
-///
-/// ```rust
-/// impl<A, B> Trait<Exp<A>> for Both<A, B> {
-///     // ...
-/// }
-/// impl<A, B> Trait<Exp<B>> for Both<A, B> {
-///    // ...
-/// }
-/// ```
-///
-/// This obviously runs afoul of coherence rules; we could have A == B after all! We don't have
-/// specialization and we don't have negative trait bounds, so there's no getting out of this
-/// pickle. If the user really wants a struct like this, they'll have to implement it manually with
-/// the `#[specialize]` macro.
-fn check_coherence_struct<'ast>(s: &AStruct<'ast>) {
-    let mut found = HashMap::new();
-    check_coherence_variant(&mut found, &s.data);
-}
-
-/// See `check_coherence_struct`
-fn check_coherence_enum<'ast>(e: &AEnum<'ast>) {
-    let mut found = HashMap::new();
-    for variant in e.variants.iter() {
-        check_coherence_variant(&mut found, variant);
-    }
-}
-
-/// Checks if a given variant coheres with the contexts for all the previous variants
-fn check_coherence_variant<'ast, 'parent>(
-    previous: &mut HashMap<&'parent str, &'parent GenericContext<'ast>>,
-    variant: &'parent AVariant<'ast>,
-) {
-    for field in variant.fields.iter() {
-        for ty in field.types.iter() {
-            check_coherence_type(previous, ty);
-        }
-    }
-}
-
-/// Checks if a given type coheres with the contexts for all the previous types
-fn check_coherence_type<'ast, 'parent>(
-    previous: &mut HashMap<&'parent str, &'parent GenericContext<'ast>>,
-    ty: &'parent AType<'ast>,
-) {
-    match previous.entry(&ty.key) {
-        Entry::Occupied(e) => {
-            // The automatically-derived PartialEq implementation works here
-            if e.get() != &&ty.ctx {
-                // TODO: make this compiler error better
-                panic!(
-                    "{} with context {:?} won't cohere with previously found context {:?}",
-                    ty.key,
-                    ty.ctx,
-                    e.get()
-                );
-            }
-        }
-        Entry::Vacant(e) => {
-            e.insert(&ty.ctx);
-        }
     }
 }
 
@@ -519,21 +402,21 @@ fn collapse_ty_edge<'ast>(ab: &AType<'ast>, b: &ANode<'ast>, bc: &AType<'ast>) -
     for (key, value) in b.generics().params.iter().zip(ab.instantiation.iter()) {
         match key {
             GenericParam::Lifetime(key) => {
-                if let GenericArgument::Lifetime(value) = value {
+                if let GenericArgument::Lifetime(value) = value.deref() {
                     lifetime_map.insert(&key.lifetime.ident, &value.ident);
                 } else {
                     panic!("got unexpected arg {:?} trying to match against {} in the definition of {}", value, key.lifetime, b.ident());
                 }
             }
             GenericParam::Type(key) => {
-                if let GenericArgument::Type(value) = value {
+                if let GenericArgument::Type(value) = value.deref() {
                     type_map.insert(&key.ident, value);
                 } else {
                     panic!("got unexpected arg {:?} trying to match against {} in the definition of {}", value, key.ident, b.ident());
                 }
             }
             GenericParam::Const(key) => {
-                if let GenericArgument::Const(value) = value {
+                if let GenericArgument::Const(value) = value.deref() {
                     constant_map.insert(&key.ident, value);
                 } else {
                     panic!("got unexpected arg {:?} trying to match against {} in the definition of {}", value, key.ident, b.ident());
@@ -551,22 +434,19 @@ fn collapse_ty_edge<'ast>(ab: &AType<'ast>, b: &ANode<'ast>, bc: &AType<'ast>) -
     let ac_instantiation = bc
         .instantiation
         .iter()
-        .map(|generic_arg| match generic_arg {
-            GenericArgument::Lifetime(l) => GenericArgument::Lifetime({
-                let mut l = l.clone();
+        .map(|generic_arg| match generic_arg.clone().into_owned() {
+            GenericArgument::Lifetime(mut l) => Cow::Owned(GenericArgument::Lifetime({
                 substituter.visit_lifetime_mut(&mut l);
                 l
-            }),
-            GenericArgument::Type(t) => GenericArgument::Type({
-                let mut t = t.clone();
+            })),
+            GenericArgument::Type(mut t) => Cow::Owned(GenericArgument::Type({
                 substituter.visit_type_mut(&mut t);
                 t
-            }),
-            GenericArgument::Const(e) => GenericArgument::Const({
-                let mut e = e.clone();
+            })),
+            GenericArgument::Const(mut e) => Cow::Owned(GenericArgument::Const({
                 substituter.visit_expr_mut(&mut e);
                 e
-            }),
+            })),
             other => panic!(
                 "got unexpected generic argument {:?} while parsing item{}",
                 other,
@@ -575,18 +455,14 @@ fn collapse_ty_edge<'ast>(ab: &AType<'ast>, b: &ANode<'ast>, bc: &AType<'ast>) -
         })
         .collect();
 
-    // We need this to check for coherence later. TODO: actually implement the transform for it
-    let ac_ctx = GenericContext::default();
-
     AType {
         key: bc.key.clone(),
         instantiation: ac_instantiation,
-        ctx: ac_ctx,
     }
 }
 
 #[derive(Default, Debug)]
-pub(crate) struct ANodes<'ast>(pub HashMap<String, ANode<'ast>>);
+pub(crate) struct ANodes<'ast>(pub BTreeMap<String, ANode<'ast>>);
 
 pub(crate) fn make_nodes<'ast>(m: &'ast syn::ItemMod) -> ANodes<'ast> {
     // Pass 1: Read in most basic data by visiting all structs/enums
@@ -594,7 +470,7 @@ pub(crate) fn make_nodes<'ast>(m: &'ast syn::ItemMod) -> ANodes<'ast> {
     base.visit_item_mod(m);
 
     // Pass 2: Annotate nodes with generic context data for their direct children.
-    let nodes = ANodes(
+    let mut nodes = ANodes(
         base.0
             .iter()
             .map(|(key, node)| {
@@ -611,15 +487,51 @@ pub(crate) fn make_nodes<'ast>(m: &'ast syn::ItemMod) -> ANodes<'ast> {
 
     // Pass 3: propagate children data to all nodes, recording, for every field, all of the
     // instantiations that can happen below it
-    // TODO: this seems pretty hard. Glad I at least wrote a comment about it lol
-
-    // Pass 3.1: Check all nodes for coherence.
-    for node in nodes.0.values() {
-        match node {
-            ANode::Struct(s) => check_coherence_struct(s),
-            ANode::Enum(e) => check_coherence_enum(e),
+    // TODO: this algorithm is handily O(v^2*e). It could probably be cut down to O(v^2) if we
+    // properly kept track of what paths have been visited. But this is fine for now :P
+    let mut changed = true;
+    // By virtue of always iterating in the same order every time, we make an optimization: instead
+    // of storing some sort of map from node name -> field name -> new types, we just store a list
+    // of new types, iterating once to populate it, and then again to apply it.
+    let mut new_types = Vec::<HashSet<AType<'ast>>>::new();
+    while changed {
+        changed = false;
+        // Pass 3.1: Read in the next reachable set
+        for a in nodes.0.values() {
+            for a_field in a.fields() {
+                let mut new_field_types = HashSet::new();
+                for ab in a_field.types.iter() {
+                    let b = nodes.0.get(&ab.key).unwrap();
+                    for bc in b.fields().map(|field| field.types.iter()).flatten() {
+                        new_field_types.insert(collapse_ty_edge(ab, b, bc));
+                    }
+                }
+                new_types.push(new_field_types);
+            }
         }
+        // Pass 3.2: Extend graph by the reachability step
+        for (field, new_field_types) in nodes
+            .0
+            .values_mut()
+            .map(|a| a.fields_mut())
+            .flatten()
+            .zip(new_types.drain(..))
+        {
+            let old_num_types = field.types.len();
+            field.types.extend(new_field_types);
+            let new_num_types = field.types.len();
+            if old_num_types != new_num_types {
+                changed = true;
+            }
+        }
+
+        // new_types should be completely clear at this point
+        assert_eq!(new_types.len(), 0);
     }
+
+    // Pass 4: Check all nodes for coherence.
+    // TODO: it's probably good to do that, but also not strictly necessary, since the compiler
+    // will reject exactly what it needs to anyways?
 
     nodes
 }

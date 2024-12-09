@@ -48,12 +48,13 @@ impl<'ast, 'suffix, 'hashset> VisitMut for AddSuffix<'ast, 'suffix, 'hashset> {
     }
 
     fn visit_type_path_mut(&mut self, t: &mut syn::TypePath) {
-        let first = t.path.segments.first_mut().expect("empty type path");
-        if t.qself.is_none() && self.ctx.has_type(&first.ident) {
-            first.ident = Ident::new(
-                &format!("{}{}", first.ident, self.suffix),
-                first.ident.span(),
-            );
+        if let Some(first) = t.path.segments.first_mut() {
+            if t.qself.is_none() && self.ctx.has_type(&first.ident) {
+                first.ident = Ident::new(
+                    &format!("{}{}", first.ident, self.suffix),
+                    first.ident.span(),
+                );
+            }
         }
         visit_mut::visit_type_path_mut(self, t);
     }

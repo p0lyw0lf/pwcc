@@ -25,6 +25,20 @@ mod ast {
 
 }
 
+#[ast]
+mod example {
+    use crate::Functor;
+
+    pub struct A<T> {
+        b: B<T>,
+        c: C<T>,
+    }
+    pub struct B<T> {
+        c: C<T>,
+    }
+    pub struct C<T>(T);
+}
+
 use ast::*;
 
 use crate::Functor;

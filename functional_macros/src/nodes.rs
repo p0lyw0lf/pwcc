@@ -108,9 +108,10 @@ pub fn instantiation_collect_context<'ast>(
         }
 
         fn visit_type_path(&mut self, t: &'ast syn::TypePath) {
-            let first = t.path.segments.first().expect("empty type path");
-            if t.qself.is_none() && self.parent_ctx.has_type(&first.ident) {
-                self.ctx.types.insert(&first.ident);
+            if let Some(first) = t.path.segments.first() {
+                if t.qself.is_none() && self.parent_ctx.has_type(&first.ident) {
+                    self.ctx.types.insert(&first.ident);
+                }
             }
             visit::visit_type_path(self, t);
         }
@@ -397,9 +398,18 @@ fn collapse_ty_edge<'ast>(ab: &AType<'ast>, b: &ANode<'ast>, bc: &AType<'ast>) -
             if let Type::Path(path) = ty {
                 // If the first type in the path is in the generic context, we should substitute it.
                 let mut rest = path.path.segments.iter();
-                let first = rest.next().expect("empty type path");
-                if let Some(substitution) = self.type_map.get(&first.ident) {
-                    assert!(path.qself.is_none());
+                let first = match rest.next() {
+                    Some(first) => first,
+                    None => return,
+                };
+                let substitution = match self.type_map.get(&first.ident) {
+                    Some(s) => s,
+                    None => return,
+                };
+                assert!(path.qself.is_none());
+                if rest.len() > 0 {
+                    // Best-effort; not 100% sure this will work all the time, may run into E0223:
+                    // ambiguous associated type errors.
                     *ty = Type::Path(syn::TypePath {
                         qself: Some(syn::QSelf {
                             lt_token: <Token![<]>::default(),
@@ -412,7 +422,9 @@ fn collapse_ty_edge<'ast>(ab: &AType<'ast>, b: &ANode<'ast>, bc: &AType<'ast>) -
                             leading_colon: Some(<Token![::]>::default()),
                             segments: rest.map(Clone::clone).collect(),
                         },
-                    })
+                    });
+                } else {
+                    *ty = (*substitution).clone();
                 }
             }
         }

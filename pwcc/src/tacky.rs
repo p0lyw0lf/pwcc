@@ -259,7 +259,11 @@ pub struct TemporaryFactory<'a> {
 }
 impl<'a> TemporaryFactory<'a> {
     pub fn new(parent: &'a Identifier) -> Self {
-        Self { parent, tmp_i: 0, label_i: 0 }
+        Self {
+            parent,
+            tmp_i: 0,
+            label_i: 0,
+        }
     }
     pub fn next(&mut self) -> Temporary {
         let out = Temporary(self.tmp_i);

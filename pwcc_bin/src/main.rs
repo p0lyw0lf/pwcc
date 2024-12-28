@@ -3,8 +3,8 @@ use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 
-use pwcc::{lexer, parser, tacky, codegen, printer, semantic};
 use functional::Functor;
+use pwcc::{codegen, lexer, parser, printer, semantic, tacky};
 
 static STAGES: &'static [&'static str] = &["lex", "parse", "validate", "tacky", "codegen"];
 
@@ -67,7 +67,8 @@ fn main() -> Result<(), String> {
         Some(f) => f,
     };
 
-    let source = fs::read_to_string(filename.clone()).map_err(|e| format!("error reading file: {e}"))?;
+    let source =
+        fs::read_to_string(filename.clone()).map_err(|e| format!("error reading file: {e}"))?;
 
     let tokens = lexer::lex(&source).map_err(|e| format!("error lexing: {e}"))?;
 
@@ -77,7 +78,8 @@ fn main() -> Result<(), String> {
     }
 
     let tree = parser::parse(tokens).map_err(|e| format!("error parsing: {e}"))?;
-    let tree = semantic::validate(tree).map_err(|e| format!("error running semantic analysis: {e}"))?;
+    let tree =
+        semantic::validate(tree).map_err(|e| format!("error running semantic analysis: {e}"))?;
 
     if stage.map_or(false, |stage| stage < 2) {
         printer::pretty_print(tree);
@@ -113,7 +115,8 @@ fn main() -> Result<(), String> {
     let mut output_path = PathBuf::from(filename);
     output_path.set_extension("s");
 
-    let mut output = fs::File::create(output_path).map_err(|e| format!("error opening output file: {e}"))?;
+    let mut output =
+        fs::File::create(output_path).map_err(|e| format!("error opening output file: {e}"))?;
 
     write!(output, "{code}").map_err(|e| format!("error writing to output file: {e}"))?;
 

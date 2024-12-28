@@ -6,7 +6,7 @@ pub trait Foldable<A> {
 
 impl<T, A> Foldable<A> for Vec<T>
 where
-    T: Foldable<A>
+    T: Foldable<A>,
 {
     fn foldl<'s, B>(&'s self, f: fn(B, &'s A) -> B, mut acc: B) -> B
     where

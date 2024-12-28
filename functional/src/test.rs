@@ -13,7 +13,11 @@ mod ast {
     #[derive(Debug, PartialEq)]
     pub enum Statement<A, B> {
         Null,
-        Declare { var: String, init: Option<A>, decl: Option<B> },
+        Declare {
+            var: String,
+            init: Option<A>,
+            decl: Option<B>,
+        },
         Return(Exp),
     }
 
@@ -22,7 +26,6 @@ mod ast {
         Lit(isize),
         Add { lhs: Box<Exp>, rhs: Box<Exp> },
     }
-
 }
 
 #[ast]

@@ -21,6 +21,7 @@ enum BaseNode<'ast> {
     Enum(&'ast ItemEnum),
 }
 
+pub mod coherence;
 pub mod lattice;
 pub mod scc;
 
@@ -60,7 +61,7 @@ impl<'ast> Visit<'ast> for BaseNodes<'ast> {
 /// Then the GenericContext inside the `Result` body is `<T, E>`, and the GenericContext used by
 /// the `Ok` variant is `T`.
 #[derive(Debug, Default, PartialEq)]
-pub(crate) struct GenericContext<'ast> {
+pub struct GenericContext<'ast> {
     lifetimes: HashSet<&'ast Ident>,
     types: HashSet<&'ast Ident>,
     consts: HashSet<&'ast Ident>,
@@ -143,7 +144,7 @@ pub fn instantiation_collect_context<'ast>(
 
 /// An "annotated field" in a struct/enum annotated with the requisite data to do introspection on.
 #[derive(Debug)]
-pub(crate) struct AField<'ast> {
+pub struct AField<'ast> {
     /// Corresponds to the declared ident if in a named struct/enum variant, otherwise corresponds to an anonymous ident if in an unnamed struct/enum variant.
     pub ident: Cow<'ast, Ident>,
     /// All the types that appear in this field. We need this to be a collection instead of just one because it may track _all_ types that are at or below the one defined for the field.
@@ -152,7 +153,7 @@ pub(crate) struct AField<'ast> {
 
 /// An "annotated type" of a field that corresponds to one of our lattice types.
 #[derive(Debug, Hash, PartialEq, Eq)]
-pub(crate) struct AType<'ast> {
+pub struct AType<'ast> {
     /// An index into the outer Nodes structure
     pub ident: &'ast Ident,
     /// The instantiation of generic arguments for this type. May correspond to the instantion
@@ -211,7 +212,7 @@ fn convert_field<'ast>(nodes: &BaseNodes<'ast>, field: &'ast Field, index: usize
 
 /// An "annotated variant", representing either a standalone struct or an enum variant
 #[derive(Debug)]
-pub(crate) struct AVariant<'ast> {
+pub struct AVariant<'ast> {
     /// The original Ident token when the struct was defined
     pub ident: &'ast Ident,
     /// Whether the fields are named or unnamed
@@ -245,7 +246,7 @@ fn convert_variant<'nodes, 'ast>(
 
 /// An "annotated struct", which we model as consisting of a single variant
 #[derive(Debug)]
-pub(crate) struct AStruct<'ast> {
+pub struct AStruct<'ast> {
     pub data: AVariant<'ast>,
     /// The generic context defined by this struct
     pub ctx: GenericContext<'ast>,
@@ -255,7 +256,7 @@ pub(crate) struct AStruct<'ast> {
 
 /// An "annotated enum", representing a standalone enum
 #[derive(Debug)]
-pub(crate) struct AEnum<'ast> {
+pub struct AEnum<'ast> {
     /// The original Ident token when the enum was defined
     pub ident: &'ast Ident,
     /// All of the variants in the enum
@@ -267,7 +268,7 @@ pub(crate) struct AEnum<'ast> {
 }
 
 #[derive(Debug)]
-pub(crate) enum ANode<'ast> {
+pub enum ANode<'ast> {
     Struct(AStruct<'ast>),
     Enum(AEnum<'ast>),
 }
@@ -356,7 +357,7 @@ fn convert_enum<'ast>(nodes: &BaseNodes<'ast>, item_enum: &'ast ItemEnum) -> AEn
 
 /// INVARIANT: \forall i. nodes[i].ident() == i
 #[derive(Default, Debug)]
-pub(crate) struct ANodes<'ast>(pub BTreeMap<&'ast Ident, ANode<'ast>>);
+pub struct ANodes<'ast>(pub BTreeMap<&'ast Ident, ANode<'ast>>);
 
 impl<'ast> Deref for ANodes<'ast> {
     type Target = BTreeMap<&'ast Ident, ANode<'ast>>;
@@ -366,7 +367,7 @@ impl<'ast> Deref for ANodes<'ast> {
     }
 }
 
-pub(crate) fn make_nodes<'ast>(m: &'ast syn::ItemMod) -> ANodes<'ast> {
+pub fn make_nodes<'ast>(m: &'ast syn::ItemMod) -> ANodes<'ast> {
     // Pass 1: Read in most basic data by visiting all structs/enums
     let mut base = BaseNodes::default();
     base.visit_item_mod(m);
@@ -388,4 +389,91 @@ pub(crate) fn make_nodes<'ast>(m: &'ast syn::ItemMod) -> ANodes<'ast> {
 
     // For more complicated passes, see the `lattice` and `scc` modules.
     nodes
+}
+
+#[cfg(test)]
+mod test {
+    //! Just some test utilities for other modules to use
+
+    use std::borrow::Borrow;
+    use std::borrow::Cow;
+
+    use proc_macro2::Span;
+    use syn::Generics;
+
+    use crate::nodes::lattice::make_lattice;
+    use crate::nodes::AField;
+    use crate::nodes::ANodes;
+    use crate::nodes::AStruct;
+    use crate::nodes::AType;
+    use crate::nodes::AVariant;
+
+    use super::*;
+
+    struct NodeBuilder {
+        /// Because so much relies on &'ast Ident, we need to make an arena for those
+        label_arena: Vec<Ident>,
+        empty_generics: Generics,
+    }
+
+    impl NodeBuilder {
+        /// Initializes the NodeBuilder arena with the given labels. These labels will be referred
+        /// to be index in the `add_node` function.
+        fn with_labels(labels: &[impl Borrow<str>]) -> Self {
+            Self {
+                label_arena: labels
+                    .iter()
+                    .map(|label| Ident::new(label.borrow(), Span::call_site()))
+                    .collect(),
+                empty_generics: Default::default(),
+            }
+        }
+
+        fn add_node<'ast>(&'ast self, nodes: &mut ANodes<'ast>, label: usize, edges: &[usize]) {
+            let ident = &self.label_arena[label];
+            let node = ANode::Struct(AStruct {
+                data: AVariant {
+                    ident,
+                    named: true,
+                    unit: false,
+                    fields: edges
+                        .iter()
+                        .map(|edge| {
+                            let ident = &self.label_arena[*edge];
+                            AField {
+                                ident: Cow::Borrowed(ident),
+                                types: [AType {
+                                    ident,
+                                    instantiation: Default::default(),
+                                }]
+                                .into_iter()
+                                .collect(),
+                            }
+                        })
+                        .collect(),
+                },
+                ctx: Default::default(),
+                generics: &self.empty_generics,
+            });
+
+            nodes.0.insert(ident, node);
+        }
+    }
+
+    /// edges[i] contains a list of all other indicies of vertices for outgoing edges
+    pub fn run_test(edges: &[&[usize]], test_fn: impl FnOnce(ANodes<'_>, Vec<Ident>)){
+        let mut nodes = ANodes::default();
+        let builder = NodeBuilder::with_labels(
+            (0..edges.len())
+                .map(|i| format!("Node{i}"))
+                .collect::<Vec<_>>()
+                .as_slice(),
+        );
+
+        for (i, edges) in edges.iter().enumerate() {
+            builder.add_node(&mut nodes, i, edges);
+        }
+
+        test_fn(nodes, builder.label_arena.clone());
+    }
 }

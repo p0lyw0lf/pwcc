@@ -82,13 +82,13 @@ use crate::nodes::ANode;
 /// them by traversing nodes anyways.
 pub(crate) struct StronglyConnectedComponents<'ast> {
     /// The underlying graph.
-    nodes: Lattice<'ast>,
+    pub nodes: Lattice<'ast>,
     /// Maps the identifier of a node to the index of its connected component.
     /// INVARIANT: \forall i. i \in nodes <=> i \in node_to_index
-    node_to_index: HashMap<&'ast Ident, usize>,
+    pub node_to_index: HashMap<&'ast Ident, usize>,
     /// List of all the strongly connected components.
     /// INVARIANT: \forall i. i \in node_to_index => i \in index_to_scc[node_to_index[i]]
-    index_to_scc: Vec<HashSet<&'ast Ident>>,
+    pub index_to_scc: Vec<HashSet<&'ast Ident>>,
 }
 
 pub(crate) fn find_sccs<'ast>(nodes: Lattice<'ast>) -> StronglyConnectedComponents<'ast> {
@@ -202,117 +202,47 @@ pub(crate) fn find_sccs<'ast>(nodes: Lattice<'ast>) -> StronglyConnectedComponen
 
 #[cfg(test)]
 mod test {
-    use std::borrow::Cow;
-    use std::borrow::Borrow;
-
-    use proc_macro2::Span;
-    use syn::Generics;
-
-    use crate::nodes::lattice::make_lattice;
-    use crate::nodes::AField;
-    use crate::nodes::ANodes;
-    use crate::nodes::AStruct;
-    use crate::nodes::AType;
-    use crate::nodes::AVariant;
-
     use super::*;
 
-    struct NodeBuilder {
-        /// Because so much relies on &'ast Ident, we need to make an arena for those
-        label_arena: Vec<Ident>,
-        empty_generics: Generics,
-    }
-
-    impl NodeBuilder {
-        /// Initializes the NodeBuilder arena with the given labels. These labels will be referred
-        /// to be index in the `add_node` function.
-        fn with_labels(labels: &[impl Borrow<str>]) -> Self {
-            Self {
-                label_arena: labels
-                    .iter()
-                    .map(|label| Ident::new(label.borrow(), Span::call_site()))
-                    .collect(),
-                empty_generics: Default::default(),
-            }
-        }
-
-        fn add_node<'ast>(&'ast self, nodes: &mut ANodes<'ast>, label: usize, edges: &[usize]) {
-            let ident = &self.label_arena[label];
-            let node = ANode::Struct(AStruct {
-                data: AVariant {
-                    ident,
-                    named: true,
-                    unit: false,
-                    fields: edges
-                        .iter()
-                        .map(|edge| {
-                            let ident = &self.label_arena[*edge];
-                            AField {
-                                ident: Cow::Borrowed(ident),
-                                types: [AType {
-                                    ident,
-                                    instantiation: Default::default(),
-                                }]
-                                .into_iter()
-                                .collect(),
-                            }
-                        })
-                        .collect(),
-                },
-                ctx: Default::default(),
-                generics: &self.empty_generics,
-            });
-
-            nodes.0.insert(ident, node);
-        }
-    }
+    use crate::nodes::test::run_test;
+    use crate::nodes::lattice::make_lattice;
 
     /// edges[i] contains a list of all other indicies of vertices for outgoing edges
     /// expected_sccs[i] contains the index of the Strongly Connected Component this vertex belongs to.
-    fn run_test(edges: &[&[usize]], expected_sccs: &[usize]) {
+    fn scc_test(edges: &[&[usize]], expected_sccs: &[usize]) {
         assert_eq!(edges.len(), expected_sccs.len());
+        run_test(edges, |nodes, labels| {
+            let nodes = make_lattice(nodes);
+            let sccs = find_sccs(nodes);
 
-        let mut nodes = ANodes::default();
-        let builder = NodeBuilder::with_labels(
-            (0..edges.len())
-                .map(|i| format!("Node{i}"))
-                .collect::<Vec<_>>().as_slice(),
-        );
+            let actual_sccs = (0..expected_sccs.len())
+                .map(|i| sccs.node_to_index[&labels[i]])
+                .collect::<Vec<_>>();
 
-        for (i, edges) in edges.iter().enumerate() {
-            builder.add_node(&mut nodes, i, edges);
-        }
-
-        let nodes = make_lattice(nodes);
-        let sccs = find_sccs(nodes);
-
-        let actual_sccs = (0..expected_sccs.len())
-            .map(|i| sccs.node_to_index[&builder.label_arena[i]])
-            .collect::<Vec<_>>();
-
-        // We need to compare pairwise equality, because the actual indices might be shuffled
-        for i in 0..expected_sccs.len() {
-            for j in i..expected_sccs.len() {
-                assert_eq!(
-                    expected_sccs[i] == expected_sccs[j],
-                    actual_sccs[i] == actual_sccs[j]
-                );
+            // We need to compare pairwise equality, because the actual indices might be shuffled
+            for i in 0..expected_sccs.len() {
+                for j in i..expected_sccs.len() {
+                    assert_eq!(
+                        expected_sccs[i] == expected_sccs[j],
+                        actual_sccs[i] == actual_sccs[j]
+                    );
+                }
             }
-        }
+        });
     }
 
     #[test]
     fn simple() {
-        run_test(&[&[1, 2], &[2], &[]], &[0, 1, 2]);
+        scc_test(&[&[1, 2], &[2], &[]], &[0, 1, 2]);
     }
 
     #[test]
     fn two_disconneted_parts() {
-        run_test(&[&[1], &[0], &[3], &[2]], &[0, 0, 1, 1]);
+        scc_test(&[&[1], &[0], &[3], &[2]], &[0, 0, 1, 1]);
     }
 
     #[test]
     fn two_connected_parts() {
-        run_test(&[&[1], &[0, 2], &[3], &[2]], &[0, 0, 1, 1]);
+        scc_test(&[&[1], &[0, 2], &[3], &[2]], &[0, 0, 1, 1]);
     }
 }

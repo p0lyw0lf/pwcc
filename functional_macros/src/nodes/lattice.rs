@@ -26,7 +26,7 @@ use super::AType;
 ///
 /// Say you have an AST like so:
 ///
-/// ```rust
+/// ```rust,ignore
 /// struct LevelZero<A> {
 ///     one: LevelOne<A>,
 /// }
@@ -40,7 +40,7 @@ use super::AType;
 /// to substitute in the correct type parameter. But! If we were do this naively, i.e. just reuse
 /// the definition inside `LevelOne`, we'd end up with something like:
 ///
-/// ```rust
+/// ```rust,ignore
 /// impl<A> Trait<LevelTwo<B>> for LevelOne<A> {
 ///     // ...
 /// }
@@ -186,8 +186,20 @@ fn collapse_ty_edge<'ast>(ab: &AType<'ast>, b: &ANode<'ast>, bc: &AType<'ast>) -
         .collect();
 
     AType {
-        key: bc.key.clone(),
+        ident: bc.ident,
         instantiation: ac_instantiation,
+    }
+}
+
+/// Wrapper type to let callers know that make_lattice has run on a graph.
+#[derive(Debug, Default)]
+pub(crate) struct Lattice<'ast>(pub ANodes<'ast>);
+
+impl<'ast> Deref for Lattice<'ast> {
+    type Target = ANodes<'ast>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
@@ -195,7 +207,7 @@ fn collapse_ty_edge<'ast>(ab: &AType<'ast>, b: &ANode<'ast>, bc: &AType<'ast>) -
 /// instantiations that can happen below it
 /// TODO: this algorithm is handily O(v^2*e). It could probably be cut down to O(v^2) if we
 /// properly kept track of what paths have been visited. But this is fine for now :P
-pub(crate) fn make_lattice<'ast>(mut nodes: ANodes<'ast>) -> ANodes<'ast> {
+pub(crate) fn make_lattice<'ast>(mut nodes: ANodes<'ast>) -> Lattice<'ast> {
     let mut changed = true;
     // By virtue of always iterating in the same order every time, we make an optimization: instead
     // of storing some sort of map from node name -> field name -> new types, we just store a list
@@ -204,11 +216,11 @@ pub(crate) fn make_lattice<'ast>(mut nodes: ANodes<'ast>) -> ANodes<'ast> {
     while changed {
         changed = false;
         // Pass 3.1: Read in the next reachable set
-        for a in nodes.0.values() {
+        for a in nodes.values() {
             for a_field in a.fields() {
                 let mut new_field_types = HashSet::new();
                 for ab in a_field.types.iter() {
-                    let b = nodes.0.get(&ab.key).unwrap();
+                    let b = nodes.get(ab.ident).unwrap();
                     for bc in b.fields().map(|field| field.types.iter()).flatten() {
                         new_field_types.insert(collapse_ty_edge(ab, b, bc));
                     }
@@ -240,5 +252,5 @@ pub(crate) fn make_lattice<'ast>(mut nodes: ANodes<'ast>) -> ANodes<'ast> {
     // TODO: it's probably good to do that, but also not strictly necessary, since the compiler
     // will reject exactly what it needs to anyways?
 
-    nodes
+    Lattice(nodes)
 }

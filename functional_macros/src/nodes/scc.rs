@@ -6,7 +6,7 @@
 //!
 //! An example of why we might want to do so is as follows:
 //!
-//! ```rust
+//! ```rust,ignore
 //! struct A<T> {
 //!     b: B<T>,
 //!     c: C<T>,
@@ -32,7 +32,7 @@
 //! From the example before, it's easy to see how requirement (2) is formed. But what about (1)?
 //! Consider the following example:
 //!
-//! ```rust
+//! ```rust,ignore
 //! struct APrime<T, U> {
 //!     b: B<T>,
 //!     c: C<U>,
@@ -66,3 +66,243 @@
 //! connected component, then `cb` will always exist.
 //!
 //! And with that, I believe my informal proof is complete! Now all that's left to do is to do it.
+
+use std::collections::hash_map;
+use std::collections::HashMap;
+use std::collections::HashSet;
+
+use syn::Ident;
+
+use crate::nodes::lattice::Lattice;
+use crate::nodes::ANode;
+
+/// We're using the [Path-based strong component algorithm](https://en.wikipedia.org/wiki/Path-based_strong_component_algorithm) as outlined on Wikipedia. This datastructure will be the output of the algorithm: a list of all connected components.
+///
+/// We do not care about precise links between connected components, because we will just recover
+/// them by traversing nodes anyways.
+pub(crate) struct StronglyConnectedComponents<'ast> {
+    /// The underlying graph.
+    nodes: Lattice<'ast>,
+    /// Maps the identifier of a node to the index of its connected component.
+    /// INVARIANT: \forall i. i \in nodes <=> i \in node_to_index
+    node_to_index: HashMap<&'ast Ident, usize>,
+    /// List of all the strongly connected components.
+    /// INVARIANT: \forall i. i \in node_to_index => i \in index_to_scc[node_to_index[i]]
+    index_to_scc: Vec<HashSet<&'ast Ident>>,
+}
+
+pub(crate) fn find_sccs<'ast>(nodes: Lattice<'ast>) -> StronglyConnectedComponents<'ast> {
+    struct State<'ast> {
+        // Just like the fields in StronglyConnectedComponents, but we can't own `nodes` in this
+        // struct, so we have to break them out.
+        node_to_index: HashMap<&'ast Ident, usize>,
+        index_to_scc: Vec<HashSet<&'ast Ident>>,
+
+        node_to_preorder_num: HashMap<&'ast Ident, usize>,
+        preorder_num: usize,
+
+        // All vertices not assigned a strongly connected component. S in the wikipedia article.
+        frontier: Vec<&'ast Ident>,
+        // All vertices not yet determined to belong to different sccs from each other. P in the
+        // wikipedia article.
+        path: Vec<&'ast Ident>,
+    }
+
+    impl<'ast> State<'ast> {
+        /// A depth-first search that implements the algorithm. Returns `None` if the node was
+        /// newly discovered, else returns `Some(preorder_number)`.
+        fn search(&mut self, nodes: &Lattice<'ast>, node: &ANode<'ast>) -> Option<usize> {
+            match self.node_to_preorder_num.entry(node.ident()) {
+                hash_map::Entry::Occupied(entry) => {
+                    // Node already present, no need to explore
+                    return Some(*entry.get());
+                }
+                hash_map::Entry::Vacant(entry) => {
+                    // 1. Set the preorder number of v to C, and increment C.
+                    entry.insert(self.preorder_num);
+                    self.preorder_num += 1;
+                }
+            };
+
+            // 2. Push v onto S and also onto P.
+            self.frontier.push(node.ident());
+            self.path.push(node.ident());
+
+            // 3. For each edge from v to a neighboring vertex w:
+            for ty in node.tys() {
+                let next_node = nodes.get(ty.ident).unwrap();
+                match self.search(nodes, next_node) {
+                    // If the preorder number of w has not yet been assigned, recursively search w
+                    None => {}
+                    // Otherwise, if w has not yet been assigned a strongly connected component,
+                    Some(existing_preorder)
+                        if self.node_to_index.get(next_node.ident()).is_none() =>
+                    {
+                        // Repeatedly pop vertices from P until the top element of P has a preorder
+                        // number less than or equal to the preorder number of w.
+                        while let Some(ident) = self.path.last() {
+                            let last_node_preorder = *self.node_to_preorder_num.get(ident).unwrap();
+                            if last_node_preorder <= existing_preorder {
+                                break;
+                            }
+                            let _ = self.path.pop();
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            // 4. If v is the top element of P:
+            if self.path.last() == Some(&node.ident()) {
+                // Pop vertices from S until v as been popped, and assign the popped vertices to a
+                // new connected component.
+                let mut scc = HashSet::new();
+                let index = self.index_to_scc.len();
+
+                while let Some(ident) = self.frontier.pop() {
+                    scc.insert(ident);
+                    self.node_to_index.insert(ident, index);
+
+                    if ident == node.ident() {
+                        break;
+                    }
+                }
+
+                self.index_to_scc.push(scc);
+            }
+
+            None
+        }
+    }
+
+    let mut state = State {
+        node_to_index: Default::default(),
+        index_to_scc: Default::default(),
+
+        node_to_preorder_num: Default::default(),
+        preorder_num: 0,
+
+        frontier: Default::default(),
+        path: Default::default(),
+    };
+
+    for node in nodes.values() {
+        state.search(&nodes, node);
+    }
+
+    StronglyConnectedComponents {
+        nodes,
+        node_to_index: state.node_to_index,
+        index_to_scc: state.index_to_scc,
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::borrow::Cow;
+    use std::borrow::Borrow;
+
+    use proc_macro2::Span;
+    use syn::Generics;
+
+    use crate::nodes::lattice::make_lattice;
+    use crate::nodes::AField;
+    use crate::nodes::ANodes;
+    use crate::nodes::AStruct;
+    use crate::nodes::AType;
+    use crate::nodes::AVariant;
+
+    use super::*;
+
+    struct NodeBuilder {
+        /// Because so much relies on &'ast Ident, we need to make an arena for those
+        label_arena: Vec<Ident>,
+        empty_generics: Generics,
+    }
+
+    impl NodeBuilder {
+        /// Initializes the NodeBuilder arena with the given labels. These labels will be referred
+        /// to be index in the `add_node` function.
+        fn with_labels(labels: &[impl Borrow<str>]) -> Self {
+            Self {
+                label_arena: labels
+                    .iter()
+                    .map(|label| Ident::new(label.borrow(), Span::call_site()))
+                    .collect(),
+                empty_generics: Default::default(),
+            }
+        }
+
+        fn add_node<'ast>(&'ast self, nodes: &mut ANodes<'ast>, label: usize, edges: &[usize]) {
+            let ident = &self.label_arena[label];
+            let node = ANode::Struct(AStruct {
+                data: AVariant {
+                    ident,
+                    named: true,
+                    unit: false,
+                    fields: edges
+                        .iter()
+                        .map(|edge| {
+                            let ident = &self.label_arena[*edge];
+                            AField {
+                                ident: Cow::Borrowed(ident),
+                                types: [AType {
+                                    ident,
+                                    instantiation: Default::default(),
+                                }]
+                                .into_iter()
+                                .collect(),
+                            }
+                        })
+                        .collect(),
+                },
+                ctx: Default::default(),
+                generics: &self.empty_generics,
+            });
+
+            nodes.0.insert(ident, node);
+        }
+    }
+
+    /// edges[i] contains a list of all other indicies of vertices for outgoing edges
+    /// expected_sccs[i] contains the index of the Strongly Connected Component this vertex belongs to.
+    fn run_test(edges: &[&[usize]], expected_sccs: &[usize]) {
+        assert_eq!(edges.len(), expected_sccs.len());
+
+        let mut nodes = ANodes::default();
+        let builder = NodeBuilder::with_labels(
+            (0..edges.len())
+                .map(|i| format!("Node{i}"))
+                .collect::<Vec<_>>().as_slice(),
+        );
+
+        for (i, edges) in edges.iter().enumerate() {
+            builder.add_node(&mut nodes, i, edges);
+        }
+
+        let nodes = make_lattice(nodes);
+        let sccs = find_sccs(nodes);
+
+        println!("{:?}", sccs.node_to_index);
+        println!("{:?}", sccs.index_to_scc);
+
+        let actual_sccs = (0..expected_sccs.len())
+            .map(|i| sccs.node_to_index[&builder.label_arena[i]])
+            .collect::<Vec<_>>();
+
+        // We need to compare pairwise equality, because the actual indices might be shuffled
+        for i in 0..expected_sccs.len() {
+            for j in i..expected_sccs.len() {
+                assert_eq!(
+                    expected_sccs[i] == expected_sccs[j],
+                    actual_sccs[i] == actual_sccs[j]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn simple() {
+        run_test(&[&[1, 2], &[2], &[]], &[0, 1, 2]);
+    }
+}

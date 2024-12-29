@@ -178,16 +178,30 @@ pub fn ast(attrs: TokenStream, item: TokenStream) -> TokenStream {
 /// specifying what types it will apply to. All this macro does is replace all instances of the
 /// given in idents with all of the idents it's passed as arguments. Usage:
 ///
-/// ```rust
-/// #[specialize(T -> A, B, C)]
-/// const FOO_T = BAR_T + BAZ_T;
+/// ```rust,ignore
+/// const BAR_A: usize = 5;
+/// const BAR_B: usize = 6;
+/// const BAZ_A: usize = 7;
+/// const BAZ_B: usize = 8;
+/// #[specialize(T -> A, B)]
+/// const FOO_T: usize = BAR_T + BAZ_T;
 ///
-/// #[specialize(_T_ -> Foo, Bar, Baz)]
-/// impl Display for _T_ {
-///     fn fmt(&self, f: Formatter<'_>) -> fmt::Result {
+/// assert_eq!(FOO_A, 11);
+/// assert_eq!(FOO_B, 15);
+///
+/// #[specialize(T -> Foo, Bar, Baz)]
+/// struct T(usize);
+///
+/// #[specialize(T -> Foo, Bar, Baz)]
+/// impl std::fmt::Display for T {
+///     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 ///         write!(f, "{}", self.0)
 ///     }
 /// }
+///
+/// assert_eq!(&Foo(5).to_string(), "5");
+/// assert_eq!(&Bar(6).to_string(), "6");
+/// assert_eq!(&Baz(7).to_string(), "7");
 /// ```
 #[proc_macro_attribute]
 pub fn specialize(attrs: TokenStream, item: TokenStream) -> TokenStream {

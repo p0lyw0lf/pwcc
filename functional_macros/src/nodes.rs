@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
-use std::collections::HashMap;
 use std::collections::HashSet;
+use std::ops::Deref;
 
 use syn::spanned::Spanned;
 use syn::visit;
@@ -26,16 +26,23 @@ pub mod scc;
 
 /// Maps ident string to original definition
 #[derive(Default)]
-struct BaseNodes<'ast>(HashMap<String, BaseNode<'ast>>);
+struct BaseNodes<'ast>(BTreeMap<&'ast Ident, BaseNode<'ast>>);
+
+impl<'ast> Deref for BaseNodes<'ast> {
+    type Target = BTreeMap<&'ast Ident, BaseNode<'ast>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 impl<'ast> Visit<'ast> for BaseNodes<'ast> {
     fn visit_item_struct(&mut self, node: &'ast ItemStruct) {
-        self.0
-            .insert(node.ident.to_string(), BaseNode::Struct(node));
+        self.0.insert(&node.ident, BaseNode::Struct(node));
         visit::visit_item_struct(self, node);
     }
     fn visit_item_enum(&mut self, node: &'ast ItemEnum) {
-        self.0.insert(node.ident.to_string(), BaseNode::Enum(node));
+        self.0.insert(&node.ident, BaseNode::Enum(node));
         visit::visit_item_enum(self, node);
     }
 }
@@ -43,7 +50,7 @@ impl<'ast> Visit<'ast> for BaseNodes<'ast> {
 /// All of the identifiers used inside a generic context. E.g., if we have a
 /// struct definition like:
 ///
-/// ```rust
+/// ```rust,ignore
 /// enum Result<T, E> {
 ///     Ok(T),
 ///     Err(E),
@@ -147,7 +154,7 @@ pub(crate) struct AField<'ast> {
 #[derive(Debug, Hash, PartialEq, Eq)]
 pub(crate) struct AType<'ast> {
     /// An index into the outer Nodes structure
-    pub key: String,
+    pub ident: &'ast Ident,
     /// The instantiation of generic arguments for this type. May correspond to the instantion
     /// defined in the field, or may be created as a result of propagating child relationships.
     pub instantiation: Vec<Cow<'ast, GenericArgument>>,
@@ -166,10 +173,10 @@ fn convert_field<'ast>(nodes: &BaseNodes<'ast>, field: &'ast Field, index: usize
             // we're building. Check for this.
             if ty.qself.is_none() && ty.path.segments.len() == 1 {
                 let segment = ty.path.segments.first().unwrap();
-                let ident = segment.ident.to_string();
-                if self.nodes.0.contains_key(&ident) {
+                let ident = &segment.ident;
+                if self.nodes.contains_key(ident) {
                     self.types.insert(AType {
-                        key: ident,
+                        ident,
                         instantiation: if let PathArguments::AngleBracketed(args) =
                             &segment.arguments
                         {
@@ -299,6 +306,10 @@ impl<'ast> ANode<'ast> {
         }
     }
 
+    pub fn tys(&self) -> impl Iterator<Item = &'_ AType<'ast>> + '_ {
+        self.fields().map(|field| field.types.iter()).flatten()
+    }
+
     pub fn fields_mut(&mut self) -> Box<dyn Iterator<Item = &'_ mut AField<'ast>> + '_> {
         match self {
             ANode::Struct(s) => Box::new(s.data.fields.iter_mut()),
@@ -343,8 +354,17 @@ fn convert_enum<'ast>(nodes: &BaseNodes<'ast>, item_enum: &'ast ItemEnum) -> AEn
     }
 }
 
+/// INVARIANT: \forall i. nodes[i].ident() == i
 #[derive(Default, Debug)]
-pub(crate) struct ANodes<'ast>(pub BTreeMap<String, ANode<'ast>>);
+pub(crate) struct ANodes<'ast>(pub BTreeMap<&'ast Ident, ANode<'ast>>);
+
+impl<'ast> Deref for ANodes<'ast> {
+    type Target = BTreeMap<&'ast Ident, ANode<'ast>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 pub(crate) fn make_nodes<'ast>(m: &'ast syn::ItemMod) -> ANodes<'ast> {
     // Pass 1: Read in most basic data by visiting all structs/enums
@@ -353,11 +373,10 @@ pub(crate) fn make_nodes<'ast>(m: &'ast syn::ItemMod) -> ANodes<'ast> {
 
     // Pass 2: Annotate nodes with generic context data for their direct children.
     let nodes = ANodes(
-        base.0
-            .iter()
+        base.iter()
             .map(|(key, node)| {
                 (
-                    key.clone(),
+                    *key,
                     match node {
                         BaseNode::Struct(s) => ANode::Struct(convert_struct(&base, s)),
                         BaseNode::Enum(e) => ANode::Enum(convert_enum(&base, e)),

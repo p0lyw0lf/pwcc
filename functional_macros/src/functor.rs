@@ -150,13 +150,7 @@ fn emit_base_case<'ast>(out: &mut TokenStream2, node: &ANode<'ast>) {
 
     // If this is a recursive type, we should _not_ generate a base case, and instead let the
     // inductive case take care of that.
-    let ident_str = ident.to_string();
-    if node
-        .fields()
-        .map(|field| field.types.iter())
-        .flatten()
-        .any(|ty| ty.key == ident_str)
-    {
+    if node.tys().any(|ty| ty.ident == ident) {
         return;
     }
 
@@ -190,7 +184,7 @@ fn emit_inductive_case<'ast>(
     inner: &AType<'ast>,
 ) {
     let ident = container.ident();
-    let inner_node = lattice.0.get(&inner.key).expect("missing node");
+    let inner_node = lattice.get(inner.ident).expect("missing node");
     let inner_ident = inner_node.ident();
 
     let container_ctx = container.ctx();
@@ -244,19 +238,19 @@ fn emit_inductive_case<'ast>(
 
 /// Makes a line like
 ///
-/// ```rust
+/// ```rust,ignore
 /// Ident { x, y, z }
 /// ```
 ///
 /// or
 ///
-/// ```rust
+/// ```rust,ignore
 /// Ident(tmp_0, tmp_1)
 /// ```
 ///
 /// or
 ///
-/// ```rust
+/// ```rust,ignore
 /// Ident
 /// ```
 ///
@@ -375,12 +369,12 @@ fn make_fn_body<'ast>(
 /// module.
 pub fn emit<'ast>(out: &mut TokenStream2, lattice: &ANodes<'ast>) {
     // Emit all base cases
-    for node in lattice.0.values() {
+    for node in lattice.values() {
         emit_base_case(out, node);
     }
 
     // Emit all inductive cases
-    for container in lattice.0.values() {
+    for container in lattice.values() {
         let types = container
             .fields()
             .map(|field| field.types.iter())

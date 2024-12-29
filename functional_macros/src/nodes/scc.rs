@@ -169,6 +169,9 @@ pub(crate) fn find_sccs<'ast>(nodes: Lattice<'ast>) -> StronglyConnectedComponen
                 }
 
                 self.index_to_scc.push(scc);
+
+                // Pop v from P
+                let _ = self.path.pop();
             }
 
             None
@@ -283,9 +286,6 @@ mod test {
         let nodes = make_lattice(nodes);
         let sccs = find_sccs(nodes);
 
-        println!("{:?}", sccs.node_to_index);
-        println!("{:?}", sccs.index_to_scc);
-
         let actual_sccs = (0..expected_sccs.len())
             .map(|i| sccs.node_to_index[&builder.label_arena[i]])
             .collect::<Vec<_>>();
@@ -304,5 +304,15 @@ mod test {
     #[test]
     fn simple() {
         run_test(&[&[1, 2], &[2], &[]], &[0, 1, 2]);
+    }
+
+    #[test]
+    fn two_disconneted_parts() {
+        run_test(&[&[1], &[0], &[3], &[2]], &[0, 0, 1, 1]);
+    }
+
+    #[test]
+    fn two_connected_parts() {
+        run_test(&[&[1], &[0, 2], &[3], &[2]], &[0, 0, 1, 1]);
     }
 }

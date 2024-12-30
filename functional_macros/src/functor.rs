@@ -1,9 +1,9 @@
-use std::borrow::Cow;
 use std::collections::HashSet;
 use std::ops::Deref;
 
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
+use quote::ToTokens;
 use quote::TokenStreamExt;
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
@@ -164,7 +164,7 @@ fn emit_base_case<'ast>(out: &mut TokenStream2, node: &ANode<'ast>) {
     let (_, input_ty_generics, _) = input_generics.split_for_impl();
     let (_, output_ty_generics, _) = output_generics.split_for_impl();
 
-    out.append_all(quote! {
+    let out_toks = quote! {
         impl #impl_generics Functor<#ident #output_ty_generics> for #ident #input_ty_generics #where_clause {
             type Input = #ident #input_ty_generics;
             type Output = #ident #output_ty_generics;
@@ -173,7 +173,10 @@ fn emit_base_case<'ast>(out: &mut TokenStream2, node: &ANode<'ast>) {
                 f(self)
             }
         }
-    })
+    };
+
+    println!("{out_toks}");
+    out.append_all(out_toks);
 }
 
 /// Emit the impl Functor<Inner> for Container implementation for the given inner type and
@@ -189,10 +192,8 @@ fn emit_inductive_case<'ast>(
     let inner_ident = inner_node.ident();
 
     let container_ctx = container.ctx();
-    let inner_ctx = instantiation_collect_context(
-        container_ctx,
-        inner.instantiation.iter().map(Deref::deref)
-    );
+    let inner_ctx =
+        instantiation_collect_context(container_ctx, inner.instantiation.iter().map(Deref::deref));
 
     let container_generics = container.generics();
 
@@ -334,7 +335,14 @@ fn make_fn_body<'ast>(
         ANode::Struct(s) => {
             let destructor = make_variant_destructor(quote! { Self }, &s.data);
             let constructor = make_variant_constructor(
-                quote! { Self::Mapped },
+                if s.data.named {
+                    quote! { Self::Mapped }
+                } else {
+                    // TODO: I am not sure why, but for some reason, unnamed structs don't like
+                    // doing Self::Mapped(), and prefer their original name instead. Exactly why is
+                    // beyond me, but this seems to work, so whatever.
+                    s.data.ident.to_token_stream()
+                },
                 &s.data,
                 inner,
                 output_inner.clone(),

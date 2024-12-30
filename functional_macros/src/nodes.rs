@@ -77,6 +77,11 @@ impl<'ast> GenericContext<'ast> {
     pub fn has_const(&self, i: &'ast Ident) -> bool {
         self.consts.contains(i)
     }
+    pub fn intersects(&self, other: &GenericContext<'ast>) -> bool {
+        !self.types.is_disjoint(&other.types)
+            || !self.lifetimes.is_disjoint(&other.lifetimes)
+            || !self.consts.is_disjoint(&other.consts)
+    }
 }
 
 /// Collects all the idents found in a Generics node, which is found at a
@@ -152,7 +157,7 @@ pub struct AField<'ast> {
 }
 
 /// An "annotated type" of a field that corresponds to one of our lattice types.
-#[derive(Debug, Hash, PartialEq, Eq)]
+#[derive(Debug, Hash, PartialEq, Eq, Clone)]
 pub struct AType<'ast> {
     /// An index into the outer Nodes structure
     pub ident: &'ast Ident,
@@ -461,7 +466,7 @@ mod test {
     }
 
     /// edges[i] contains a list of all other indicies of vertices for outgoing edges
-    pub fn run_test(edges: &[&[usize]], test_fn: impl FnOnce(ANodes<'_>, Vec<Ident>)){
+    pub fn run_test(edges: &[&[usize]], test_fn: impl FnOnce(ANodes<'_>, Vec<Ident>)) {
         let mut nodes = ANodes::default();
         let builder = NodeBuilder::with_labels(
             (0..edges.len())

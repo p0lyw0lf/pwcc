@@ -49,7 +49,7 @@ use super::AType;
 /// So, we need to do something smarter. Given the definition in `LevelZero` substitutes `A` for
 /// the parameter `B` in `LevelOne`, we need to replace all instantiations of `B` with `A` if we're
 /// to move `LevelTwo` up to `LevelZero`. That's what this function does.
-fn collapse_ty_edge<'ast>(ab: &AType<'ast>, b: &ANode<'ast>, bc: &AType<'ast>) -> AType<'ast> {
+pub fn collapse_ty_edge<'ast>(ab: &AType<'ast>, b: &ANode<'ast>, bc: &AType<'ast>) -> AType<'ast> {
     /// There's considerations like:
     /// one: LevelOne<A::Mapped>, two: LevelTwo<B::Mapped> needs to turn into
     /// LevelOne<(A::Mapped)::Mapped>. Similarly, we could have generic expressions instead of just

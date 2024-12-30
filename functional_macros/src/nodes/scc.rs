@@ -204,8 +204,8 @@ pub(crate) fn find_sccs<'ast>(nodes: Lattice<'ast>) -> StronglyConnectedComponen
 mod test {
     use super::*;
 
-    use crate::nodes::test::run_test;
     use crate::nodes::lattice::make_lattice;
+    use crate::nodes::test::run_test;
 
     /// edges[i] contains a list of all other indicies of vertices for outgoing edges
     /// expected_sccs[i] contains the index of the Strongly Connected Component this vertex belongs to.

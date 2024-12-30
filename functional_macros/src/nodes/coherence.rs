@@ -33,12 +33,17 @@
 //! `Lattice`, we'll do it at the same time.
 
 use std::collections::HashSet;
+use std::ops::Deref;
 
 use syn::Ident;
 
+use crate::nodes::instantiation_collect_context;
+use crate::nodes::lattice::collapse_ty_edge;
 use crate::nodes::scc::StronglyConnectedComponents;
 use crate::nodes::ANode;
 use crate::nodes::ANodes;
+use crate::nodes::AType;
+use crate::nodes::GenericContext;
 
 /// The first order of business is to run the topological sort to find the ordering we do the
 /// filtering in. We'll use the [Depth-first search](https://en.wikipedia.org/wiki/Topological_sorting#Depth-first_search) method.
@@ -100,14 +105,90 @@ fn topological_sort<'ast>(sccs: &StronglyConnectedComponents<'ast>) -> Vec<&'ast
 
 pub fn filter_coherent<'ast>(sccs: StronglyConnectedComponents<'ast>) -> ANodes<'ast> {
     let order = topological_sort(&sccs);
-    println!("{order:?}");
-    todo!()
+    let mut nodes = sccs.nodes.0;
+
+    for ident in order.iter() {
+        let mut bad_edges = HashSet::<AType<'ast>>::new();
+
+        /*
+        // 1. Remove all outgoing edges where there are multiple different generic contexts
+        {
+            let node = nodes.0.get(ident).unwrap();
+            for ident in order.iter() {
+                // Clone is perhaps expensive here, but necessary, because otherwise we may be left
+                // with stale references to edges we want to remove
+                let edges_with_ident = node
+                    .tys()
+                    .filter(|ty| ty.ident == *ident)
+                    .map(Clone::clone)
+                    .collect::<HashSet<_>>();
+                if edges_with_ident.len() > 1 {
+                    bad_edges.extend(edges_with_ident);
+                }
+            }
+
+            let node = nodes.0.get_mut(ident).unwrap();
+            for field in node.fields_mut() {
+                field.types.retain(|ty| !bad_edges.contains(&ty));
+            }
+        }
+
+        bad_edges.clear();
+        */
+
+        // 2. Remove all outgoing edges where there's other edges w/ overlapping generic contexts
+        //    that cannot be transformed.
+        {
+            // First, let's cache all the generic contexts that result from the types
+            struct ATypeWithContext<'ast> {
+                ty: AType<'ast>,
+                ctx: GenericContext<'ast>,
+            }
+            let node = nodes.0.get(ident).unwrap();
+            let tys = node
+                .tys()
+                .collect::<HashSet<_>>()
+                .into_iter()
+                .map(|ty| {
+                    let ctx = &Default::default(); /* node.ctx(), */
+                    let iter = std::iter::empty(); /* ty.instantiation.iter().map(Deref::deref), */
+                    let ctx = instantiation_collect_context(ctx, iter);
+                    ATypeWithContext {
+                        ty: ty.clone(),
+                        ctx,
+                    }
+                })
+                .collect::<Vec<_>>();
+            // Then, we'll look for pairs of edges where the contexts intersect
+            for edge_b in tys.iter() {
+                for edge_c in tys
+                    .iter()
+                    .filter(|edge_c| edge_b.ty != edge_c.ty && edge_b.ctx.intersects(&edge_c.ctx))
+                {
+                    let node_c = &nodes[edge_c.ty.ident];
+                    // Look for an edge c -> b. If we can't find it, then a -> b is a bad edge.
+                    if !node_c
+                        .tys()
+                        .map(|ty| collapse_ty_edge(&edge_c.ty, node_c, ty))
+                        .any(|ty| ty == edge_b.ty)
+                    {
+                        bad_edges.insert(edge_b.ty.clone());
+                    }
+                }
+            }
+
+            let node = nodes.0.get_mut(ident).unwrap();
+            for field in node.fields_mut() {
+                field.types.retain(|ty| !bad_edges.contains(&ty));
+            }
+        }
+    }
+
+    nodes
 }
 
 #[cfg(test)]
 mod test {
-    use syn::ExprReference;
-
     use super::*;
 
     use crate::nodes::lattice::make_lattice;

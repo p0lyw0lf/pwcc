@@ -61,7 +61,6 @@ fn base_traits() {
     );
 }
 
-/*
 #[test]
 fn uniplate() {
     let x = Exp::Add {
@@ -69,10 +68,9 @@ fn uniplate() {
         rhs: Box::new(Exp::Lit(2)),
     };
 
-    // Unfortunately, we don't go inside nodes just yet 😔
     let x_expected = Exp::Add {
-        lhs: Box::new(Exp::Lit(1)),
-        rhs: Box::new(Exp::Lit(2)),
+        lhs: Box::new(Exp::Lit(3)),
+        rhs: Box::new(Exp::Lit(4)),
     };
 
     let mut transform = |e: Exp| match e {
@@ -94,7 +92,7 @@ fn uniplate() {
 fn biplate() {
     let x = Function {
         name: "main".into(),
-        body: [Statement::Return(Exp::Lit(42))].into(),
+        body: [Statement::<(), usize>::Return(Exp::Lit(42))].into(),
     };
     let x_expected = Function {
         name: "main".into(),
@@ -106,4 +104,3 @@ fn biplate() {
     });
     assert_eq!(x_expected, x_actual);
 }
-*/

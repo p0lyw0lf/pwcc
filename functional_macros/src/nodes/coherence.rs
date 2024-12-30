@@ -109,78 +109,74 @@ pub fn filter_coherent<'ast>(sccs: StronglyConnectedComponents<'ast>) -> ANodes<
 
     for ident in order.iter() {
         let mut bad_edges = HashSet::<AType<'ast>>::new();
+        println!("NODE: {ident:?}");
 
-        /*
         // 1. Remove all outgoing edges where there are multiple different generic contexts
-        {
-            let node = nodes.0.get(ident).unwrap();
-            for ident in order.iter() {
-                // Clone is perhaps expensive here, but necessary, because otherwise we may be left
-                // with stale references to edges we want to remove
-                let edges_with_ident = node
-                    .tys()
-                    .filter(|ty| ty.ident == *ident)
-                    .map(Clone::clone)
-                    .collect::<HashSet<_>>();
-                if edges_with_ident.len() > 1 {
-                    bad_edges.extend(edges_with_ident);
-                }
-            }
-
-            let node = nodes.0.get_mut(ident).unwrap();
-            for field in node.fields_mut() {
-                field.types.retain(|ty| !bad_edges.contains(&ty));
+        let node = nodes.0.get(ident).unwrap();
+        for ident in order.iter() {
+            // Clone is perhaps expensive here, but necessary, because otherwise we may be left
+            // with stale references to edges we want to remove
+            let edges_with_ident = node
+                .tys()
+                .filter(|ty| ty.ident == *ident)
+                .map(Clone::clone)
+                .collect::<HashSet<_>>();
+            if edges_with_ident.len() > 1 {
+                bad_edges.extend(edges_with_ident);
             }
         }
 
+        let node = nodes.0.get_mut(ident).unwrap();
+        for field in node.fields_mut() {
+            field.types.retain(|ty| !bad_edges.contains(&ty));
+        }
+
         bad_edges.clear();
-        */
 
         // 2. Remove all outgoing edges where there's other edges w/ overlapping generic contexts
         //    that cannot be transformed.
-        {
-            // First, let's cache all the generic contexts that result from the types
-            struct ATypeWithContext<'ast> {
-                ty: AType<'ast>,
-                ctx: GenericContext<'ast>,
-            }
-            let node = nodes.0.get(ident).unwrap();
-            let tys = node
-                .tys()
-                .collect::<HashSet<_>>()
-                .into_iter()
-                .map(|ty| {
-                    let ctx = &Default::default(); /* node.ctx(), */
-                    let iter = std::iter::empty(); /* ty.instantiation.iter().map(Deref::deref), */
-                    let ctx = instantiation_collect_context(ctx, iter);
-                    ATypeWithContext {
-                        ty: ty.clone(),
-                        ctx,
-                    }
-                })
-                .collect::<Vec<_>>();
-            // Then, we'll look for pairs of edges where the contexts intersect
-            for edge_b in tys.iter() {
-                for edge_c in tys
-                    .iter()
-                    .filter(|edge_c| edge_b.ty != edge_c.ty && edge_b.ctx.intersects(&edge_c.ctx))
+        // First, let's cache all the generic contexts that result from the types
+        #[derive(Debug)]
+        struct ATypeWithContext<'ast, 'local> {
+            ty: AType<'ast>,
+            ctx: GenericContext<'local>,
+        }
+        let node = nodes.0.get(ident).unwrap();
+        let tys = node
+            .tys()
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .map(|ty| ATypeWithContext {
+                ty: ty.clone(),
+                ctx: instantiation_collect_context(node.ctx(), ty.instantiation.iter().map(Deref::deref)),
+            })
+            .collect::<Vec<_>>();
+        // Then, we'll look for pairs of edges where the contexts intersect
+        for edge_b in tys.iter() {
+            println!("EDGE_B: {edge_b:?}");
+            for edge_c in tys
+                .iter()
+                .filter(|edge_c| edge_b.ty != edge_c.ty && edge_b.ctx.intersects(&edge_c.ctx))
+            {
+                println!("EDGE_C: {edge_c:?}");
+                let node_c = &nodes[edge_c.ty.ident];
+                // Look for an edge c -> b. If we can't find it, then a -> b is a bad edge.
+                if !node_c
+                    .tys()
+                    .map(|ty| collapse_ty_edge(&edge_c.ty, node_c, ty))
+                    .any(|ty| ty == edge_b.ty)
                 {
-                    let node_c = &nodes[edge_c.ty.ident];
-                    // Look for an edge c -> b. If we can't find it, then a -> b is a bad edge.
-                    if !node_c
-                        .tys()
-                        .map(|ty| collapse_ty_edge(&edge_c.ty, node_c, ty))
-                        .any(|ty| ty == edge_b.ty)
-                    {
-                        bad_edges.insert(edge_b.ty.clone());
-                    }
+                    println!("filtering");
+                    bad_edges.insert(edge_b.ty.clone());
+                } else {
+                    println!("not filtering");
                 }
             }
+        }
 
-            let node = nodes.0.get_mut(ident).unwrap();
-            for field in node.fields_mut() {
-                field.types.retain(|ty| !bad_edges.contains(&ty));
-            }
+        let node = nodes.0.get_mut(ident).unwrap();
+        for field in node.fields_mut() {
+            field.types.retain(|ty| !bad_edges.contains(&ty));
         }
     }
 
@@ -204,6 +200,22 @@ mod test {
             let nodes = make_lattice(nodes);
             let sccs = find_sccs(nodes);
             let nodes = filter_coherent(sccs);
+
+            let actual_edges = labels
+                .iter()
+                .map(|label| {
+                    let node = &nodes[label];
+                    let edges = node
+                        .tys()
+                        .collect::<HashSet<_>>()
+                        .into_iter()
+                        .map(|ty| labels.iter().position(|label| label == ty.ident).unwrap())
+                        .collect::<Vec<_>>();
+                    edges
+                })
+                .collect::<Vec<_>>();
+
+            assert_eq!(expected_edges, actual_edges);
         });
     }
 

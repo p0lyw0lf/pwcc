@@ -103,10 +103,15 @@ pub fn generics_collect_context<'ast>(generics: &'ast Generics) -> GenericContex
 
 /// Collects all the idents found in an instantiation, given a parent `ctx`.
 /// In the previous example with `Result`, this would be the `Ok(T)` part.
-pub fn instantiation_collect_context<'ast>(
+pub fn instantiation_collect_context<'vec, 'ast: 'vec>(
     ctx: &GenericContext<'ast>,
-    args: impl Iterator<Item = &'ast GenericArgument>,
-) -> GenericContext<'ast> {
+    // NOTE: this seems a bit expensive, but it's entirely necessary for the lifetimes to work out:
+    // `AType.instantation` _must_ be `Cow` (or something equivalent, because I do not want to do
+    // arena things), so a borrowed version of this iterator would restrict `'ast` to be the
+    // lifetime of the `Cow`, which is not what we want.
+    // https://play.rust-lang.org/?version=stable&mode=debug&edition=2021&gist=c2b2dcc3a384575f24218ec1bb5ee6fd
+    instantiation: impl Iterator<Item = &'ast GenericArgument> + 'vec,
+) -> GenericContext<'vec> {
     struct Collect<'ast, 'outer> {
         parent_ctx: &'outer GenericContext<'ast>,
         ctx: GenericContext<'ast>,
@@ -141,7 +146,7 @@ pub fn instantiation_collect_context<'ast>(
         parent_ctx: ctx,
         ctx: GenericContext::default(),
     };
-    for arg in args {
+    for arg in instantiation {
         c.visit_generic_argument(arg);
     }
     c.ctx
@@ -163,7 +168,7 @@ pub struct AType<'ast> {
     pub ident: &'ast Ident,
     /// The instantiation of generic arguments for this type. May correspond to the instantion
     /// defined in the field, or may be created as a result of propagating child relationships.
-    pub instantiation: Vec<Cow<'ast, GenericArgument>>,
+    pub instantiation: Vec<Cow<'ast, GenericArgument>>, // Vec<Cow<'ast, GenericArgument>>,
 }
 
 fn convert_field<'ast>(nodes: &BaseNodes<'ast>, field: &'ast Field, index: usize) -> AField<'ast> {
@@ -293,7 +298,7 @@ impl<'ast> ANode<'ast> {
         }
     }
 
-    pub fn ctx(&self) -> &GenericContext {
+    pub fn ctx(&self) -> &GenericContext<'ast> {
         match self {
             ANode::Struct(s) => &s.ctx,
             ANode::Enum(s) => &s.ctx,

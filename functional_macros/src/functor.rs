@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::HashSet;
 use std::ops::Deref;
 
@@ -188,8 +189,10 @@ fn emit_inductive_case<'ast>(
     let inner_ident = inner_node.ident();
 
     let container_ctx = container.ctx();
-    let inner_ctx =
-        instantiation_collect_context(container_ctx, inner.instantiation.iter().map(Deref::deref));
+    let inner_ctx = instantiation_collect_context(
+        container_ctx,
+        inner.instantiation.iter().map(Deref::deref)
+    );
 
     let container_generics = container.generics();
 
@@ -330,8 +333,12 @@ fn make_fn_body<'ast>(
     match container {
         ANode::Struct(s) => {
             let destructor = make_variant_destructor(quote! { Self }, &s.data);
-            let constructor =
-                make_variant_constructor(quote! { Self::Mapped }, &s.data, inner, output_inner);
+            let constructor = make_variant_constructor(
+                quote! { Self::Mapped },
+                &s.data,
+                inner,
+                output_inner.clone(),
+            );
             out.append_all(quote! {
                 let #destructor = self;
                 #constructor
@@ -362,7 +369,14 @@ fn make_fn_body<'ast>(
         }
     };
 
-    out
+    if container.ident() == inner.ident {
+        quote! {
+            let out = #out;
+            f(out)
+        }
+    } else {
+        out
+    }
 }
 
 /// Emits all the code we need to generate into a TokenStream representing the interior of the

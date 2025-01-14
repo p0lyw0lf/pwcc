@@ -9,3 +9,13 @@ impl<T> Semigroup for Vec<T> {
         self
     }
 }
+
+impl<T: Semigroup> Semigroup for Option<T> {
+    fn sconcat(self, other: Self) -> Self {
+        match (self, other) {
+            (a, None) => a,
+            (None, b) => b,
+            (Some(a), Some(b)) => Some(a.sconcat(b)),
+        }
+    }
+}

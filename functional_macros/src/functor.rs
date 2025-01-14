@@ -141,9 +141,23 @@ fn generics_merge(a: &Generics, b: &Generics) -> Generics {
     }
 }
 
+pub trait BaseCaseEmitter {
+    fn base_case(
+        &self,
+        impl_generics: impl ToTokens,
+        where_clause: impl ToTokens,
+        input: impl ToTokens,
+        output: impl ToTokens,
+    ) -> TokenStream2;
+}
+
 /// Emits the impl Functor<T> for T implementation for the given type, applying generic arguments
 /// as applicable
-fn emit_base_case<'ast>(out: &mut TokenStream2, node: &ANode<'ast>) {
+fn emit_base_case<'ast>(
+    out: &mut TokenStream2,
+    node: &ANode<'ast>,
+    emitter: &impl BaseCaseEmitter,
+) {
     let ident = node.ident();
 
     let generics = node.generics();
@@ -164,19 +178,52 @@ fn emit_base_case<'ast>(out: &mut TokenStream2, node: &ANode<'ast>) {
     let (_, input_ty_generics, _) = input_generics.split_for_impl();
     let (_, output_ty_generics, _) = output_generics.split_for_impl();
 
-    let out_toks = quote! {
-        impl #impl_generics Functor<#ident #output_ty_generics> for #ident #input_ty_generics #where_clause {
-            type Input = #ident #input_ty_generics;
-            type Output = #ident #output_ty_generics;
-            type Mapped = #ident #output_ty_generics;
-            fn fmap(self, f: &mut impl FnMut(Self::Input) -> Self::Output) -> Self::Mapped {
-                f(self)
-            }
-        }
-    };
+    let out_toks = emitter.base_case(
+        impl_generics,
+        where_clause,
+        quote! { #ident #input_ty_generics },
+        quote! { #ident #output_ty_generics },
+    );
 
     println!("{out_toks}");
     out.append_all(out_toks);
+}
+
+pub struct Emitter;
+
+impl BaseCaseEmitter for Emitter {
+    fn base_case(
+        &self,
+        impl_generics: impl ToTokens,
+        where_clause: impl ToTokens,
+        input: impl ToTokens,
+        output: impl ToTokens,
+    ) -> TokenStream2 {
+        quote! {
+            impl #impl_generics Functor<#output> for #input #where_clause {
+                type Input = #input;
+                type Output = #output;
+                type Mapped = #output;
+                fn fmap(self, f: &mut impl FnMut(Self::Input) -> Self::Output) -> Self::Mapped {
+                    f(self)
+                }
+            }
+        }
+    }
+}
+
+pub trait InductiveCaseEmitter {
+    fn inductive_case<'ast>(
+        &self,
+        container: &ANode<'ast>,
+        inner: &AType<'ast>,
+        impl_generics: impl ToTokens,
+        where_clause: impl ToTokens,
+        input_outer: impl ToTokens,
+        input_inner: impl ToTokens,
+        output_outer: impl ToTokens,
+        output_inner: impl ToTokens,
+    ) -> TokenStream2;
 }
 
 /// Emit the impl Functor<Inner> for Container implementation for the given inner type and
@@ -186,6 +233,7 @@ fn emit_inductive_case<'ast>(
     lattice: &ANodes<'ast>,
     container: &ANode<'ast>,
     inner: &AType<'ast>,
+    emitter: &impl InductiveCaseEmitter,
 ) {
     let ident = container.ident();
     let inner_node = lattice.get(inner.ident).expect("missing node");
@@ -217,27 +265,51 @@ fn emit_inductive_case<'ast>(
     let input_inner_instantiation =
         instantiation_add_suffix(inner_instantiation.clone(), "Input", &inner_ctx)
             .collect::<Punctuated<_, Token![,]>>();
-    let input_inner = quote! { #inner_ident < #input_inner_instantiation > };
 
     let output_inner_instantiation =
         instantiation_add_suffix(inner_instantiation, "Output", &inner_ctx)
             .collect::<Punctuated<_, Token![,]>>();
-    let output_inner = quote! { #inner_ident < #output_inner_instantiation > };
 
-    let fn_body = make_fn_body(container, inner, output_inner.clone());
+    let out_toks = emitter.inductive_case(
+        container,
+        inner,
+        impl_generics,
+        where_clause,
+        quote! { #ident #input_ty_generics },
+        quote! { #inner_ident < #input_inner_instantiation > },
+        quote! { #ident #output_ty_generics },
+        quote! { #inner_ident < #output_inner_instantiation > },
+    );
 
-    let out_toks = quote! {
-        impl #impl_generics Functor<#output_inner> for #ident #input_ty_generics #where_clause {
-            type Input = #input_inner;
-            type Output = #output_inner;
-            type Mapped = #ident #output_ty_generics;
-            fn fmap(self, f: &mut impl FnMut(Self::Input) -> Self::Output) -> Self::Mapped {
-                #fn_body
-            }
-        }
-    };
     println!("{out_toks}");
     out.append_all(out_toks);
+}
+
+impl InductiveCaseEmitter for Emitter {
+    fn inductive_case<'ast>(
+        &self,
+        container: &ANode<'ast>,
+        inner: &AType<'ast>,
+        impl_generics: impl ToTokens,
+        where_clause: impl ToTokens,
+        input_outer: impl ToTokens,
+        input_inner: impl ToTokens,
+        output_outer: impl ToTokens,
+        output_inner: impl ToTokens,
+    ) -> TokenStream2 {
+        let fn_body = make_fn_body(container, inner, output_inner.to_token_stream(), self);
+
+        quote! {
+            impl #impl_generics Functor<#output_inner> for #input_outer #where_clause {
+                type Input = #input_inner;
+                type Output = #output_inner;
+                type Mapped = #output_outer;
+                fn fmap(self, f: &mut impl FnMut(Self::Input) -> Self::Output) -> Self::Mapped {
+                    #fn_body
+                }
+            }
+        }
+    }
 }
 
 /// Makes a line like
@@ -272,30 +344,53 @@ fn make_variant_destructor<'ast>(ident: TokenStream2, variant: &AVariant<'ast>) 
     }
 }
 
+pub trait FieldEmitter {
+    fn field(
+        &self,
+        named: bool,
+        has_inner: bool,
+        output_inner: impl ToTokens,
+        ident: impl ToTokens,
+    ) -> TokenStream2;
+}
+
 /// For a given field, decides if it should be fmapped or not, and returns the appropriate
 /// expression
 fn make_field<'ast>(
     named: bool,
     field: &AField<'ast>,
     inner: &AType<'ast>,
-    output_inner: TokenStream2,
+    output_inner: impl ToTokens,
+    emitter: &impl FieldEmitter,
 ) -> TokenStream2 {
     let has_inner = field.all_tys().any(|ty| ty == inner);
     let ident = &field.ident;
 
-    // This logic could be simplified further, but for the sake of clarity, I'd rather keep it in
-    // separate cases like this
-    if named {
-        if has_inner {
-            quote! { #ident: Functor::<#output_inner>::fmap(#ident, f) }
+    emitter.field(named, has_inner, output_inner, ident)
+}
+
+impl FieldEmitter for Emitter {
+    fn field(
+        &self,
+        named: bool,
+        has_inner: bool,
+        output_inner: impl ToTokens,
+        ident: impl ToTokens,
+    ) -> TokenStream2 {
+        // This logic could be simplified further, but for the sake of clarity, I'd rather keep it in
+        // separate cases like this
+        if named {
+            if has_inner {
+                quote! { #ident: Functor::<#output_inner>::fmap(#ident, f) }
+            } else {
+                quote! { #ident }
+            }
         } else {
-            quote! { #ident }
-        }
-    } else {
-        if has_inner {
-            quote! { Functor::<#output_inner>::fmap(#ident, f) }
-        } else {
-            quote! { #ident }
+            if has_inner {
+                quote! { Functor::<#output_inner>::fmap(#ident, f) }
+            } else {
+                quote! { #ident }
+            }
         }
     }
 }
@@ -306,16 +401,18 @@ fn make_variant_constructor<'ast>(
     container: TokenStream2,
     variant: &AVariant<'ast>,
     inner: &AType<'ast>,
-    output_inner: TokenStream2,
+    output_inner: impl ToTokens,
+    emitter: &impl FieldEmitter,
 ) -> TokenStream2 {
     if variant.unit {
         return container;
     }
+    let output_inner = output_inner.into_token_stream();
 
     let fields = variant
         .fields
         .iter()
-        .map(|field| make_field(variant.named, field, inner, output_inner.clone()));
+        .map(|field| make_field(variant.named, field, inner, &output_inner, emitter));
     if variant.named {
         quote! { #container { #(#fields),* } }
     } else {
@@ -324,10 +421,11 @@ fn make_variant_constructor<'ast>(
 }
 
 /// Writes the body of the functor implementation
-fn make_fn_body<'ast>(
+pub fn make_fn_body<'ast>(
     container: &ANode<'ast>,
     inner: &AType<'ast>,
-    output_inner: TokenStream2,
+    output_inner: impl ToTokens,
+    emitter: &impl FieldEmitter,
 ) -> TokenStream2 {
     let mut out = TokenStream2::new();
 
@@ -345,7 +443,8 @@ fn make_fn_body<'ast>(
                 },
                 &s.data,
                 inner,
-                output_inner.clone(),
+                output_inner,
+                emitter,
             );
             out.append_all(quote! {
                 let #destructor = self;
@@ -353,6 +452,7 @@ fn make_fn_body<'ast>(
             });
         }
         ANode::Enum(e) => {
+            let output_inner = output_inner.into_token_stream();
             let variants = e.variants.iter().map(|variant| {
                 let ident = &variant.ident;
                 let destructor = make_variant_destructor(quote! { Self::#ident }, variant);
@@ -361,7 +461,8 @@ fn make_fn_body<'ast>(
                     quote! { Self::Mapped::#ident },
                     variant,
                     inner,
-                    output_inner.clone(),
+                    &output_inner,
+                    emitter,
                 );
 
                 quote! {
@@ -389,18 +490,21 @@ fn make_fn_body<'ast>(
 
 /// Emits all the code we need to generate into a TokenStream representing the interior of the
 /// module.
-pub fn emit<'ast>(out: &mut TokenStream2, lattice: &ANodes<'ast>) {
+pub fn emit<'ast>(
+    out: &mut TokenStream2,
+    lattice: &ANodes<'ast>,
+    emitter: &(impl BaseCaseEmitter + InductiveCaseEmitter),
+) {
     // Emit all base cases
     for node in lattice.values() {
-        emit_base_case(out, node);
+        emit_base_case(out, node, emitter);
     }
 
     // Emit all inductive cases
     for container in lattice.values() {
-        let types = container.all_tys()
-            .collect::<HashSet<_>>();
+        let types = container.all_tys().collect::<HashSet<_>>();
         for inner in types.into_iter() {
-            emit_inductive_case(out, lattice, container, inner)
+            emit_inductive_case(out, lattice, container, inner, emitter)
         }
     }
 }

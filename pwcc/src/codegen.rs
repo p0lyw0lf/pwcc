@@ -19,6 +19,9 @@ pub trait State: Debug + Sized {
 #[functional_macros::ast]
 mod ast {
     use super::*;
+    use functional::ControlFlow;
+    use functional::Semigroup;
+    use functional::TryFunctor;
 
     /// Newtype needed to avoid "unconstrained type" errors
     #[derive(Debug)]

@@ -1,10 +1,9 @@
-use core::error::Error;
-
+use crate::ControlFlow;
 use crate::Functor;
 use crate::Semigroup;
 
 pub trait TryFunctor<Inner>: Functor<Inner> {
-    fn try_fmap<E: Error + Semigroup>(
+    fn try_fmap<E: Semigroup + ControlFlow>(
         self,
         f: &mut impl FnMut(Self::Input) -> Result<Self::Output, E>,
     ) -> Result<Self::Mapped, E>;
@@ -14,7 +13,7 @@ impl<T, Inner, A, B> TryFunctor<Inner> for Vec<T>
 where
     T: TryFunctor<Inner, Input = A, Output = B>,
 {
-    fn try_fmap<E: Error + Semigroup>(
+    fn try_fmap<E: Semigroup + ControlFlow>(
         self,
         f: &mut impl FnMut(Self::Input) -> Result<Self::Output, E>,
     ) -> Result<Self::Mapped, E> {
@@ -26,10 +25,12 @@ where
             match x.try_fmap(f) {
                 Ok(v) => output.push(v),
                 Err(e) => {
-                    err = Some(match err {
-                        Some(existing) => existing.sconcat(e),
-                        None => e,
-                    })
+                    // SAFETY: None.sconcat(Some(e)) is always Some
+                    let new_err = unsafe { err.sconcat(Some(e)).unwrap_unchecked() };
+                    if !new_err.cont() {
+                        return Err(new_err);
+                    }
+                    err = Some(new_err);
                 }
             }
         }
@@ -45,7 +46,7 @@ impl<T, Inner, A, B> TryFunctor<Inner> for Option<T>
 where
     T: TryFunctor<Inner, Input = A, Output = B>,
 {
-    fn try_fmap<E: Error + Semigroup>(
+    fn try_fmap<E: Semigroup + ControlFlow>(
         self,
         f: &mut impl FnMut(Self::Input) -> Result<Self::Output, E>,
     ) -> Result<Self::Mapped, E> {

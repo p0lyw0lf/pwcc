@@ -1,8 +1,9 @@
 use std::{collections::HashMap, fmt::Display};
 
-use functional::Functor;
+use functional::TryFunctor;
 
-use crate::parser::{Declaration, Exp, Program};
+use crate::parser::Declaration;
+use crate::parser::Program;
 
 pub fn validate(p: Program) -> Result<Program, SemanticError> {
     let p = resolve_variables(p)?;
@@ -13,7 +14,7 @@ fn resolve_variables(p: Program) -> Result<Program, SemanticError> {
     let mut i: usize = 0;
     // Maps potentially-conflicting names to globally-unique names, in a given context
     let mut variable_map = HashMap::<String, String>::new();
-    let p = todo!("implement TryFunctor"); // Functor::<Result<Declaration, SemanticError>>::fmap(p, &mut |decl| Ok(decl))?;
+    let p = todo!("get TryFunctor working"); // TryFunctor::<Declaration>::try_fmap(p, &mut |decl| -> Result<_, SemanticError> { Ok(decl) })?;
     Ok(p)
 }
 

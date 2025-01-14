@@ -11,14 +11,19 @@ use syn::ItemMod;
 mod nodes;
 mod syntax;
 
-#[cfg(feature = "functor")]
+#[cfg(any(feature = "functor", feature = "try_functor"))]
 mod functor;
+
+#[cfg(feature = "try_functor")]
+mod try_functor;
 
 /// All the typeclasses we support
 #[derive(PartialEq, Eq, Hash)]
 enum Typeclass {
     #[cfg(feature = "functor")]
     Functor,
+    #[cfg(feature = "try_functor")]
+    TryFunctor,
 }
 
 #[derive(Debug)]
@@ -42,6 +47,8 @@ impl FromStr for Typeclass {
         match s {
             #[cfg(feature = "functor")]
             "Functor" => Ok(Typeclass::Functor),
+            #[cfg(feature = "try_functor")]
+            "TryFunctor" => Ok(Typeclass::TryFunctor),
             other => Err(TypeclassParseError::BadName(other.into())),
         }
     }
@@ -97,11 +104,10 @@ impl EnabledTypeclasses {
         }
     }
 
-    #[cfg(feature = "functor")]
-    fn functor(&self) -> bool {
+    fn has_typeclass(&self, t: &Typeclass) -> bool {
         match &self.0 {
             None => true,
-            Some(hs) => hs.contains(&Typeclass::Functor),
+            Some(hs) => hs.contains(&t),
         }
     }
 }
@@ -160,8 +166,13 @@ pub fn ast(attrs: TokenStream, item: TokenStream) -> TokenStream {
         let mut out = group.stream().into();
 
         #[cfg(feature = "functor")]
-        if enabled.functor() {
-            functor::emit(&mut out, &nodes);
+        if enabled.has_typeclass(&Typeclass::Functor) {
+            functor::emit(&mut out, &nodes, &functor::Emitter);
+        }
+
+        #[cfg(feature = "try_functor")]
+        if enabled.has_typeclass(&Typeclass::TryFunctor) {
+            functor::emit(&mut out, &nodes, &try_functor::Emitter);
         }
 
         proc_macro::Group::new(proc_macro::Delimiter::Brace, out.into())

@@ -7,8 +7,9 @@ edition = "2021"
 proc-macro = true
 
 [features]
-default = ["functor"]
+default = ["functor", "try_functor"]
 functor = []
+try_functor = []
 
 [dependencies]
 quote = "1.0"

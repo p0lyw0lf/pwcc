@@ -219,9 +219,9 @@ pub(crate) fn make_lattice<'ast>(mut nodes: ANodes<'ast>) -> Lattice<'ast> {
         for a in nodes.values() {
             for a_field in a.fields() {
                 let mut new_field_types = HashSet::new();
-                for ab in a_field.types.iter() {
+                for ab in a_field.all_tys() {
                     let b = nodes.get(ab.ident).unwrap();
-                    for bc in b.fields().map(|field| field.types.iter()).flatten() {
+                    for bc in b.all_tys() {
                         new_field_types.insert(collapse_ty_edge(ab, b, bc));
                     }
                 }
@@ -236,9 +236,9 @@ pub(crate) fn make_lattice<'ast>(mut nodes: ANodes<'ast>) -> Lattice<'ast> {
             .flatten()
             .zip(new_types.drain(..))
         {
-            let old_num_types = field.types.len();
-            field.types.extend(new_field_types);
-            let new_num_types = field.types.len();
+            let old_num_types = field.num_all_tys();
+            field.indirect_tys.extend(new_field_types);
+            let new_num_types = field.num_all_tys();
             if old_num_types != new_num_types {
                 changed = true;
             }

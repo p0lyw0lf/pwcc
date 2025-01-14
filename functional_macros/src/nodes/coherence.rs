@@ -40,10 +40,12 @@ use syn::Ident;
 use crate::nodes::instantiation_collect_context;
 use crate::nodes::lattice::collapse_ty_edge;
 use crate::nodes::scc::StronglyConnectedComponents;
+use crate::nodes::scc::find_sccs;
 use crate::nodes::ANode;
 use crate::nodes::ANodes;
 use crate::nodes::AType;
 use crate::nodes::GenericContext;
+use crate::nodes::lattice::Lattice;
 
 /// The first order of business is to run the topological sort to find the ordering we do the
 /// filtering in. We'll use the [Depth-first search](https://en.wikipedia.org/wiki/Topological_sorting#Depth-first_search) method.
@@ -78,7 +80,7 @@ fn topological_sort<'ast>(sccs: &StronglyConnectedComponents<'ast>) -> Vec<&'ast
             // Visit all other components that are connected to this one
             for next_node in sccs.index_to_scc[index]
                 .iter()
-                .map(|ident| sccs.nodes[ident].tys())
+                .map(|ident| sccs.nodes[ident].all_tys())
                 .flatten()
                 .map(|ty| &sccs.nodes[ty.ident])
             {
@@ -103,32 +105,33 @@ fn topological_sort<'ast>(sccs: &StronglyConnectedComponents<'ast>) -> Vec<&'ast
     state.order
 }
 
-pub fn filter_coherent<'ast>(sccs: StronglyConnectedComponents<'ast>) -> ANodes<'ast> {
+pub fn filter_coherent<'ast>(lattice: Lattice<'ast>) -> ANodes<'ast> {
+    let sccs = find_sccs(lattice);
     let order = topological_sort(&sccs);
     let mut nodes = sccs.nodes.0;
 
     for ident in order.iter() {
         let mut bad_edges = HashSet::<AType<'ast>>::new();
-        println!("NODE: {ident:?}");
-
         // 1. Remove all outgoing edges where there are multiple different generic contexts
         let node = nodes.0.get(ident).unwrap();
-        for ident in order.iter() {
+        for other_ident in order.iter() {
             // Clone is perhaps expensive here, but necessary, because otherwise we may be left
             // with stale references to edges we want to remove
-            let edges_with_ident = node
-                .tys()
-                .filter(|ty| ty.ident == *ident)
+            let edges_with_other_ident = node
+                .all_tys()
+                .filter(|ty| ty.ident == *other_ident)
                 .map(Clone::clone)
                 .collect::<HashSet<_>>();
-            if edges_with_ident.len() > 1 {
-                bad_edges.extend(edges_with_ident);
+            if edges_with_other_ident.len() > 1 {
+                println!("Node {ident}: filtering {other_ident} due to multiple conflicting generic contexts");
+                bad_edges.extend(edges_with_other_ident);
             }
         }
 
         let node = nodes.0.get_mut(ident).unwrap();
         for field in node.fields_mut() {
-            field.types.retain(|ty| !bad_edges.contains(&ty));
+            field.tys.retain(|ty| !bad_edges.contains(&ty));
+            field.indirect_tys.retain(|ty| !bad_edges.contains(&ty));
         }
 
         bad_edges.clear();
@@ -143,7 +146,7 @@ pub fn filter_coherent<'ast>(sccs: StronglyConnectedComponents<'ast>) -> ANodes<
         }
         let node = nodes.0.get(ident).unwrap();
         let tys = node
-            .tys()
+            .all_tys()
             .collect::<HashSet<_>>()
             .into_iter()
             .map(|ty| ATypeWithContext {
@@ -151,32 +154,33 @@ pub fn filter_coherent<'ast>(sccs: StronglyConnectedComponents<'ast>) -> ANodes<
                 ctx: instantiation_collect_context(node.ctx(), ty.instantiation.iter().map(Deref::deref)),
             })
             .collect::<Vec<_>>();
-        // Then, we'll look for pairs of edges where the contexts intersect
+        let direct_tys = node.direct_tys().collect::<HashSet<_>>();
+        // Then, we'll look for pairs of edges where the contexts intersect, and the latter edge is
+        // a direct edge.
         for edge_b in tys.iter() {
-            println!("EDGE_B: {edge_b:?}");
             for edge_c in tys
                 .iter()
-                .filter(|edge_c| edge_b.ty != edge_c.ty && edge_b.ctx.intersects(&edge_c.ctx))
+                .filter(|edge_c| direct_tys.contains(&edge_c.ty) && edge_b.ty != edge_c.ty && edge_b.ctx.intersects(&edge_c.ctx))
             {
-                println!("EDGE_C: {edge_c:?}");
                 let node_c = &nodes[edge_c.ty.ident];
                 // Look for an edge c -> b. If we can't find it, then a -> b is a bad edge.
                 if !node_c
-                    .tys()
+                    .all_tys()
                     .map(|ty| collapse_ty_edge(&edge_c.ty, node_c, ty))
                     .any(|ty| ty == edge_b.ty)
                 {
-                    println!("filtering");
+                    let edge_b_ident = edge_b.ty.ident;
+                    let edge_c_ident = edge_c.ty.ident;
+                    println!("Node {ident}: filtering {edge_b_ident} due to {edge_c_ident} not being able to be transformed by it");
                     bad_edges.insert(edge_b.ty.clone());
-                } else {
-                    println!("not filtering");
                 }
             }
         }
 
         let node = nodes.0.get_mut(ident).unwrap();
         for field in node.fields_mut() {
-            field.types.retain(|ty| !bad_edges.contains(&ty));
+            field.tys.retain(|ty| !bad_edges.contains(&ty));
+            field.indirect_tys.retain(|ty| !bad_edges.contains(&ty));
         }
     }
 
@@ -188,7 +192,6 @@ mod test {
     use super::*;
 
     use crate::nodes::lattice::make_lattice;
-    use crate::nodes::scc::find_sccs;
     use crate::nodes::test::run_test;
 
     /// edges[i] contains a list of all other indicies of vertices for outgoing edges
@@ -198,15 +201,14 @@ mod test {
 
         run_test(edges, |nodes, labels| {
             let nodes = make_lattice(nodes);
-            let sccs = find_sccs(nodes);
-            let nodes = filter_coherent(sccs);
+            let nodes = filter_coherent(nodes);
 
             let actual_edges = labels
                 .iter()
                 .map(|label| {
                     let node = &nodes[label];
                     let edges = node
-                        .tys()
+                        .all_tys()
                         .collect::<HashSet<_>>()
                         .into_iter()
                         .map(|ty| labels.iter().position(|label| label == ty.ident).unwrap())

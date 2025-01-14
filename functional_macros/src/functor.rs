@@ -151,7 +151,7 @@ fn emit_base_case<'ast>(out: &mut TokenStream2, node: &ANode<'ast>) {
 
     // If this is a recursive type, we should _not_ generate a base case, and instead let the
     // inductive case take care of that.
-    if node.tys().any(|ty| ty.ident == ident) {
+    if node.all_tys().any(|ty| ty.ident == ident) {
         return;
     }
 
@@ -280,7 +280,7 @@ fn make_field<'ast>(
     inner: &AType<'ast>,
     output_inner: TokenStream2,
 ) -> TokenStream2 {
-    let has_inner = field.types.iter().any(|ty| ty == inner);
+    let has_inner = field.all_tys().any(|ty| ty == inner);
     let ident = &field.ident;
 
     // This logic could be simplified further, but for the sake of clarity, I'd rather keep it in
@@ -397,10 +397,7 @@ pub fn emit<'ast>(out: &mut TokenStream2, lattice: &ANodes<'ast>) {
 
     // Emit all inductive cases
     for container in lattice.values() {
-        let types = container
-            .fields()
-            .map(|field| field.types.iter())
-            .flatten()
+        let types = container.all_tys()
             .collect::<HashSet<_>>();
         for inner in types.into_iter() {
             emit_inductive_case(out, lattice, container, inner)

@@ -157,8 +157,20 @@ pub fn instantiation_collect_context<'vec, 'ast: 'vec>(
 pub struct AField<'ast> {
     /// Corresponds to the declared ident if in a named struct/enum variant, otherwise corresponds to an anonymous ident if in an unnamed struct/enum variant.
     pub ident: Cow<'ast, Ident>,
-    /// All the types that appear in this field. We need this to be a collection instead of just one because it may track _all_ types that are at or below the one defined for the field.
-    pub types: HashSet<AType<'ast>>,
+    /// The direct descendants this field, as they appear in the definition.
+    pub tys: HashSet<AType<'ast>>,
+    /// All the other types that appear in this field. We need this to be a collection instead of just one because it may track _all_ types that are at or below the one defined for the field.
+    pub indirect_tys: HashSet<AType<'ast>>,
+}
+
+impl<'ast> AField<'ast> {
+    pub fn all_tys(&self) -> impl Iterator<Item = &'_ AType<'ast>> + '_ {
+        self.tys.iter().chain(self.indirect_tys.iter())
+    }
+    /// Needed since all_tys cannot be an ExactSizeIterator, due to using .chain() internally.
+    pub fn num_all_tys(&self) -> usize {
+        self.tys.len() + self.indirect_tys.len()
+    }
 }
 
 /// An "annotated type" of a field that corresponds to one of our lattice types.
@@ -176,7 +188,7 @@ fn convert_field<'ast>(nodes: &BaseNodes<'ast>, field: &'ast Field, index: usize
         /// The types we're looking for
         nodes: &'a BaseNodes<'ast>,
         /// All the collected types we've seen so far
-        types: HashSet<AType<'ast>>,
+        tys: HashSet<AType<'ast>>,
     }
     impl<'ast, 'a> Visit<'ast> for TypeVisitor<'ast, 'a> {
         fn visit_type_path(&mut self, ty: &'ast syn::TypePath) {
@@ -186,7 +198,7 @@ fn convert_field<'ast>(nodes: &BaseNodes<'ast>, field: &'ast Field, index: usize
                 let segment = ty.path.segments.first().unwrap();
                 let ident = &segment.ident;
                 if self.nodes.contains_key(ident) {
-                    self.types.insert(AType {
+                    self.tys.insert(AType {
                         ident,
                         instantiation: if let PathArguments::AngleBracketed(args) =
                             &segment.arguments
@@ -205,7 +217,7 @@ fn convert_field<'ast>(nodes: &BaseNodes<'ast>, field: &'ast Field, index: usize
 
     let mut visitor = TypeVisitor {
         nodes,
-        types: HashSet::new(),
+        tys: HashSet::new(),
     };
     visitor.visit_field(field);
 
@@ -216,7 +228,8 @@ fn convert_field<'ast>(nodes: &BaseNodes<'ast>, field: &'ast Field, index: usize
 
     AField {
         ident,
-        types: visitor.types,
+        tys: visitor.tys,
+        indirect_tys: Default::default(),
     }
 }
 
@@ -317,8 +330,16 @@ impl<'ast> ANode<'ast> {
         }
     }
 
-    pub fn tys(&self) -> impl Iterator<Item = &'_ AType<'ast>> + '_ {
-        self.fields().map(|field| field.types.iter()).flatten()
+    pub fn all_tys(&self) -> impl Iterator<Item = &'_ AType<'ast>> + '_ {
+        self.fields()
+            .map(|field| field.all_tys())
+            .flatten()
+    }
+
+    pub fn direct_tys(&self) -> impl Iterator<Item = &'_ AType<'ast>> + '_ {
+        self.fields()
+            .map(|field| field.tys.iter())
+            .flatten()
     }
 
     pub fn fields_mut(&mut self) -> Box<dyn Iterator<Item = &'_ mut AField<'ast>> + '_> {
@@ -452,12 +473,11 @@ mod test {
                             let ident = &self.label_arena[*edge];
                             AField {
                                 ident: Cow::Borrowed(ident),
-                                types: [AType {
+                                tys: [AType {
                                     ident,
                                     instantiation: Default::default(),
-                                }]
-                                .into_iter()
-                                .collect(),
+                                }].into_iter().collect(),
+                                indirect_tys: Default::default(),
                             }
                         })
                         .collect(),

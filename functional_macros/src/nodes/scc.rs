@@ -129,7 +129,7 @@ pub(crate) fn find_sccs<'ast>(nodes: Lattice<'ast>) -> StronglyConnectedComponen
             self.path.push(node.ident());
 
             // 3. For each edge from v to a neighboring vertex w:
-            for ty in node.tys() {
+            for ty in node.all_tys() {
                 let next_node = nodes.get(ty.ident).unwrap();
                 match self.search(nodes, next_node) {
                     // If the preorder number of w has not yet been assigned, recursively search w

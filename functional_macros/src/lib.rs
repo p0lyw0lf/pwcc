@@ -137,8 +137,7 @@ pub fn ast(attrs: TokenStream, item: TokenStream) -> TokenStream {
     // TODO: Do I want this to be a global transform or a feature-specific transform? If it is the
     // latter, I probably want to cache it somehow...
     let nodes = crate::nodes::lattice::make_lattice(nodes);
-    let sccs = crate::nodes::scc::find_sccs(nodes);
-    let nodes = crate::nodes::coherence::filter_coherent(sccs);
+    let nodes = crate::nodes::coherence::filter_coherent(nodes);
 
     let mut out = TokenStream::new();
     let iter = &mut item.into_iter();

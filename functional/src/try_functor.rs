@@ -56,3 +56,16 @@ where
         }
     }
 }
+
+
+impl<T, Inner, A, B> TryFunctor<Inner> for Box<T>
+where
+    T: TryFunctor<Inner, Input = A, Output = B>,
+{
+    fn try_fmap<E: Semigroup + ControlFlow>(
+        self,
+        f: &mut impl FnMut(Self::Input) -> Result<Self::Output, E>,
+    ) -> Result<Self::Mapped, E> {
+        Ok(Box::new((*self).try_fmap(f)?))
+    }
+}

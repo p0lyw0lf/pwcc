@@ -43,7 +43,13 @@ impl InductiveCaseEmitter for Emitter {
         _output_outer: impl ToTokens,
         output_inner: impl ToTokens,
     ) -> TokenStream2 {
-        let fn_body = make_fn_body(container, inner, output_inner.to_token_stream(), self);
+        let mut fn_body = make_fn_body(container, inner, output_inner.to_token_stream(), self);
+        if container.ident() == inner.ident {
+            fn_body = quote! {
+                let out = #fn_body;
+                f(out)?
+            };
+        }
 
         quote! {
             impl #impl_generics TryFunctor<#output_inner> for #input_outer #where_clause {

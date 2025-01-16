@@ -297,7 +297,13 @@ impl InductiveCaseEmitter for Emitter {
         output_outer: impl ToTokens,
         output_inner: impl ToTokens,
     ) -> TokenStream2 {
-        let fn_body = make_fn_body(container, inner, output_inner.to_token_stream(), self);
+        let mut fn_body = make_fn_body(container, inner, output_inner.to_token_stream(), self);
+        if container.ident() == inner.ident {
+            fn_body = quote! {
+                let out = #fn_body;
+                f(out)
+            };
+        }
 
         quote! {
             impl #impl_generics Functor<#output_inner> for #input_outer #where_clause {
@@ -421,7 +427,7 @@ pub fn make_variant_constructor<'ast>(
 }
 
 pub trait BodyEmitter {
-    fn body<'ast>(&self, variant: &AVariant<'ast>, inner: &AType<'ast>, output_inner: impl ToTokens) -> TokenStream2 { TokenStream2::new() }
+    fn body<'ast>(&self, _variant: &AVariant<'ast>, _inner: &AType<'ast>, _output_inner: impl ToTokens) -> TokenStream2 { TokenStream2::new() }
 }
 
 impl BodyEmitter for Emitter {}
@@ -486,14 +492,7 @@ pub fn make_fn_body<'ast>(
         }
     };
 
-    if container.ident() == inner.ident {
-        quote! {
-            let out = #out;
-            f(out)
-        }
-    } else {
-        out
-    }
+    out
 }
 
 /// Emits all the code we need to generate into a TokenStream representing the interior of the

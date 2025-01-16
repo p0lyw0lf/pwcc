@@ -57,32 +57,30 @@ nodes! {
     );
     // Not used in grammar, only for parsing Exp
     BinaryTok(+<BinaryOp> +Equal);
-}
 
-/// Exp is special, since its AST doesn't exactly correspond with the grammar, so we define it
-/// separately
-#[derive(Debug)]
-#[cfg_attr(test, derive(PartialEq))]
-pub enum Exp {
-    Constant {
-        constant: isize,
-    },
-    Var {
-        ident: String,
-    },
-    Unary {
-        op: UnaryOp,
-        exp: Box<Exp>,
-    },
-    Binary {
-        lhs: Box<Exp>,
-        op: BinaryOp,
-        rhs: Box<Exp>,
-    },
-    Assignment {
-        lhs: Box<Exp>, // Semantic analysis ensures this is a proper LValue
-        rhs: Box<Exp>,
-    },
+    // Exp is special, since its AST doesn't exactly correspond with the grammar, so we define it
+    // separately
+    Exp enum {
+        Constant {
+            constant: isize,
+        },
+        Var {
+            ident: String,
+        },
+        Unary {
+            op: UnaryOp,
+            exp: Box<Exp>,
+        },
+        Binary {
+            lhs: Box<Exp>,
+            op: BinaryOp,
+            rhs: Box<Exp>,
+        },
+        Assignment {
+            lhs: Box<Exp>, // Semantic analysis ensures this is a proper LValue
+            rhs: Box<Exp>,
+        },
+    };
 }
 
 impl BinaryTok {

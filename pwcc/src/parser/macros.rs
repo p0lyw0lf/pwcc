@@ -18,31 +18,67 @@ macro_rules! expect_token {
 }
 pub(super) use expect_token;
 
-macro_rules! node {
-    // Multiplication: concatenate all nodes
-    ($node:ident ( $(
-        *
-        $($itoken:ident)?
-        $(<$sname:ident : $subnode:ident>)?
-        $({$cname:ident : $ctoken:ident ($pat:pat = $ty:ty) })?
-    )* ) ) => {
+/// This is an extremely nasty macro. Unfortunately, it's borne out of necessity: we need to be
+/// able to generate all struct definitions at once if we want to use `#[functional_macros::ast]`
+/// on them.
+macro_rules! nodes {
+    ($(
+        $node:ident
+        $(
+            // Multiplication: concatenate all nodes
+            ( $(
+                *
+                $($m_token:ident)?
+                $(<$m_sname:ident : $m_subnode:ident>)?
+                $({$m_cname:ident : $m_ctoken:ident ($m_pat:pat = $m_ty:ty) })?
+            )* )
+        )?
+        $(
+            // Addition: choose between nodes
+            ( $(
+                +
+                $($a_token:ident)?
+                $(<$a_subnode:ident>)?
+                $({$a_ctoken:ident ($a_pat:pat = $a_ty:ty) })?
+            )* )
+        )?
+        $(
+            // Star: repeat node
+            [$s_subnode:ident]
+        )?
+        $(
+            // Other: just emit normally
+            enum $oe_tt:tt
+        )?
+    ; )*) => {
+        #[functional_macros::ast]
+        mod ast {
+        use super::*;
+        // TODO: make these imports be added automatically?
+        use functional::Functor;
+        use functional::TryFunctor;
+        use functional::ControlFlow;
+        use functional::Semigroup;
+        $(
+        $(
+        // Multiplication
         #[derive(Debug)]
         #[cfg_attr(test, derive(PartialEq))]
         pub struct $node {$(
-            $(pub $sname: $subnode,)?
-            $(pub $cname: $ty,)?
+            $(pub $m_sname: $m_subnode,)?
+            $(pub $m_cname: $m_ty,)?
         )*}
 
         impl FromTokens for $node {
             fn from_tokens(ts: &mut (impl Iterator<Item = Token> + Clone)) -> Result<Self, ParseError> {
                 $(
-                    $(expect_token!(ts, $itoken);)?
-                    $(let $sname = $subnode::from_tokens(ts)?;)?
-                    $(let $cname = expect_token!(ts, $ctoken($pat): $ty);)?
+                    $(expect_token!(ts, $m_token);)?
+                    $(let $m_sname = $m_subnode::from_tokens(ts)?;)?
+                    $(let $m_cname = expect_token!(ts, $m_ctoken($m_pat): $m_ty);)?
                 )*
                 Ok($node {$(
-                    $($sname,)?
-                    $($cname,)?
+                    $($m_sname,)?
+                    $($m_cname,)?
                 )*})
             }
         }
@@ -50,33 +86,28 @@ macro_rules! node {
         impl ToTokens for $node {
             fn to_tokens(self) -> impl Iterator<Item = Token> {
                 let $node {$(
-                    $($sname,)?
-                    $($cname,)?
+                    $($m_sname,)?
+                    $($m_cname,)?
                 )*} = self;
 
                 ::core::iter::empty()
                 $(.chain(
-                    $(::core::iter::once(Token::$itoken))?
-                    $($sname.to_tokens())?
-                    $(::core::iter::once(Token::$ctoken($cname.into())))?
+                    $(::core::iter::once(Token::$m_token))?
+                    $($m_sname.to_tokens())?
+                    $(::core::iter::once(Token::$m_ctoken($m_cname.into())))?
                 ))*
             }
         }
-    };
+        )?
 
-    // Addition: choose between notes
-    ($node:ident ( $(
-        +
-        $($itoken:ident)?
-        $(<$subnode:ident>)?
-        $({$ctoken:ident ($pat:pat = $ty:ty) })?
-    )* ) ) => {
+        $(
+        // Addition
         #[derive(Debug)]
         #[cfg_attr(test, derive(PartialEq))]
         pub enum $node {$(
-            $($itoken,)?
-            $($subnode($subnode),)?
-            $($ctoken($ty),)?
+            $($a_token,)?
+            $($a_subnode($a_subnode),)?
+            $($a_ctoken($a_ty),)?
         )*}
 
         impl FromTokens for $node {
@@ -85,11 +116,11 @@ macro_rules! node {
                 let mut iter = ts.clone();
                 if let Ok(out) = (|| -> Result<Self, ParseError> {
                     $(let out = {
-                        expect_token!(iter, $itoken);
-                        $node::$itoken
+                        expect_token!(iter, $a_token);
+                        $node::$a_token
                     };)?
-                    $(let out = $node::$subnode($subnode::from_tokens(&mut iter)?);)?
-                    $(let out = $node::$ctoken(expect_token!(iter, $ctoken($pat): $ty));)?
+                    $(let out = $node::$a_subnode($a_subnode::from_tokens(&mut iter)?);)?
+                    $(let out = $node::$a_ctoken(expect_token!(iter, $a_ctoken($a_pat): $a_ty));)?
                     Ok(out)
                 })() {
                     *ts = iter;
@@ -105,25 +136,25 @@ macro_rules! node {
             fn to_tokens(self) -> impl Iterator<Item = Token> {
                 use $node::*;
                 let out: Box<dyn Iterator<Item = Token>> = match self {$(
-                    $($itoken => Box::new(::core::iter::once(Token::$itoken)),)?
-                    $($subnode(s) => Box::new(s.to_tokens()),)?
-                    $($ctoken(c) => Box::new(::core::iter::once(Token::$ctoken(c.into()))),)?
+                    $($a_token => Box::new(::core::iter::once(Token::$a_token)),)?
+                    $($a_subnode(s) => Box::new(s.to_tokens()),)?
+                    $($a_ctoken(c) => Box::new(::core::iter::once(Token::$a_ctoken(c.into()))),)?
                 )*};
                 out
             }
         }
-    };
+        )?
 
-    // Star: repeat node
-    ($node:ident [$subnode:ident]) => {
+        $(
+        // Star
         #[derive(Debug)]
         #[cfg_attr(test, derive(PartialEq))]
-        pub struct $node(pub Vec<$subnode>);
+        pub struct $node(pub Vec<$s_subnode>);
 
         impl FromTokens for $node {
             fn from_tokens(ts: &mut (impl Iterator<Item = Token> + Clone)) -> Result<Self, ParseError> {
-                let mut out = Vec::<$subnode>::new();
-                while let Ok(subnode) = $subnode::from_tokens(ts) {
+                let mut out = Vec::<$s_subnode>::new();
+                while let Ok(subnode) = $s_subnode::from_tokens(ts) {
                     out.push(subnode);
                 }
                 Ok($node(out))
@@ -135,17 +166,14 @@ macro_rules! node {
                 self.0.into_iter().flat_map(ToTokens::to_tokens)
             }
         }
-    }
-}
-pub(super) use node;
-
-macro_rules! nodes {
-    ($($node:ident $tt:tt;)*) => {
-        #[functional_macros::ast]
-        mod ast {
-            use super::*;
-            $(node!($node $tt);)*
-        }
+        )?
+        $(
+        // Other 
+        #[derive(Debug)]
+        #[cfg_attr(test, derive(PartialEq))]
+        pub enum $node $oe_tt
+        )?
+        )* }
         pub use ast::*;
     };
 }

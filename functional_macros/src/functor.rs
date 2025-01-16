@@ -331,7 +331,7 @@ impl InductiveCaseEmitter for Emitter {
 /// ```
 ///
 /// depending on the variant of the passed in fields.
-fn make_variant_destructor<'ast>(ident: TokenStream2, variant: &AVariant<'ast>) -> TokenStream2 {
+pub fn make_variant_destructor<'ast>(ident: TokenStream2, variant: &AVariant<'ast>) -> TokenStream2 {
     if variant.unit {
         return ident;
     }
@@ -397,7 +397,7 @@ impl FieldEmitter for Emitter {
 
 /// Makes a list of transformed fields, with the appropriate delimiter type based on whether the
 /// fields are named or unnamed
-fn make_variant_constructor<'ast>(
+pub fn make_variant_constructor<'ast>(
     container: TokenStream2,
     variant: &AVariant<'ast>,
     inner: &AType<'ast>,
@@ -420,18 +420,25 @@ fn make_variant_constructor<'ast>(
     }
 }
 
+pub trait BodyEmitter {
+    fn body<'ast>(&self, variant: &AVariant<'ast>, inner: &AType<'ast>, output_inner: impl ToTokens) -> TokenStream2 { TokenStream2::new() }
+}
+
+impl BodyEmitter for Emitter {}
+
 /// Writes the body of the functor implementation
 pub fn make_fn_body<'ast>(
     container: &ANode<'ast>,
     inner: &AType<'ast>,
     output_inner: impl ToTokens,
-    emitter: &impl FieldEmitter,
+    emitter: &(impl FieldEmitter + BodyEmitter),
 ) -> TokenStream2 {
     let mut out = TokenStream2::new();
 
     match container {
         ANode::Struct(s) => {
             let destructor = make_variant_destructor(quote! { Self }, &s.data);
+            let body = emitter.body(&s.data, inner, &output_inner);
             let constructor = make_variant_constructor(
                 if s.data.named {
                     quote! { Self::Mapped }
@@ -448,6 +455,7 @@ pub fn make_fn_body<'ast>(
             );
             out.append_all(quote! {
                 let #destructor = self;
+                #body;
                 #constructor
             });
         }
@@ -456,7 +464,7 @@ pub fn make_fn_body<'ast>(
             let variants = e.variants.iter().map(|variant| {
                 let ident = &variant.ident;
                 let destructor = make_variant_destructor(quote! { Self::#ident }, variant);
-
+                let body = emitter.body(variant, inner, &output_inner);
                 let constructor = make_variant_constructor(
                     quote! { Self::Mapped::#ident },
                     variant,
@@ -466,7 +474,7 @@ pub fn make_fn_body<'ast>(
                 );
 
                 quote! {
-                    #destructor => #constructor
+                    #destructor => { #body; #constructor }
                 }
             });
 

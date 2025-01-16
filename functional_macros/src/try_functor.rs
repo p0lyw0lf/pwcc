@@ -4,10 +4,12 @@ use quote::ToTokens;
 
 use crate::functor::make_fn_body;
 use crate::functor::BaseCaseEmitter;
+use crate::functor::BodyEmitter;
 use crate::functor::FieldEmitter;
 use crate::functor::InductiveCaseEmitter;
 use crate::nodes::ANode;
 use crate::nodes::AType;
+use crate::nodes::AVariant;
 
 pub struct Emitter;
 
@@ -46,10 +48,50 @@ impl InductiveCaseEmitter for Emitter {
         quote! {
             impl #impl_generics TryFunctor<#output_inner> for #input_outer #where_clause {
                 fn try_fmap<E: Semigroup + ControlFlow>(self, f: &mut impl FnMut(<Self as Functor<#output_inner>>::Input) -> Result<<Self as Functor<#output_inner>>::Output, E>) -> Result<<Self as Functor<#output_inner>>::Mapped, E> {
-                    Ok({ #fn_body })
+                    let mut err = Option::<E>::None;
+                    let out = { #fn_body };
+                    match err {
+                        Some(e) => Err(e),
+                        None => Ok(out),
+                    }
                 }
             }
         }
+    }
+}
+
+impl BodyEmitter for Emitter {
+    fn body<'ast>(
+        &self,
+        variant: &AVariant<'ast>,
+        inner: &AType<'ast>,
+        output_inner: impl ToTokens,
+    ) -> TokenStream2 {
+        if variant.unit {
+            return TokenStream2::new();
+        }
+
+        let output_inner = output_inner.to_token_stream();
+        let transforms = variant.fields.iter().filter_map(|field| {
+            let has_inner = field.all_tys().any(|ty| ty == inner);
+            if !has_inner {
+                return None;
+            }
+            let ident = &field.ident;
+            Some(quote! {
+                let #ident = match TryFunctor::<#output_inner>::try_fmap(#ident, f) {
+                    Ok(v) => ::core::mem::MaybeUninit::new(v),
+                    Err(e) => {
+                        let new_err = err.sconcat(Some(e)).unwrap();
+                        if !new_err.cont() { return Err(new_err); }
+                        err = Some(new_err);
+                        ::core::mem::MaybeUninit::uninit()
+                    }
+                }
+            })
+        });
+
+        quote! { #(#transforms);* }
     }
 }
 
@@ -58,24 +100,28 @@ impl FieldEmitter for Emitter {
         &self,
         named: bool,
         has_inner: bool,
-        output_inner: impl ToTokens,
+        _output_inner: impl ToTokens,
         ident: impl ToTokens,
     ) -> TokenStream2 {
-        // TODO: make it so that the TryFunctor impl makes a MaybeUninit for the struct as a whole,
-        // then all the fields are filled out, and only at the end (once all errors have been
-        // collected) do we assume_init() it. This will make it so we can have proper fancy control
-        // flow things, instead of the boring always-early-return stuff we have now.
+        // All the logic is taken care of in BodyEmitter; just need to unwrap all the fields that
+        // were mapped.
         if named {
             if has_inner {
-                quote! { #ident: TryFunctor::<#output_inner>::try_fmap(#ident, f)? }
+                quote! {
+                    // SAFETY: if we get here, we never encountered an error, so we must be init
+                    #ident: unsafe { #ident.assume_init() }
+                }
             } else {
-                quote! { #ident }
+                ident.into_token_stream()
             }
         } else {
             if has_inner {
-                quote! { TryFunctor::<#output_inner>::try_fmap(#ident, f)? }
+                quote! {
+                    // SAFETY: if we get here, we never encountered an error, so we must be init
+                    unsafe { #ident.assume_init() }
+                }
             } else {
-                quote! { #ident }
+                ident.into_token_stream()
             }
         }
     }

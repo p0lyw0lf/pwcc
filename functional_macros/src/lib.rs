@@ -15,15 +15,7 @@ mod emitter;
 mod generics;
 mod nodes;
 mod syntax;
-
-#[cfg(feature = "foldable")]
-mod foldable;
-
-#[cfg(any(feature = "functor", feature = "try_functor"))]
-mod functor;
-
-#[cfg(feature = "try_functor")]
-mod try_functor;
+mod traits;
 
 /// All the typeclasses we support
 #[derive(PartialEq, Eq, Hash)]
@@ -183,7 +175,7 @@ let crate_name = proc_macro2::Ident::new("functional", proc_macro2::Span::call_s
             out.append_all(quote! {
                 use #crate_name::Foldable;
             });
-            foldable::emit(&mut out, &nodes);
+            traits::foldable::emit(&mut out, &nodes);
         }
 
         // Next: all traits that _do_ care about coherence
@@ -194,7 +186,7 @@ let crate_name = proc_macro2::Ident::new("functional", proc_macro2::Span::call_s
             out.append_all(quote! {
                 use #crate_name::Functor;
             });
-            functor::emit(&mut out, &nodes, &functor::Emitter);
+            traits::functor::emit(&mut out, &nodes, &traits::functor::Emitter);
         }
 
         #[cfg(feature = "try_functor")]
@@ -204,7 +196,7 @@ let crate_name = proc_macro2::Ident::new("functional", proc_macro2::Span::call_s
                 use #crate_name::Semigroup;
                 use #crate_name::TryFunctor;
             });
-            functor::emit(&mut out, &nodes, &try_functor::Emitter);
+            traits::functor::emit(&mut out, &nodes, &traits::try_functor::Emitter);
         }
 
         proc_macro::Group::new(proc_macro::Delimiter::Brace, out.into())

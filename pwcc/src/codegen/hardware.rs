@@ -12,7 +12,6 @@ pub enum Location {
     Reg(Reg),
     Stack(usize),
 }
-foldable!(type Location);
 
 #[derive(Debug, Copy, Clone)]
 pub enum Reg {

@@ -123,7 +123,7 @@ pub fn filter_coherent<'ast>(lattice: Lattice<'ast>) -> ANodes<'ast> {
                 .map(Clone::clone)
                 .collect::<HashSet<_>>();
             if edges_with_other_ident.len() > 1 {
-                println!("Node {ident}: filtering {other_ident} due to multiple conflicting generic contexts");
+                // println!("Node {ident}: filtering {other_ident} due to multiple conflicting generic contexts");
                 bad_edges.extend(edges_with_other_ident);
             }
         }
@@ -171,7 +171,7 @@ pub fn filter_coherent<'ast>(lattice: Lattice<'ast>) -> ANodes<'ast> {
                 {
                     let edge_b_ident = edge_b.ty.ident;
                     let edge_c_ident = edge_c.ty.ident;
-                    println!("Node {ident}: filtering {edge_b_ident} due to {edge_c_ident} not being able to be transformed by it");
+                    // println!("Node {ident}: filtering {edge_b_ident} due to {edge_c_ident} not being able to be transformed by it");
                     bad_edges.insert(edge_b.ty.clone());
                 }
             }

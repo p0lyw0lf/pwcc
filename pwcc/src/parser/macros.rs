@@ -54,11 +54,6 @@ macro_rules! nodes {
         #[functional_macros::ast]
         mod ast {
         use super::*;
-        // TODO: make these imports be added automatically?
-        use functional::Functor;
-        use functional::TryFunctor;
-        use functional::ControlFlow;
-        use functional::Semigroup;
         $(
         $(
         // Multiplication
@@ -168,7 +163,7 @@ macro_rules! nodes {
         }
         )?
         $(
-        // Other 
+        // Other
         #[derive(Debug)]
         #[cfg_attr(test, derive(PartialEq))]
         pub enum $node $oe_tt

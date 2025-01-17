@@ -6,10 +6,18 @@ use std::str::FromStr;
 use proc_macro::TokenStream;
 use proc_macro::TokenTree;
 
+use quote::quote;
+use quote::TokenStreamExt;
 use syn::ItemMod;
+use proc_macro2::TokenStream as TokenStream2;
 
+mod emitter;
+mod generics;
 mod nodes;
 mod syntax;
+
+#[cfg(feature = "foldable")]
+mod foldable;
 
 #[cfg(any(feature = "functor", feature = "try_functor"))]
 mod functor;
@@ -20,6 +28,8 @@ mod try_functor;
 /// All the typeclasses we support
 #[derive(PartialEq, Eq, Hash)]
 enum Typeclass {
+    #[cfg(feature = "foldable")]
+    Foldable,
     #[cfg(feature = "functor")]
     Functor,
     #[cfg(feature = "try_functor")]
@@ -45,6 +55,8 @@ impl FromStr for Typeclass {
     type Err = TypeclassParseError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
+            #[cfg(feature = "foldable")]
+            "Foldable" => Ok(Typeclass::Foldable),
             #[cfg(feature = "functor")]
             "Functor" => Ok(Typeclass::Functor),
             #[cfg(feature = "try_functor")]
@@ -135,15 +147,13 @@ macro_rules! maybe {
 
 #[proc_macro_attribute]
 pub fn ast(attrs: TokenStream, item: TokenStream) -> TokenStream {
+let crate_name = proc_macro2::Ident::new("functional", proc_macro2::Span::call_site());
+
     let enabled = EnabledTypeclasses::parse_attrs(attrs);
 
     let r#mod: ItemMod = syn::parse(item.clone()).expect("must be applied to module");
 
     let nodes = crate::nodes::make_nodes(&r#mod);
-    // TODO: Do I want this to be a global transform or a feature-specific transform? If it is the
-    // latter, I probably want to cache it somehow...
-    let nodes = crate::nodes::lattice::make_lattice(nodes);
-    let nodes = crate::nodes::coherence::filter_coherent(nodes);
 
     let mut out = TokenStream::new();
     let iter = &mut item.into_iter();
@@ -163,15 +173,37 @@ pub fn ast(attrs: TokenStream, item: TokenStream) -> TokenStream {
     // The reason we're doing this is to be able to output directly into the inner part of the
     // module, without having to round-trip through syn first.
     let group = {
-        let mut out = group.stream().into();
+        let mut out: TokenStream2 = group.stream().into();
+
+        // First: all traits that do not care about coherence
+        let nodes = crate::nodes::lattice::make_lattice(nodes);
+
+        #[cfg(feature = "foldable")]
+        if enabled.has_typeclass(&Typeclass::Foldable) {
+            out.append_all(quote! {
+                use #crate_name::Foldable;
+            });
+            foldable::emit(&mut out, &nodes);
+        }
+
+        // Next: all traits that _do_ care about coherence
+        let nodes = crate::nodes::coherence::filter_coherent(nodes);
 
         #[cfg(feature = "functor")]
-        if enabled.has_typeclass(&Typeclass::Functor) {
+        if enabled.has_typeclass(&Typeclass::Functor) || enabled.has_typeclass(&Typeclass::TryFunctor) {
+            out.append_all(quote! {
+                use #crate_name::Functor;
+            });
             functor::emit(&mut out, &nodes, &functor::Emitter);
         }
 
         #[cfg(feature = "try_functor")]
         if enabled.has_typeclass(&Typeclass::TryFunctor) {
+            out.append_all(quote! {
+                use #crate_name::ControlFlow;
+                use #crate_name::Semigroup;
+                use #crate_name::TryFunctor;
+            });
             functor::emit(&mut out, &nodes, &try_functor::Emitter);
         }
 

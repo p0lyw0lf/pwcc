@@ -15,7 +15,6 @@ pub enum Location {
     Pseudo(usize),
     Concrete(hardware::Location),
 }
-foldable!(type Location);
 
 impl From<tacky::Program> for Program<State> {
     fn from(program: tacky::Program) -> Self {

@@ -1,7 +1,6 @@
 use core::fmt::Debug;
 use std::fmt::Display;
 
-use functional::foldable;
 use functional::Foldable;
 use functional::Functor;
 
@@ -13,27 +12,21 @@ pub mod stack;
 
 /// A State represents an assembly AST, where the operands of certain functions are abstracted.
 pub trait State: Debug + Sized {
-    type Location: Debug + Sized + foldable::Foldable<Self::Location>;
+    type Location: Debug + Sized;
 }
 
 #[functional_macros::ast]
 mod ast {
     use super::*;
-    use functional::ControlFlow;
-    use functional::Semigroup;
-    use functional::TryFunctor;
 
     /// Newtype needed to avoid "unconstrained type" errors
     #[derive(Debug)]
     pub struct Location<S: State>(pub S::Location);
-    foldable!(type Location<S: State>);
 
     #[derive(Debug)]
     pub struct Program<S: State> {
         pub function: Function<S>,
     }
-
-    foldable!(struct Program<S: State> for Location<S> | { function, });
 
     #[derive(Debug)]
     pub struct Function<S: State> {
@@ -41,14 +34,10 @@ mod ast {
         pub instructions: Instructions<S>,
     }
 
-    foldable!(struct Function<S: State> for Location<S> | { instructions, });
-
     /// We separate this out into a newtype struct so that we can map over it as well as individual
     /// instructions.
     #[derive(Debug)]
     pub struct Instructions<S: State>(pub Vec<Instruction<S>>);
-
-    foldable!(struct Instructions<S: State> for Location<S> | (+0,));
 
     #[derive(Debug)]
     pub enum Instruction<S: State> {
@@ -83,14 +72,6 @@ mod ast {
         Ret,
     }
 
-    foldable!(enum Instruction<S: State> for Location<S> | {
-        Mov { src, dst, },
-        Unary { dst, },
-        Binary { src, dst, },
-        Cmp { left, right, },
-        Idiv { denom, },
-    });
-
     #[derive(Debug, Copy, Clone)]
     pub enum UnaryOp {
         Neg,
@@ -124,12 +105,7 @@ mod ast {
         Imm(isize),
         Location(Location<S>),
     }
-
-    foldable!(enum Operand<S: State> for Location<S> | {
-        Location (+loc,),
-    });
 }
-
 pub use ast::*;
 
 // Utilities for working with the Location newtype

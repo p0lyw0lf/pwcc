@@ -2,10 +2,11 @@ use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use quote::ToTokens;
 
-use crate::functor::make_fn_body;
+use crate::emitter::make_fn_body;
+use crate::emitter::make_variant_constructor;
+use crate::emitter::BodyEmitter;
+use crate::emitter::FieldEmitter;
 use crate::functor::BaseCaseEmitter;
-use crate::functor::BodyEmitter;
-use crate::functor::FieldEmitter;
 use crate::functor::InductiveCaseEmitter;
 use crate::nodes::ANode;
 use crate::nodes::AType;
@@ -72,11 +73,8 @@ impl BodyEmitter for Emitter {
         variant: &AVariant<'ast>,
         inner: &AType<'ast>,
         output_inner: impl ToTokens,
+        in_enum: bool,
     ) -> TokenStream2 {
-        if variant.unit {
-            return TokenStream2::new();
-        }
-
         let output_inner = output_inner.to_token_stream();
         let transforms = variant.fields.iter().filter_map(|field| {
             let has_inner = field.all_tys().any(|ty| ty == inner);
@@ -97,7 +95,33 @@ impl BodyEmitter for Emitter {
             })
         });
 
-        quote! { #(#transforms);* }
+        let out = if in_enum {
+            let ident = &variant.ident;
+            make_variant_constructor(
+                quote! { Self::Mapped::#ident },
+                variant,
+                inner,
+                &output_inner,
+                self,
+            )
+        } else {
+            make_variant_constructor(
+                if variant.named {
+                    quote! { Self::Mapped }
+                } else {
+                    // TODO: I am not sure why, but for some reason, unnamed structs don't like
+                    // doing Self::Mapped(), and prefer their original name instead. Exactly why is
+                    // beyond me, but this seems to work, so whatever.
+                    variant.ident.to_token_stream()
+                },
+                variant,
+                inner,
+                &output_inner,
+                self,
+            )
+        };
+
+        quote! { #(#transforms ;)* #out }
     }
 }
 

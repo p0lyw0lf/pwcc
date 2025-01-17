@@ -7,9 +7,10 @@ edition = "2021"
 proc-macro = true
 
 [features]
-default = ["functor", "try_functor"]
+default = ["foldable", "functor", "try_functor"]
+foldable = []
 functor = []
-try_functor = []
+try_functor = ["functor"]
 
 [dependencies]
 quote = "1.0"

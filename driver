@@ -10,7 +10,7 @@ INFO=0
 
 while [[ $# -gt 0 ]]; do
   case $1 in
-    --lex|--parse|--tacky|--codegen)
+    --lex|--parse|--validate|--tacky|--codegen)
       OPTIONS+=("$1")
       shift
       ;;

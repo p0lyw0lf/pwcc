@@ -92,6 +92,9 @@ pub fn pretty_print(tree: impl ToTokens) {
             OpenBrace => {
                 newline(true, false);
             }
+            Semicolon => {
+                newline(false, false);
+            }
             _ => {}
         };
     }

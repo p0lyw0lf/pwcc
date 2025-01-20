@@ -1,17 +1,55 @@
 use std::env;
+use std::fmt::Display;
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
+use std::str::FromStr;
 
 use functional::Functor;
 use pwcc::{codegen, lexer, parser, printer, semantic, tacky};
 
-static STAGES: &'static [&'static str] = &["lex", "parse", "validate", "tacky", "codegen"];
+#[derive(Debug, Eq, PartialEq, Ord, PartialOrd)]
+enum Stages {
+    Lex,
+    Parse,
+    Validate,
+    Tacky,
+    Codegen,
+    NoExplicitStage,
+}
+use Stages::*;
+
+impl FromStr for Stages {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "lex" => Ok(Lex),
+            "parse" => Ok(Parse),
+            "validate" => Ok(Validate),
+            "tacky" => Ok(Tacky),
+            "codegen" => Ok(Codegen),
+            _ => Err(()),
+        }
+    }
+}
+
+impl Display for Stages {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Lex => write!(f, "lex"),
+            Parse => write!(f, "parse"),
+            Validate => write!(f, "validate"),
+            Tacky => write!(f, "tacky"),
+            Codegen => write!(f, "codegen"),
+            NoExplicitStage => panic!("should not display NoExplicitStage"),
+        }
+    }
+}
 
 fn print_help() {
     println!(
         "{{{}}} <file.i>",
-        STAGES
+        [Lex, Parse, Validate, Tacky, Codegen]
             .iter()
             .map(|stage| format!("--{}", stage))
             .collect::<Vec<_>>()
@@ -20,7 +58,7 @@ fn print_help() {
 }
 
 fn main() -> Result<(), String> {
-    let mut stage: Option<usize> = None;
+    let mut stage = NoExplicitStage;
     let mut filename: Option<String> = None;
 
     for arg in env::args().skip(1) {
@@ -35,16 +73,16 @@ fn main() -> Result<(), String> {
             }
             option if option.starts_with("--") => {
                 let stage_str = option.strip_prefix("--").unwrap();
-                match STAGES.iter().position(|s| s == &stage_str) {
-                    None => {
+                match Stages::from_str(stage_str) {
+                    Err(()) => {
                         print_help();
                         return Err(format!("Unexpected option \"{option}\""));
                     }
-                    Some(new_stage) => {
-                        if let Some(old_stage) = stage {
-                            stage = Some(core::cmp::max(old_stage, new_stage));
+                    Ok(new_stage) => {
+                        if stage == NoExplicitStage {
+                            stage = new_stage;
                         } else {
-                            stage = Some(new_stage);
+                            stage = std::cmp::max(stage, new_stage);
                         }
                     }
                 }
@@ -72,40 +110,46 @@ fn main() -> Result<(), String> {
 
     let tokens = lexer::lex(&source).map_err(|e| format!("error lexing: {e}"))?;
 
-    if stage.map_or(false, |stage| stage < 1) {
+    if stage == Lex {
         println!("{tokens:?}");
         return Ok(());
     }
 
     let tree = parser::parse(tokens).map_err(|e| format!("error parsing: {e}"))?;
+
+    if stage == Parse {
+        printer::pretty_print(tree);
+        return Ok(());
+    }
+
     let tree =
         semantic::validate(tree).map_err(|e| format!("error running semantic analysis: {e}"))?;
 
-    if stage.map_or(false, |stage| stage < 2) {
+    if stage == Validate {
         printer::pretty_print(tree);
         return Ok(());
     }
 
     let ir = tacky::Program::from(tree);
 
-    if stage.map_or(false, |stage| stage < 3) {
+    if stage == Tacky {
         println!("{ir:?}");
         return Ok(());
     }
 
     let pass0 = codegen::Program::<codegen::pseudo::State>::from(ir);
-    if stage.is_some() {
+    if stage == Codegen {
         println!("{pass0:?}");
     }
 
     let pass1 = Functor::<codegen::Location<_>>::fmap(pass0, &mut codegen::stack::pass);
-    if stage.is_some() {
+    if stage == Codegen {
         println!("{pass1:?}");
     }
 
     let pass2 = Functor::<codegen::Instructions<_>>::fmap(pass1, &mut codegen::hardware::pass);
 
-    if stage.is_some() {
+    if stage == Codegen {
         println!("{pass2:?}");
         return Ok(());
     }

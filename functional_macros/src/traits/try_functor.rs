@@ -6,11 +6,11 @@ use crate::emitter::make_fn_body;
 use crate::emitter::make_variant_constructor;
 use crate::emitter::BodyEmitter;
 use crate::emitter::FieldEmitter;
-use crate::traits::functor::BaseCaseEmitter;
-use crate::traits::functor::InductiveCaseEmitter;
 use crate::nodes::ANode;
 use crate::nodes::AType;
 use crate::nodes::AVariant;
+use crate::traits::functor::BaseCaseEmitter;
+use crate::traits::functor::InductiveCaseEmitter;
 
 pub struct Emitter;
 
@@ -48,7 +48,7 @@ impl InductiveCaseEmitter for Emitter {
         if container.ident() == inner.ident {
             fn_body = quote! {
                 let out = #fn_body;
-                f(out)?
+                f(out?)
             };
         }
 
@@ -56,11 +56,7 @@ impl InductiveCaseEmitter for Emitter {
             impl #impl_generics TryFunctor<#output_inner> for #input_outer #where_clause {
                 fn try_fmap<E: Semigroup + ControlFlow>(self, f: &mut impl FnMut(<Self as Functor<#output_inner>>::Input) -> Result<<Self as Functor<#output_inner>>::Output, E>) -> Result<<Self as Functor<#output_inner>>::Mapped, E> {
                     let mut err = Option::<E>::None;
-                    let out = { #fn_body };
-                    match err {
-                        Some(e) => Err(e),
-                        None => Ok(out),
-                    }
+                    #fn_body
                 }
             }
         }
@@ -121,7 +117,13 @@ impl BodyEmitter for Emitter {
             )
         };
 
-        quote! { #(#transforms ;)* #out }
+        quote! {
+            #(#transforms ;)*
+            match err {
+                Some(e) => Err(e),
+                None => Ok(#out)
+            }
+        }
     }
 }
 

@@ -20,6 +20,7 @@ use crate::nodes::AVariant;
 use crate::generics::generics_add_suffix;
 use crate::generics::generics_merge;
 use crate::generics::instantiation_add_suffix;
+use crate::generics::Behavior;
 
 
 pub trait BaseCaseEmitter {
@@ -50,8 +51,8 @@ fn emit_base_case<'ast>(
         return;
     }
 
-    let input_generics = generics_add_suffix(generics, "Input", &ctx, false);
-    let output_generics = generics_add_suffix(generics, "Output", &ctx, false);
+    let input_generics = generics_add_suffix(generics, "Input", &ctx, Behavior::KeepAll);
+    let output_generics = generics_add_suffix(generics, "Output", &ctx, Behavior::KeepAll);
 
     let all_generics = generics_merge(&input_generics, &output_generics);
 
@@ -127,11 +128,11 @@ fn emit_inductive_case<'ast>(
     let container_generics = container.generics();
 
     let container_input_generics_partial =
-        generics_add_suffix(container_generics, "Input", &inner_ctx, true);
+        generics_add_suffix(container_generics, "Input", &inner_ctx, Behavior::OnlyCtx);
     let container_input_generics_full =
-        generics_add_suffix(container_generics, "Input", &inner_ctx, false);
+        generics_add_suffix(container_generics, "Input", &inner_ctx, Behavior::KeepAll);
     let container_output_generics =
-        generics_add_suffix(container_generics, "Output", &inner_ctx, false);
+        generics_add_suffix(container_generics, "Output", &inner_ctx, Behavior::KeepAll);
 
     let all_generics = generics_merge(
         &container_input_generics_partial,

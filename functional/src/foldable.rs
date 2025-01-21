@@ -44,3 +44,12 @@ where
         self.deref().foldl(f, acc)
     }
 }
+
+impl<T> Foldable<T> for () {
+    fn foldl<'s, B>(&'s self, _f: fn(B, &'s T) -> B, acc: B) -> B
+    where
+        T: 's,
+    {
+        acc
+    }
+}

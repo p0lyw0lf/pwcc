@@ -54,27 +54,47 @@ impl<'ast, 'suffix, 'hashset> VisitMut for AddSuffix<'ast, 'suffix, 'hashset> {
     }
 }
 
+#[derive(Copy, Clone)]
+pub enum Behavior {
+    /// Keep everything, regardless of if it's in the context,
+    KeepAll,
+    /// Only parameters present in the context should be returned
+    OnlyCtx,
+}
+
+impl Behavior {
+    fn keep_param<'ast>(&self, ctx: &GenericContext<'ast>, param: &GenericParam) -> bool {
+        use Behavior::*;
+        match self {
+            KeepAll => return true,
+            OnlyCtx => {}
+        };
+
+        match param {
+                GenericParam::Lifetime(l) => ctx.has_lifetime(&l.lifetime.ident),
+                GenericParam::Type(t) => ctx.has_type(&t.ident),
+                GenericParam::Const(c) => ctx.has_const(&c.ident),
+            }
+    }
+}
+
 /// Adds a string to the idents of all of the given generic arguments present in `ctx`, returning the resulting generics.
 /// If `remove` is true, removes all parameters that don't correspond to anything in `ctx`.
 pub fn generics_add_suffix<'ast>(
     generics: &Generics,
     suffix: &str,
     ctx: &GenericContext<'ast>,
-    remove: bool,
+    behavior: Behavior,
 ) -> Generics {
     let mut generics = generics.clone();
     let mut v = AddSuffix { suffix, ctx };
     generics.params = generics
         .params
         .into_iter()
-        .filter_map(|param| match param {
-            GenericParam::Lifetime(l) if remove && !ctx.has_lifetime(&l.lifetime.ident) => None,
-            GenericParam::Type(t) if remove && !ctx.has_type(&t.ident) => None,
-            GenericParam::Const(c) if remove && !ctx.has_const(&c.ident) => None,
-            mut param => {
+        .filter(|param| behavior.keep_param(ctx, param))
+        .map(|mut param| {
                 v.visit_generic_param_mut(&mut param);
-                Some(param)
-            }
+                param
         })
         .collect();
     generics

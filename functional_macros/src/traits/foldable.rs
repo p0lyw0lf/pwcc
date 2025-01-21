@@ -1,4 +1,3 @@
-use core::ops::Deref;
 use std::collections::HashSet;
 
 use proc_macro2::TokenStream as TokenStream2;
@@ -8,8 +7,6 @@ use quote::ToTokens;
 
 use crate::emitter::make_fn_body;
 use crate::emitter::BodyEmitter;
-use crate::generics::generics_add_suffix;
-use crate::nodes::instantiation_collect_context;
 use crate::nodes::lattice::Lattice;
 use crate::nodes::ANode;
 use crate::nodes::AType;
@@ -76,15 +73,11 @@ impl BodyEmitter for Emitter {
 fn emit_inductive_case<'ast>(out: &mut TokenStream2, container: &ANode<'ast>, inner: &AType<'ast>) {
     let ident = container.ident();
 
-    let container_ctx = container.ctx();
-    let inner_ctx =
-        instantiation_collect_context(container_ctx, inner.instantiation.iter().map(Deref::deref));
-
     let container_generics = container.generics();
-    let inner_generics = generics_add_suffix(&container_generics, "", &inner_ctx, true);
+    let inner_instantiation = &inner.instantiation;
 
     let (impl_generics, ty_generics, where_clause) = container_generics.split_for_impl();
-    let (_, inner_ty_generics, _) = inner_generics.split_for_impl();
+    let inner_ty_generics = quote! { < #(#inner_instantiation),* > };
 
     let output_container = quote! { #ident #ty_generics };
     let inner_ident = &inner.ident;

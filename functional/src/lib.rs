@@ -1,8 +1,8 @@
-pub mod control_flow;
-pub mod foldable;
-pub mod functor;
-pub mod semigroup;
-pub mod try_functor;
+mod control_flow;
+mod foldable;
+mod functor;
+mod semigroup;
+mod try_functor;
 
 #[cfg(test)]
 mod test;

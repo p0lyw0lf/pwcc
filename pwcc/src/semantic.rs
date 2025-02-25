@@ -31,10 +31,10 @@ impl VariableResolution {
         }
 
         let unique_name = self.factory.unique_label(&name);
-        self.variable_map.insert(name.clone(), unique_name);
+        self.variable_map.insert(name.clone(), unique_name.clone());
 
         Ok(Declaration {
-            name,
+            name: unique_name,
             init: decl.init,
         })
     }

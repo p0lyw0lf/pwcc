@@ -3,6 +3,7 @@ use std::fmt::Display;
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
+use std::process::ExitCode;
 use std::str::FromStr;
 
 use functional::Functor;
@@ -58,7 +59,7 @@ stages! {
     Codegen = "codegen",
 }
 
-fn main() -> Result<(), String> {
+fn rmain() -> Result<(), String> {
     let mut stage = NoExplicitStage;
     let mut filename: Option<String> = None;
 
@@ -166,4 +167,14 @@ fn main() -> Result<(), String> {
     write!(output, "{code}").map_err(|e| format!("error writing to output file: {e}"))?;
 
     Ok(())
+}
+
+fn main() -> ExitCode {
+    match rmain() {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("{e}");
+            ExitCode::FAILURE
+        }
+    }
 }

@@ -27,7 +27,8 @@ while [[ $# -gt 0 ]]; do
 done
 
 cd $DIR
-EXE=$(cargo build --bin pwcc_bin --release --message-format=json-render-diagnostics | jq -js '.[] | select(.reason == "compiler-artifact") | select(.executable != null) | .executable')
+RUSTC_OUTPUT=$(cargo build --bin pwcc_bin --release --message-format=json-render-diagnostics)
+EXE=$(echo $RUSTC_OUTPUT | jq -js '.[] | select(.reason == "compiler-artifact") | select(.executable != null) | .executable')
 
 
 if [[ "${INFO}" -eq "1" ]]; then

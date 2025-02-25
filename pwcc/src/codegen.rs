@@ -139,9 +139,11 @@ pub trait Identity<B> {
     type Mapped;
     fn identity(self) -> Self::Mapped;
 }
-impl<T, L, I: State<Location = L>, O: State<Location = L>> Identity<Location<O>> for T
+impl<T, L, Input, Output> Identity<Location<Output>> for T
 where
-    T: Functor<Location<O>, Input = Location<I>, Output = Location<O>>,
+    Input: State<Location = L>,
+    Output: State<Location = L>,
+    T: Functor<Location<Output>, Input = Location<Input>>,
 {
     type Mapped = T::Mapped;
     fn identity(self) -> Self::Mapped {

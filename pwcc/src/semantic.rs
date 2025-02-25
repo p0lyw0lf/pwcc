@@ -11,7 +11,7 @@ use crate::parser::Function;
 use crate::parser::Program;
 
 pub fn validate(p: Program) -> Result<Program, SemanticErrors> {
-    let p = TryFunctor::<Function>::try_fmap(p, &mut resolve_variables)?;
+    let p = p.try_fmap(&mut resolve_variables)?;
     Ok(p)
 }
 

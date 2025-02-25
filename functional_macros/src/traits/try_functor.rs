@@ -24,7 +24,7 @@ impl BaseCaseEmitter for Emitter {
     ) -> TokenStream2 {
         quote! {
             impl #impl_generics TryFunctor<#output> for #input #where_clause {
-                fn try_fmap<E: Semigroup + ControlFlow>(self, f: &mut impl FnMut(<Self as Functor<#output>>::Input) -> Result<<Self as Functor<#output>>::Output, E>) -> Result<<Self as Functor<#output>>::Mapped, E> {
+                fn try_fmap<E: Semigroup + ControlFlow>(self, f: &mut impl FnMut(<Self as Functor<#output>>::Input) -> Result<#output, E>) -> Result<<Self as Functor<#output>>::Mapped, E> {
                     f(self)
                 }
             }
@@ -54,7 +54,7 @@ impl InductiveCaseEmitter for Emitter {
 
         quote! {
             impl #impl_generics TryFunctor<#output_inner> for #input_outer #where_clause {
-                fn try_fmap<E: Semigroup + ControlFlow>(self, f: &mut impl FnMut(<Self as Functor<#output_inner>>::Input) -> Result<<Self as Functor<#output_inner>>::Output, E>) -> Result<<Self as Functor<#output_inner>>::Mapped, E> {
+                fn try_fmap<E: Semigroup + ControlFlow>(self, f: &mut impl FnMut(<Self as Functor<#output_inner>>::Input) -> Result<#output_inner, E>) -> Result<<Self as Functor<#output_inner>>::Mapped, E> {
                     let mut err = Option::<E>::None;
                     #fn_body
                 }

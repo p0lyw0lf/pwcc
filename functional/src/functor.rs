@@ -1,42 +1,38 @@
-pub trait Functor<Inner> {
+pub trait Functor<Output> {
     type Input;
-    type Output;
     type Mapped;
-    fn fmap(self, f: &mut impl FnMut(Self::Input) -> Self::Output) -> Self::Mapped;
+    fn fmap(self, f: &mut impl FnMut(Self::Input) -> Output) -> Self::Mapped;
 }
 
-impl<T, Inner, A, B> Functor<Inner> for Vec<T>
+impl<T, Input, Output> Functor<Output> for Vec<T>
 where
-    T: Functor<Inner, Input = A, Output = B>,
+    T: Functor<Output, Input = Input>,
 {
-    type Input = A;
-    type Output = B;
+    type Input = Input;
     type Mapped = Vec<T::Mapped>;
-    fn fmap(self, f: &mut impl FnMut(Self::Input) -> Self::Output) -> Self::Mapped {
+    fn fmap(self, f: &mut impl FnMut(Self::Input) -> Output) -> Self::Mapped {
         self.into_iter().map(&mut |x: T| x.fmap(f)).collect()
     }
 }
 
-impl<T, Inner, A, B> Functor<Inner> for Option<T>
+impl<T, Input, Output> Functor<Output> for Option<T>
 where
-    T: Functor<Inner, Input = A, Output = B>,
+    T: Functor<Output, Input = Input>,
 {
-    type Input = A;
-    type Output = B;
+    type Input = Input;
     type Mapped = Option<T::Mapped>;
-    fn fmap(self, f: &mut impl FnMut(Self::Input) -> Self::Output) -> Self::Mapped {
+    fn fmap(self, f: &mut impl FnMut(Self::Input) -> Output) -> Self::Mapped {
         Option::map(self, &mut |x: T| x.fmap(f))
     }
 }
 
-impl<T, Inner, A, B> Functor<Inner> for Box<T>
+impl<T, Input, Output> Functor<Output> for Box<T>
 where
-    T: Functor<Inner, Input = A, Output = B>,
+    T: Functor<Output, Input = Input>,
 {
-    type Input = A;
-    type Output = B;
+    type Input = Input;
     type Mapped = Box<T::Mapped>;
-    fn fmap(self, f: &mut impl FnMut(Self::Input) -> Self::Output) -> Self::Mapped {
+    fn fmap(self, f: &mut impl FnMut(Self::Input) -> Output) -> Self::Mapped {
         Box::new((*self).fmap(f))
     }
 }

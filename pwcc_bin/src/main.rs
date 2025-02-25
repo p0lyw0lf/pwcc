@@ -8,13 +8,12 @@ use std::str::FromStr;
 use functional::Functor;
 use pwcc::{codegen, lexer, parser, printer, semantic, tacky};
 
+macro_rules! stages {
+($($name:ident = $val:literal ,)*) => {
+
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd)]
 enum Stages {
-    Lex,
-    Parse,
-    Validate,
-    Tacky,
-    Codegen,
+    $($name,)*
     NoExplicitStage,
 }
 use Stages::*;
@@ -23,11 +22,7 @@ impl FromStr for Stages {
     type Err = ();
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "lex" => Ok(Lex),
-            "parse" => Ok(Parse),
-            "validate" => Ok(Validate),
-            "tacky" => Ok(Tacky),
-            "codegen" => Ok(Codegen),
+            $($val => Ok($name),)*
             _ => Err(()),
         }
     }
@@ -36,11 +31,7 @@ impl FromStr for Stages {
 impl Display for Stages {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Lex => write!(f, "lex"),
-            Parse => write!(f, "parse"),
-            Validate => write!(f, "validate"),
-            Tacky => write!(f, "tacky"),
-            Codegen => write!(f, "codegen"),
+            $($name => write!(f, $val),)*
             NoExplicitStage => panic!("should not display NoExplicitStage"),
         }
     }
@@ -49,12 +40,22 @@ impl Display for Stages {
 fn print_help() {
     println!(
         "{{{}}} <file.i>",
-        [Lex, Parse, Validate, Tacky, Codegen]
+        [$($name,)*]
             .iter()
             .map(|stage| format!("--{}", stage))
             .collect::<Vec<_>>()
             .join(", ")
     );
+}
+};
+}
+
+stages! {
+    Lex = "lex",
+    Parse = "parse",
+    Validate = "validate",
+    Tacky = "tacky",
+    Codegen = "codegen",
 }
 
 fn main() -> Result<(), String> {
@@ -142,12 +143,12 @@ fn main() -> Result<(), String> {
         println!("{pass0:?}");
     }
 
-    let pass1 = Functor::<codegen::Location<_>>::fmap(pass0, &mut codegen::stack::pass);
+    let pass1 = pass0.fmap(&mut codegen::stack::pass);
     if stage == Codegen {
         println!("{pass1:?}");
     }
 
-    let pass2 = Functor::<codegen::Instructions<_>>::fmap(pass1, &mut codegen::hardware::pass);
+    let pass2 = pass1.fmap(&mut codegen::hardware::pass);
 
     if stage == Codegen {
         println!("{pass2:?}");

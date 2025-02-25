@@ -12,16 +12,15 @@ use crate::emitter::make_fn_body;
 use crate::emitter::make_variant_constructor;
 use crate::emitter::BodyEmitter;
 use crate::emitter::FieldEmitter;
+use crate::generics::generics_add_suffix;
+use crate::generics::generics_merge;
+use crate::generics::instantiation_add_suffix;
+use crate::generics::Behavior;
 use crate::nodes::instantiation_collect_context;
 use crate::nodes::ANode;
 use crate::nodes::ANodes;
 use crate::nodes::AType;
 use crate::nodes::AVariant;
-use crate::generics::generics_add_suffix;
-use crate::generics::generics_merge;
-use crate::generics::instantiation_add_suffix;
-use crate::generics::Behavior;
-
 
 pub trait BaseCaseEmitter {
     fn base_case(
@@ -67,7 +66,7 @@ fn emit_base_case<'ast>(
         quote! { #ident #output_ty_generics },
     );
 
-    println!("{out_toks}");
+    // println!("{out_toks}");
     out.append_all(out_toks);
 }
 
@@ -84,9 +83,8 @@ impl BaseCaseEmitter for Emitter {
         quote! {
             impl #impl_generics Functor<#output> for #input #where_clause {
                 type Input = #input;
-                type Output = #output;
                 type Mapped = #output;
-                fn fmap(self, f: &mut impl FnMut(Self::Input) -> Self::Output) -> Self::Mapped {
+                fn fmap(self, f: &mut impl FnMut(Self::Input) -> #output) -> Self::Mapped {
                     f(self)
                 }
             }
@@ -163,7 +161,7 @@ fn emit_inductive_case<'ast>(
         quote! { #inner_ident < #output_inner_instantiation > },
     );
 
-    println!("{out_toks}");
+    // println!("{out_toks}");
     out.append_all(out_toks);
 }
 
@@ -190,9 +188,8 @@ impl InductiveCaseEmitter for Emitter {
         quote! {
             impl #impl_generics Functor<#output_inner> for #input_outer #where_clause {
                 type Input = #input_inner;
-                type Output = #output_inner;
                 type Mapped = #output_outer;
-                fn fmap(self, f: &mut impl FnMut(Self::Input) -> Self::Output) -> Self::Mapped {
+                fn fmap(self, f: &mut impl FnMut(Self::Input) -> #output_inner) -> Self::Mapped {
                     #fn_body
                 }
             }

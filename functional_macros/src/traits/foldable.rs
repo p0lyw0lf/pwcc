@@ -2,8 +2,8 @@ use std::collections::HashSet;
 
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
-use quote::TokenStreamExt;
 use quote::ToTokens;
+use quote::TokenStreamExt;
 
 use crate::emitter::make_fn_body;
 use crate::emitter::BodyEmitter;
@@ -37,7 +37,7 @@ fn emit_base_case<'ast>(out: &mut TokenStream2, node: &ANode<'ast>) {
             }
         }
     };
-    println!("{out_toks}");
+    // println!("{out_toks}");
     out.append_all(out_toks);
 }
 
@@ -103,7 +103,7 @@ fn emit_inductive_case<'ast>(out: &mut TokenStream2, container: &ANode<'ast>, in
             }
         }
     };
-    println!("{out_toks}");
+    // println!("{out_toks}");
     out.append_all(out_toks);
 }
 

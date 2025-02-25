@@ -2,20 +2,20 @@ use crate::ControlFlow;
 use crate::Functor;
 use crate::Semigroup;
 
-pub trait TryFunctor<Inner>: Functor<Inner> {
+pub trait TryFunctor<Output>: Functor<Output> {
     fn try_fmap<E: Semigroup + ControlFlow>(
         self,
-        f: &mut impl FnMut(Self::Input) -> Result<Self::Output, E>,
+        f: &mut impl FnMut(Self::Input) -> Result<Output, E>,
     ) -> Result<Self::Mapped, E>;
 }
 
-impl<T, Inner, A, B> TryFunctor<Inner> for Vec<T>
+impl<T, Input, Output> TryFunctor<Output> for Vec<T>
 where
-    T: TryFunctor<Inner, Input = A, Output = B>,
+    T: TryFunctor<Output, Input = Input>,
 {
     fn try_fmap<E: Semigroup + ControlFlow>(
         self,
-        f: &mut impl FnMut(Self::Input) -> Result<Self::Output, E>,
+        f: &mut impl FnMut(Self::Input) -> Result<Output, E>,
     ) -> Result<Self::Mapped, E> {
         // Strategy: collect all errors, return concatenation
         let mut err = Option::<E>::None;
@@ -42,13 +42,13 @@ where
     }
 }
 
-impl<T, Inner, A, B> TryFunctor<Inner> for Option<T>
+impl<T, Input, Output> TryFunctor<Output> for Option<T>
 where
-    T: TryFunctor<Inner, Input = A, Output = B>,
+    T: TryFunctor<Output, Input = Input>,
 {
     fn try_fmap<E: Semigroup + ControlFlow>(
         self,
-        f: &mut impl FnMut(Self::Input) -> Result<Self::Output, E>,
+        f: &mut impl FnMut(Self::Input) -> Result<Output, E>,
     ) -> Result<Self::Mapped, E> {
         match self {
             Some(v) => v.try_fmap(f).map(Some),
@@ -57,14 +57,13 @@ where
     }
 }
 
-
-impl<T, Inner, A, B> TryFunctor<Inner> for Box<T>
+impl<T, Input, Output> TryFunctor<Output> for Box<T>
 where
-    T: TryFunctor<Inner, Input = A, Output = B>,
+    T: TryFunctor<Output, Input = Input>,
 {
     fn try_fmap<E: Semigroup + ControlFlow>(
         self,
-        f: &mut impl FnMut(Self::Input) -> Result<Self::Output, E>,
+        f: &mut impl FnMut(Self::Input) -> Result<Output, E>,
     ) -> Result<Self::Mapped, E> {
         Ok(Box::new((*self).try_fmap(f)?))
     }

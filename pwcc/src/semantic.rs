@@ -41,8 +41,8 @@ impl VariableResolution {
 
     fn resolve_exp(self: &Self, exp: Exp) -> Result<Exp, SemanticErrors> {
         match exp {
-            Exp::Assignment { lhs, rhs } => match *lhs {
-                Exp::Var { .. } => Ok(Exp::Assignment { lhs, rhs }),
+            Exp::Assignment { lhs, op, rhs } => match *lhs {
+                Exp::Var { .. } => Ok(Exp::Assignment { lhs, op, rhs }),
                 otherwise => Err(SemanticError::InvalidAssignment(otherwise).into()),
             },
             Exp::Var { ident } => match self.variable_map.get(&ident) {

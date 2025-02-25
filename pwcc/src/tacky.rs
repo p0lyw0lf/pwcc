@@ -317,10 +317,20 @@ impl Chompable for parser::Exp {
                 Val::Var(dst)
             }
             Var { ident } => Val::Var(ctx.tf.var(&ident)),
-            Assignment { lhs, rhs } => match *lhs {
-                Var { ident } => {
+            Assignment { lhs, op, rhs } => match *lhs {
+                Var { ref ident } => {
+                    let dst = ctx.tf.var(ident);
+                    let rhs = match op {
+                        parser::AssignmentOp::Equal => *rhs,
+                        otherwise => parser::Exp::Binary {
+                            lhs,
+                            op: otherwise
+                                .to_binary_op()
+                                .expect("to convert AssignmentOp to BinaryOp"),
+                            rhs,
+                        },
+                    };
                     let src = rhs.chomp(ctx);
-                    let dst = ctx.tf.var(&ident);
                     ctx.instructions.push(Instruction::Copy { src, dst });
                     Val::Var(dst)
                 }

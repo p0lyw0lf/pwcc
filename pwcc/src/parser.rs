@@ -55,8 +55,16 @@ nodes! {
         // Logical operators
         +DoubleAmpersand +DoublePipe +DoubleEqual +NotEqual +LessThan +LessThanEqual +GreaterThan +GreaterThanEqual
     );
+    AssignmentOp(
+        // Standard assignment
+        +Equal
+        // Arithmetic assignment
+        +PlusEqual +MinusEqual +StarEqual +ForwardSlashEqual +PercentEqual
+        // Bitwise assignment
+        +LeftShiftEqual +RightShiftEqual +AmpersandEqual +CaretEqual +PipeEqual
+    );
     // Not used in grammar, only for parsing Exp
-    BinaryTok(+<BinaryOp> +Equal);
+    BinaryTok(+<BinaryOp> +<AssignmentOp>);
 
     // Exp is special, since its AST doesn't exactly correspond with the grammar, so we define it
     // separately
@@ -78,28 +86,53 @@ nodes! {
         },
         Assignment {
             lhs: Box<Exp>, // Semantic analysis ensures this is a proper LValue
+            op: AssignmentOp,
             rhs: Box<Exp>,
         },
     };
 }
 
+impl AssignmentOp {
+    pub fn to_binary_op(self) -> Option<BinaryOp> {
+        use AssignmentOp::*;
+        if let Equal = self {
+            return None;
+        }
+        Some(match self {
+            Equal => unreachable!(),
+            PlusEqual => BinaryOp::Plus,
+            MinusEqual => BinaryOp::Minus,
+            StarEqual => BinaryOp::Star,
+            ForwardSlashEqual => BinaryOp::ForwardSlash,
+            PercentEqual => BinaryOp::Percent,
+            LeftShiftEqual => BinaryOp::LeftShift,
+            RightShiftEqual => BinaryOp::RightShift,
+            AmpersandEqual => BinaryOp::Ampersand,
+            CaretEqual => BinaryOp::Caret,
+            PipeEqual => BinaryOp::Pipe,
+        })
+    }
+}
+
 impl BinaryTok {
+    /// Based on https://en.cppreference.com/w/c/language/operator_precedence, going in reverse
+    /// order.
     fn precedence(&self) -> usize {
         use BinaryOp::*;
-        match self {
+        16 - match self {
             BinaryTok::BinaryOp(op) => match op {
-                Star | ForwardSlash | Percent => 50,
-                Plus | Minus => 45,
-                LeftShift | RightShift => 44,
-                Ampersand => 43,
-                Caret => 42,
-                Pipe => 41,
-                LessThan | LessThanEqual | GreaterThan | GreaterThanEqual => 35,
-                DoubleEqual | NotEqual => 30,
-                DoubleAmpersand => 10,
-                DoublePipe => 5,
+                Star | ForwardSlash | Percent => 3,
+                Plus | Minus => 4,
+                LeftShift | RightShift => 5,
+                LessThan | LessThanEqual | GreaterThan | GreaterThanEqual => 6,
+                DoubleEqual | NotEqual => 7,
+                Ampersand => 8,
+                Caret => 9,
+                Pipe => 10,
+                DoubleAmpersand => 11,
+                DoublePipe => 12,
             },
-            BinaryTok::Equal => 1,
+            BinaryTok::AssignmentOp(_) => 14,
         }
     }
 }
@@ -178,11 +211,12 @@ impl FromTokens for Exp {
                             rhs: Box::new(right),
                         };
                     }
-                    BinaryTok::Equal => {
+                    BinaryTok::AssignmentOp(op) => {
                         // Right-associative
                         let right = parse_exp(&mut iter, prec)?;
                         left = Exp::Assignment {
                             lhs: Box::new(left),
+                            op,
                             rhs: Box::new(right),
                         };
                     }
@@ -222,11 +256,9 @@ impl ToTokens for Exp {
                     .chain(rhs.to_tokens())
                     .chain(core::iter::once(CloseParen)),
             ),
-            Assignment { lhs, rhs } => Box::new(
-                lhs.to_tokens()
-                    .chain(core::iter::once(Equal))
-                    .chain(rhs.to_tokens()),
-            ),
+            Assignment { lhs, op, rhs } => {
+                Box::new(lhs.to_tokens().chain(op.to_tokens()).chain(rhs.to_tokens()))
+            }
         };
         out
     }

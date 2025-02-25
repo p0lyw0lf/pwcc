@@ -184,14 +184,15 @@ impl From<tacky::Instructions> for Instructions<State> {
                                         tacky::BinaryOp::BitXor => BinaryOp::Xor,
                                         tacky::BinaryOp::BitLeftShift => BinaryOp::SAL,
                                         tacky::BinaryOp::BitRightShift => BinaryOp::SAR,
-                                        tacky::BinaryOp::Divide => unreachable!(),
-                                        tacky::BinaryOp::Remainder => unreachable!(),
-                                        tacky::BinaryOp::Equal => todo!(),
-                                        tacky::BinaryOp::NotEqual => todo!(),
-                                        tacky::BinaryOp::LessThan => todo!(),
-                                        tacky::BinaryOp::LessThanEqual => todo!(),
-                                        tacky::BinaryOp::GreaterThan => todo!(),
-                                        tacky::BinaryOp::GreaterThanEqual => todo!(),
+                                        tacky::BinaryOp::Divide | tacky::BinaryOp::Remainder => {
+                                            unreachable!()
+                                        }
+                                        tacky::BinaryOp::Equal
+                                        | tacky::BinaryOp::NotEqual
+                                        | tacky::BinaryOp::LessThan
+                                        | tacky::BinaryOp::LessThanEqual
+                                        | tacky::BinaryOp::GreaterThan
+                                        | tacky::BinaryOp::GreaterThanEqual => unreachable!(),
                                     },
                                     src: src2.into(),
                                     dst: wrap(dst.into()),

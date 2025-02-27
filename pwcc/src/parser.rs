@@ -45,8 +45,9 @@ nodes! {
     Initializer(+<NoInit> +<ExpressionInit>);
     NoInit(*Semicolon);
     ExpressionInit(*Equal *<exp: Exp> *Semicolon);
-    // Exp defined separately
-    UnaryOp(+Minus +Tilde +Exclamation);
+    PrefixOp(+Minus +Tilde +Exclamation +Increment +Decrement);
+    PostfixOp(+Increment +Decrement);
+    UnaryOp(+<PrefixOp> +<PostfixOp>);
     BinaryOp(
         // Arithmetic operators
         +Plus +Minus +Star +ForwardSlash +Percent
@@ -114,83 +115,143 @@ impl AssignmentOp {
     }
 }
 
+#[repr(u8)]
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
+enum Precedence {
+    // Sequence, // Not implemented
+    Assignment,
+    LogicalOr,
+    LogicalAnd,
+    BitwiseOr,
+    BitwiseXor,
+    BitwiseAnd,
+    Equal,
+    Compare,
+    Shift,
+    Addition,
+    Multiplication,
+    Prefix,  // Taken care of by parse_unary
+    Postfix, // Taken care of by parse_postfix
+    Literal,
+}
+
+impl Precedence {
+    fn lowest() -> Self {
+        Precedence::Assignment
+    }
+
+    fn next(self) -> Self {
+        if let Precedence::Literal = self {
+            return self;
+        }
+
+        // SAFETY: if we are not at the last precedence value, there will always be another.
+        unsafe { core::mem::transmute((self as u8) + 1) }
+    }
+}
+
 impl BinaryTok {
     /// Based on https://en.cppreference.com/w/c/language/operator_precedence, going in reverse
     /// order.
-    fn precedence(&self) -> usize {
+    fn precedence(&self) -> Precedence {
         use BinaryOp::*;
-        16 - match self {
+        match self {
             BinaryTok::BinaryOp(op) => match op {
-                Star | ForwardSlash | Percent => 3,
-                Plus | Minus => 4,
-                LeftShift | RightShift => 5,
-                LessThan | LessThanEqual | GreaterThan | GreaterThanEqual => 6,
-                DoubleEqual | NotEqual => 7,
-                Ampersand => 8,
-                Caret => 9,
-                Pipe => 10,
-                DoubleAmpersand => 11,
-                DoublePipe => 12,
+                Star | ForwardSlash | Percent => Precedence::Multiplication,
+                Plus | Minus => Precedence::Addition,
+                LeftShift | RightShift => Precedence::Shift,
+                LessThan | LessThanEqual | GreaterThan | GreaterThanEqual => Precedence::Compare,
+                DoubleEqual | NotEqual => Precedence::Equal,
+                Ampersand => Precedence::BitwiseAnd,
+                Caret => Precedence::BitwiseXor,
+                Pipe => Precedence::BitwiseOr,
+                DoubleAmpersand => Precedence::LogicalAnd,
+                DoublePipe => Precedence::LogicalOr,
             },
-            BinaryTok::AssignmentOp(_) => 14,
+            BinaryTok::AssignmentOp(_) => Precedence::Assignment,
         }
+    }
+}
+
+impl Exp {
+    // Helper method, since we'll be doing this a lot
+    pub fn boxed(self) -> Box<Self> {
+        Box::new(self)
     }
 }
 
 impl FromTokens for Exp {
     fn from_tokens(ts: &mut (impl Iterator<Item = Token> + Clone)) -> Result<Self, ParseError> {
-        fn parse_factor(ts: &mut (impl Iterator<Item = Token> + Clone)) -> Result<Exp, ParseError> {
+        fn parse_primary(
+            ts: &mut (impl Iterator<Item = Token> + Clone),
+        ) -> Result<Exp, ParseError> {
+            try_parse!(
+                ts,
+                Err(ParseError::NoMatches),
+                |iter| {
+                    let constant = expect_token!(iter, Constant(_): isize);
+                    Ok(Exp::Constant { constant })
+                },
+                |iter| {
+                    let ident = expect_token!(iter, Ident(_): String);
+                    Ok(Exp::Var { ident })
+                },
+                |iter| {
+                    expect_token!(iter, OpenParen);
+                    let exp = parse_exp(&mut iter, Precedence::lowest())?;
+                    expect_token!(iter, CloseParen);
+                    Ok(exp)
+                },
+            )
+        }
+
+        fn parse_postfix(
+            ts: &mut (impl Iterator<Item = Token> + Clone),
+        ) -> Result<Exp, ParseError> {
             let mut iter = ts.clone();
-            if let Ok(out) = (|| -> Result<Exp, ParseError> {
-                let constant = expect_token!(iter, Constant(_): isize);
-                Ok(Exp::Constant { constant })
-            })() {
-                *ts = iter;
-                return Ok(out);
+            let mut exp = parse_primary(ts)?;
+
+            let mut peek_iter = iter.clone();
+            let mut next_token = PostfixOp::from_tokens(&mut peek_iter);
+            while let Ok(op) = next_token {
+                iter = peek_iter;
+
+                // Left-associative
+                exp = Exp::Unary {
+                    op: UnaryOp::PostfixOp(op),
+                    exp: exp.boxed(),
+                };
+
+                peek_iter = iter.clone();
+                next_token = PostfixOp::from_tokens(&mut peek_iter);
             }
 
-            let mut iter = ts.clone();
-            if let Ok(out) = (|| -> Result<Exp, ParseError> {
-                let ident = expect_token!(iter, Ident(_): String);
-                Ok(Exp::Var { ident })
-            })() {
-                *ts = iter;
-                return Ok(out);
-            }
+            *ts = iter;
+            Ok(exp)
+        }
 
-            let mut iter = ts.clone();
-            if let Ok(out) = (|| -> Result<Exp, ParseError> {
-                let op = UnaryOp::from_tokens(&mut iter)?;
-                let exp = parse_factor(&mut iter)?;
-                Ok(Exp::Unary {
-                    op,
-                    exp: Box::new(exp),
-                })
-            })() {
-                *ts = iter;
-                return Ok(out);
-            }
-
-            let mut iter = ts.clone();
-            if let Ok(out) = (|| -> Result<Exp, ParseError> {
-                expect_token!(iter, OpenParen);
-                let exp = parse_exp(&mut iter, 0)?;
-                expect_token!(iter, CloseParen);
-                Ok(exp)
-            })() {
-                *ts = iter;
-                return Ok(out);
-            }
-
-            Err(ParseError::NoMatches)
+        fn parse_unary(ts: &mut (impl Iterator<Item = Token> + Clone)) -> Result<Exp, ParseError> {
+            try_parse!(
+                ts,
+                Err(ParseError::NoMatches),
+                |iter| {
+                    let prefix = PrefixOp::from_tokens(&mut iter)?;
+                    let exp = parse_unary(&mut iter)?;
+                    Ok(Exp::Unary {
+                        op: UnaryOp::PrefixOp(prefix),
+                        exp: exp.boxed(),
+                    })
+                },
+                |iter| { parse_postfix(&mut iter) },
+            )
         }
 
         fn parse_exp(
             ts: &mut (impl Iterator<Item = Token> + Clone),
-            min_prec: usize,
+            min_prec: Precedence,
         ) -> Result<Exp, ParseError> {
             let mut iter = ts.clone();
-            let mut left = parse_factor(&mut iter)?;
+            let mut left = parse_unary(&mut iter)?;
 
             let mut peek_iter = iter.clone();
             let mut next_token = BinaryTok::from_tokens(&mut peek_iter);
@@ -204,20 +265,20 @@ impl FromTokens for Exp {
                 match op {
                     BinaryTok::BinaryOp(op) => {
                         // Left-associative
-                        let right = parse_exp(&mut iter, prec + 1)?;
+                        let right = parse_exp(&mut iter, prec.next())?;
                         left = Exp::Binary {
-                            lhs: Box::new(left),
+                            lhs: left.boxed(),
                             op,
-                            rhs: Box::new(right),
+                            rhs: right.boxed(),
                         };
                     }
                     BinaryTok::AssignmentOp(op) => {
                         // Right-associative
                         let right = parse_exp(&mut iter, prec)?;
                         left = Exp::Assignment {
-                            lhs: Box::new(left),
+                            lhs: left.boxed(),
                             op,
-                            rhs: Box::new(right),
+                            rhs: right.boxed(),
                         };
                     }
                 }
@@ -230,7 +291,7 @@ impl FromTokens for Exp {
             Ok(left)
         }
 
-        parse_exp(ts, 0)
+        parse_exp(ts, Precedence::lowest())
     }
 }
 

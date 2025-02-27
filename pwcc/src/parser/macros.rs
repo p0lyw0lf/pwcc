@@ -18,6 +18,26 @@ macro_rules! expect_token {
 }
 pub(super) use expect_token;
 
+/// Tries multiple functions, returning the when the first returns OK, otherwise returning a
+/// default value.
+macro_rules! try_parse {
+    ($ts:ident, $default:expr, $(
+        |$iter:ident| $tt:tt ,
+    )*) => {
+        {
+            $(
+            let mut $iter = $ts.clone();
+            if let Ok(out) = (|| -> Result<_, ParseError> $tt)() {
+                *$ts = $iter;
+                return Ok(out);
+            }
+            )*
+            $default
+        }
+    };
+}
+pub(super) use try_parse;
+
 /// This is an extremely nasty macro. Unfortunately, it's borne out of necessity: we need to be
 /// able to generate all struct definitions at once if we want to use `#[functional_macros::ast]`
 /// on them.

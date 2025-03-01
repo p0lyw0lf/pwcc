@@ -1,5 +1,6 @@
 use core::concat;
 use core::fmt::Debug;
+use core::fmt::Display;
 use core::str::FromStr;
 
 use miette::Diagnostic;
@@ -58,18 +59,37 @@ Tokenizer for Token with TokenError:
     r";": Semicolon,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SpanToken {
     pub token: Token,
     pub span: SourceSpan,
+}
+
+impl Display for SpanToken {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{}", self.token)
+    }
+}
+
+impl From<SpanToken> for Token {
+    fn from(value: SpanToken) -> Self {
+        value.token
+    }
+}
+
+impl Into<SourceSpan> for SpanToken {
+    fn into(self) -> SourceSpan {
+        self.span
+    }
 }
 
 #[derive(Error, Diagnostic, Debug)]
 #[cfg_attr(test, derive(PartialEq))]
 pub enum LexError {
     #[error("Invalid token")]
+    #[diagnostic()]
     InvalidToken {
-        #[label]
+        #[label("here")]
         span: (usize, usize),
     },
     #[error(transparent)]
@@ -93,6 +113,7 @@ pub fn lex(mut source: &str) -> Result<Vec<SpanToken>, LexError> {
             token,
             span: (offset, len).into(),
         });
+        source = &source[len..];
         offset += len;
     }
 
@@ -101,7 +122,13 @@ pub fn lex(mut source: &str) -> Result<Vec<SpanToken>, LexError> {
 
 #[cfg(test)]
 mod test {
+    use super::lex as super_lex;
     use super::*;
+
+    fn lex(source: &str) -> Result<Vec<Token>, LexError> {
+        let tokens = super_lex(source)?;
+        tokens.into_iter().map(|token| token.into()).collect()
+    }
 
     #[test]
     fn extra_paren() {

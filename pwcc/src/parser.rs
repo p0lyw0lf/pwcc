@@ -1,10 +1,13 @@
 use core::convert::From;
 use core::fmt::Debug;
 use core::iter::Iterator;
+use std::borrow::Borrow;
 
 use miette::Diagnostic;
+use miette::SourceSpan;
 use thiserror::Error;
 
+use crate::lexer::SpanToken;
 use crate::lexer::Token;
 
 mod macros;
@@ -15,19 +18,49 @@ mod test;
 
 #[derive(Error, Diagnostic, Debug)]
 #[cfg_attr(test, derive(PartialEq))]
+#[error("Parse error")]
 pub enum ParseError {
     #[error("Unexpected token: expected {expected:-}, got {actual}")]
-    UnexpectedToken { expected: Token, actual: Token },
-    #[error("Missing token: expected {expected}")]
+    #[diagnostic()]
+    UnexpectedToken {
+        expected: Token,
+        #[label("here")]
+        actual: SpanToken,
+    },
+
+    #[error("Missing token: expected {expected}, reached end of tokens")]
     MissingToken { expected: Token },
+
     #[error("Expected end of tokens, got {actual}")]
-    ExtraToken { actual: Token },
-    #[error("No matches found for tokens")]
+    #[diagnostic()]
+    ExtraToken {
+        #[label]
+        actual: SpanToken,
+    },
+
+    #[error("No matches found")]
     NoMatches,
+
+    #[error("While parsing node {node_name}")]
+    #[diagnostic()]
+    Context {
+        node_name: String,
+        #[source]
+        err: Box<ParseError>,
+    },
 }
 
 pub trait FromTokens: Sized {
-    fn from_tokens(ts: &mut (impl Iterator<Item = Token> + Clone)) -> Result<Self, ParseError>;
+    fn from_tokens(ts: &mut (impl Iterator<Item = SpanToken> + Clone)) -> Result<Self, ParseError>;
+    fn from_raw_tokens(ts: &mut (impl Iterator<Item = Token> + Clone)) -> Result<Self, ParseError> {
+        let tokens = ts
+            .map(|token| SpanToken {
+                token,
+                span: (0, 0).into(),
+            })
+            .collect::<Vec<_>>();
+        Self::from_tokens(&mut tokens.into_iter())
+    }
 }
 
 // IntoIterator is too hard b/c can't name the IntoIter type
@@ -188,9 +221,9 @@ impl Exp {
 }
 
 impl FromTokens for Exp {
-    fn from_tokens(ts: &mut (impl Iterator<Item = Token> + Clone)) -> Result<Self, ParseError> {
+    fn from_tokens(ts: &mut (impl Iterator<Item = SpanToken> + Clone)) -> Result<Self, ParseError> {
         fn parse_primary(
-            ts: &mut (impl Iterator<Item = Token> + Clone),
+            ts: &mut (impl Iterator<Item = SpanToken> + Clone),
         ) -> Result<Exp, ParseError> {
             try_parse!(
                 ts,
@@ -213,7 +246,7 @@ impl FromTokens for Exp {
         }
 
         fn parse_postfix(
-            ts: &mut (impl Iterator<Item = Token> + Clone),
+            ts: &mut (impl Iterator<Item = SpanToken> + Clone),
         ) -> Result<Exp, ParseError> {
             let mut iter = ts.clone();
             let mut exp = parse_primary(ts)?;
@@ -237,7 +270,9 @@ impl FromTokens for Exp {
             Ok(exp)
         }
 
-        fn parse_unary(ts: &mut (impl Iterator<Item = Token> + Clone)) -> Result<Exp, ParseError> {
+        fn parse_unary(
+            ts: &mut (impl Iterator<Item = SpanToken> + Clone),
+        ) -> Result<Exp, ParseError> {
             try_parse!(
                 ts,
                 Err(ParseError::NoMatches),
@@ -254,7 +289,7 @@ impl FromTokens for Exp {
         }
 
         fn parse_exp(
-            ts: &mut (impl Iterator<Item = Token> + Clone),
+            ts: &mut (impl Iterator<Item = SpanToken> + Clone),
             min_prec: Precedence,
         ) -> Result<Exp, ParseError> {
             let mut iter = ts.clone();
@@ -298,7 +333,10 @@ impl FromTokens for Exp {
             Ok(left)
         }
 
-        parse_exp(ts, Precedence::lowest())
+        parse_exp(ts, Precedence::lowest()).map_err(|e| ParseError::Context {
+            node_name: "Exp".to_string(),
+            err: Box::new(e),
+        })
     }
 }
 
@@ -334,7 +372,7 @@ impl ToTokens for Exp {
 
 pub fn parse<TS>(tokens: TS) -> Result<Program, ParseError>
 where
-    TS: IntoIterator<Item = Token>,
+    TS: IntoIterator<Item = SpanToken>,
     TS::IntoIter: Clone,
 {
     let mut iter = tokens.into_iter();

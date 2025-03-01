@@ -66,7 +66,7 @@ fn emit_base_case<'ast>(
         quote! { #ident #output_ty_generics },
     );
 
-    // println!("{out_toks}");
+    // eprintln!("{out_toks}");
     out.append_all(out_toks);
 }
 
@@ -161,7 +161,7 @@ fn emit_inductive_case<'ast>(
         quote! { #inner_ident < #output_inner_instantiation > },
     );
 
-    // println!("{out_toks}");
+    // eprintln!("{out_toks}");
     out.append_all(out_toks);
 }
 

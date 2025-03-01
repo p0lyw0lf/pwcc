@@ -54,20 +54,20 @@ macro_rules! tokens {
                 }
             }
 
-            /// SAFETY: must only be called when `offset` starts with the token
+            /// SAFETY: must only be called when `source` starts with the token
             /// at the specified index
-            /// Returns how much to increase `source_offset` by.
-            unsafe fn consume_specific_token(&self, offset: &str, source_offset: usize, regex_index: usize) -> Result<($tokens, usize), TokenError> {
+            unsafe fn consume_specific_token(&self, source: &str, source_offset: usize, regex_index: usize) -> Result<($tokens, usize), TokenError> {
                 let pat = self.pats.get_unchecked(regex_index);
-                let token_str = pat.find_at(offset, 0).unwrap().as_str();
+                let token_str = pat.find_at(source, 0).unwrap().as_str();
 
                 let token = TO_TOKEN.get_unchecked(regex_index)(token_str, source_offset)?;
 
                 Ok((token, token_str.len()))
             }
 
-            /// Given a `source` and a `source_offset`, return the next token starting at that
-            /// offset, and how much to advance the offset by.
+            /// Given a `source`, return the next token starting at that
+            /// offset, and how much to advance the `source_offset` by.
+            /// NOTE: `source_offset` is only used for error reporting.
             pub fn consume_token(&self, source: &str, source_offset: usize) -> Result<($tokens, usize), LexError> {
                 // Truncates the string so it appears about `mid` characters long
                 fn safe_truncate(s: &str, mut mid: usize) -> &str {
@@ -80,14 +80,12 @@ macro_rules! tokens {
                     s
                 }
 
-                let offset = &source[source_offset..];
-
-                let first_match = match self.rs.matches_at(offset, 0).iter().next() {
+                let first_match = match self.rs.matches_at(source, 0).iter().next() {
                     Some(m) => m,
                     None => return Err(LexError::InvalidToken {
                         span: (
                             source_offset,
-                            safe_truncate(offset, 8).len(),
+                            safe_truncate(source, 8).len(),
                         ),
                     }),
                 };

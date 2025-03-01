@@ -1,14 +1,13 @@
 macro_rules! expect_token {
     ($ts:ident, $token:ident$(($pat:pat) : $ty:ty)?) => {
         {
-            use ParseError::*;
             use Token::*;
             (match $ts.next() {
-                None => Err(MissingToken {
+                None => Err(ParseError::MissingToken {
                     expected: $token$((<$ty as Default>::default().into()))?,
                 }),
-                Some($token$((v @ $pat))?) => Ok(($(<$ty>::from(v))?)),
-                Some(t) => Err(UnexpectedToken {
+                Some(SpanToken { token: $token$((v @ $pat))?, .. }) => Ok(($(<$ty>::from(v))?)),
+                Some(t) => Err(ParseError::UnexpectedToken {
                     expected: $token$((<$ty as Default>::default().into()))?,
                     actual: t,
                 }),
@@ -85,16 +84,23 @@ macro_rules! nodes {
         )*}
 
         impl FromTokens for $node {
-            fn from_tokens(ts: &mut (impl Iterator<Item = Token> + Clone)) -> Result<Self, ParseError> {
-                $(
-                    $(expect_token!(ts, $m_token);)?
-                    $(let $m_sname = $m_subnode::from_tokens(ts)?;)?
-                    $(let $m_cname = expect_token!(ts, $m_ctoken($m_pat): $m_ty);)?
-                )*
-                Ok($node {$(
-                    $($m_sname,)?
-                    $($m_cname,)?
-                )*})
+            fn from_tokens(ts: &mut (impl Iterator<Item = SpanToken> + Clone)) -> Result<Self, ParseError> {
+                let mut run = move || -> Result<Self, ParseError> {
+                    $(
+                        $(expect_token!(ts, $m_token);)?
+                        $(let $m_sname = $m_subnode::from_tokens(ts)?;)?
+                        $(let $m_cname = expect_token!(ts, $m_ctoken($m_pat): $m_ty);)?
+                    )*
+                    Ok($node {$(
+                        $($m_sname,)?
+                        $($m_cname,)?
+                    )*})
+                };
+
+                run().map_err(|e| ParseError::Context {
+                    node_name: stringify!($node).to_string(),
+                    err: Box::new(e),
+                })
             }
         }
 
@@ -126,24 +132,31 @@ macro_rules! nodes {
         )*}
 
         impl FromTokens for $node {
-            fn from_tokens(ts: &mut (impl Iterator<Item = Token> + Clone)) -> Result<Self, ParseError> {
-                $(
-                let mut iter = ts.clone();
-                if let Ok(out) = (|| -> Result<Self, ParseError> {
-                    $(let out = {
-                        expect_token!(iter, $a_token);
-                        $node::$a_token
-                    };)?
-                    $(let out = $node::$a_subnode($a_subnode::from_tokens(&mut iter)?);)?
-                    $(let out = $node::$a_ctoken(expect_token!(iter, $a_ctoken($a_pat): $a_ty));)?
-                    Ok(out)
-                })() {
-                    *ts = iter;
-                    return Ok(out);
-                }
-                )*
+            fn from_tokens(ts: &mut (impl Iterator<Item = SpanToken> + Clone)) -> Result<Self, ParseError> {
+                let mut run = move || {
+                    $(
+                    let mut iter = ts.clone();
+                    if let Ok(out) = (|| -> Result<Self, ParseError> {
+                        $(let out = {
+                            expect_token!(iter, $a_token);
+                            $node::$a_token
+                        };)?
+                        $(let out = $node::$a_subnode($a_subnode::from_tokens(&mut iter)?);)?
+                        $(let out = $node::$a_ctoken(expect_token!(iter, $a_ctoken($a_pat): $a_ty));)?
+                        Ok(out)
+                    })() {
+                        *ts = iter;
+                        return Ok(out);
+                    }
+                    )*
 
-                Err(ParseError::NoMatches)
+                    Err(ParseError::NoMatches)
+                };
+
+                run().map_err(|e| ParseError::Context {
+                    node_name: stringify!($node).to_string(),
+                    err: Box::new(e),
+                })
             }
         }
 
@@ -167,7 +180,7 @@ macro_rules! nodes {
         pub struct $node(pub Vec<$s_subnode>);
 
         impl FromTokens for $node {
-            fn from_tokens(ts: &mut (impl Iterator<Item = Token> + Clone)) -> Result<Self, ParseError> {
+            fn from_tokens(ts: &mut (impl Iterator<Item = SpanToken> + Clone)) -> Result<Self, ParseError> {
                 let mut out = Vec::<$s_subnode>::new();
                 while let Ok(subnode) = $s_subnode::from_tokens(ts) {
                     out.push(subnode);

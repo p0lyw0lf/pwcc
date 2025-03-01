@@ -37,7 +37,7 @@ fn emit_base_case<'ast>(out: &mut TokenStream2, node: &ANode<'ast>) {
             }
         }
     };
-    // println!("{out_toks}");
+    // eprintln!("{out_toks}");
     out.append_all(out_toks);
 }
 
@@ -103,7 +103,7 @@ fn emit_inductive_case<'ast>(out: &mut TokenStream2, container: &ANode<'ast>, in
             }
         }
     };
-    // println!("{out_toks}");
+    // eprintln!("{out_toks}");
     out.append_all(out_toks);
 }
 

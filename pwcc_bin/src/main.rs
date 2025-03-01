@@ -1,10 +1,15 @@
 use std::env;
 use std::fs;
 use std::io::Write;
+use std::ops::Range;
 use std::path::PathBuf;
 use std::str::FromStr;
 
-use miette::{diagnostic, IntoDiagnostic, Result, WrapErr};
+use miette::diagnostic;
+use miette::IntoDiagnostic;
+use miette::Report;
+use miette::Result;
+use miette::WrapErr;
 
 use functional::Functor;
 use pwcc::{codegen, lexer, parser, printer, semantic, tacky};
@@ -67,28 +72,42 @@ fn main() -> Result<()> {
         Some(f) => f,
     };
 
-    // TODO: read from stream instead perhaps
+    // TODO: make source be a stream, for larger files
     let source = fs::read_to_string(filename.clone())
         .into_diagnostic()
         .wrap_err("Error reading file")?;
 
-    let tokens = lexer::lex(&source)
-        .into_diagnostic()
-        .wrap_err("Error lexing")?;
+    let tokens = lexer::lex(&source).map_err(|e| {
+        Report::from(e)
+            .with_source_code(source.clone())
+            .wrap_err("Error lexing")
+    })?;
 
     if stage == Lex {
-        println!("{tokens:?}");
+        for token in tokens.into_iter() {
+            println!(
+                "{}: ({}, {})",
+                token.token,
+                token.span.offset(),
+                token.span.len()
+            );
+        }
         return Ok(());
     }
 
-    let tree = parser::parse(tokens).wrap_err("Error parsing")?;
+    let tree = parser::parse(tokens).map_err(|e| {
+        Report::from(e)
+            .with_source_code(source.clone())
+            .wrap_err("Error parsing")
+    })?;
 
     if stage == Parse {
         printer::pretty_print(tree);
         return Ok(());
     }
 
-    let tree = semantic::validate(tree)?;
+    let tree =
+        semantic::validate(tree).map_err(|e| Report::from(e).with_source_code(source.clone()))?;
 
     if stage == Validate {
         printer::pretty_print(tree);

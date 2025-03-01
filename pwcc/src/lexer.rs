@@ -17,7 +17,7 @@ Tokenizer for Token with TokenError:
     r"if\b": KeywordIf,
     r"int\b": KeywordInt,
     r"else\b": KeywordElse,
-    r"goto\n": KeywordGoto,
+    r"goto\b": KeywordGoto,
     r"void\b": KeywordVoid,
     r"return\b": KeywordReturn,
     r"[a-zA-Z_]\w*\b": Ident(String),

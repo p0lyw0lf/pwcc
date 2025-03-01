@@ -117,6 +117,11 @@ impl<'a> ChompContext<'a> {
     fn push(&mut self, i: Instruction) {
         self.instructions.push(i)
     }
+
+    // Used for fixed goto labels
+    fn goto_label(&self, label: &str) -> Identifier {
+        Identifier(format!("__{}.goto.{}", self.tf.parent, label))
+    }
 }
 
 /// Represents a type that can be used to emit instructions
@@ -204,6 +209,14 @@ impl Chompable for parser::Statement {
             }
             ExpressionStmt(expression_stmt) => {
                 let _ = expression_stmt.exp.chomp(ctx);
+            }
+            LabelStmt(parser::LabelStmt { label }) => {
+                ctx.push(Instruction::Label(ctx.goto_label(&label)));
+            }
+            GotoStmt(parser::GotoStmt { label }) => {
+                ctx.push(Instruction::Jump {
+                    target: ctx.goto_label(&label),
+                });
             }
             IfStmt(parser::IfStmt {
                 exp,

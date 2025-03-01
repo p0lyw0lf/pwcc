@@ -87,10 +87,12 @@ nodes! {
     );
     Body[BlockItem];
     BlockItem(+<Statement> +<Declaration>);
-    Statement(+<ExpressionStmt> +<IfStmt> +<ReturnStmt> +<NullStmt>);
+    Statement(+<ExpressionStmt> +<IfStmt> +<LabelStmt> +<GotoStmt> +<ReturnStmt> +<NullStmt>);
     ExpressionStmt(*<exp: Exp> *Semicolon);
     IfStmt(*KeywordIf *OpenParen *<exp: Exp> *CloseParen *<body: Box<Statement>> *<else_stmt: Option<ElseStmt>>);
     ElseStmt(*KeywordElse *<body: Box<Statement>>);
+    LabelStmt(*{label: Ident(_ = String)} *Colon);
+    GotoStmt(*KeywordGoto *{label: Ident(_ = String)} *Semicolon);
     ReturnStmt(*KeywordReturn *<exp: Exp> *Semicolon);
     NullStmt(*Semicolon);
     Declaration(*KeywordInt *{name: Ident(_ = String)} *<init: Initializer>);

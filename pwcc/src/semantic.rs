@@ -7,12 +7,14 @@ use functional::TryFunctor;
 
 use crate::parser::Program;
 
+mod goto;
 mod operator_types;
 mod variable_resolution;
 
 pub fn validate(p: Program) -> Result<Program, SemanticErrors> {
     let p = p.try_fmap(&mut variable_resolution::resolve_variables)?;
     let p = p.try_fmap(&mut operator_types::check_operator_types)?;
+    let p = p.try_fmap(&mut goto::analysis)?;
     Ok(p)
 }
 
@@ -37,6 +39,9 @@ pub enum SemanticError {
     #[error(transparent)]
     #[diagnostic(transparent)]
     OperandError(#[from] operator_types::Error),
+    #[error(transparent)]
+    #[diagnostic(transparent)]
+    GotoError(#[from] goto::Error),
 }
 
 #[derive(Error, Diagnostic, Debug)]

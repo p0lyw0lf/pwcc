@@ -47,7 +47,7 @@ impl InductiveCaseEmitter for Emitter {
         let mut fn_body = make_fn_body(container, inner, output_inner.to_token_stream(), self);
         if container.ident() == inner.ident {
             fn_body = quote! {
-                let out = #fn_body;
+                let out = { #fn_body };
                 f(out?)
             };
         }

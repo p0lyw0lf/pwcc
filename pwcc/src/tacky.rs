@@ -199,6 +199,7 @@ impl Chompable for parser::Statement {
             ExpressionStmt(expression_stmt) => {
                 let _ = expression_stmt.exp.chomp(ctx);
             }
+            IfStmt(if_stmt) => todo!(),
         }
     }
 }
@@ -401,6 +402,11 @@ impl Chompable for parser::Exp {
                 }
                 ref otherwise => panic!("building tacky: got unexpected lhs: {otherwise:?}"),
             },
+            Ternary {
+                condition,
+                true_case,
+                false_case,
+            } => todo!(),
         }
     }
 }

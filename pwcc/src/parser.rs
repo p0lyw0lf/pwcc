@@ -34,7 +34,10 @@ where
     T: FromTokens,
 {
     fn from_tokens(ts: &mut (impl Iterator<Item = SpanToken> + Clone)) -> Result<Self, ParseError> {
-        Ok(Box::new(T::from_tokens(ts)?))
+        let mut iter = ts.clone();
+        let out = T::from_tokens(&mut iter)?;
+        *ts = iter;
+        Ok(Box::new(out))
     }
 }
 
@@ -43,7 +46,12 @@ where
     T: FromTokens,
 {
     fn from_tokens(ts: &mut (impl Iterator<Item = SpanToken> + Clone)) -> Result<Self, ParseError> {
-        Ok(T::from_tokens(ts).ok())
+        let mut iter = ts.clone();
+        let out = T::from_tokens(&mut iter).ok();
+        if out.is_some() {
+            *ts = iter;
+        }
+        Ok(out)
     }
 }
 
@@ -109,7 +117,13 @@ nodes! {
         +LeftShiftEqual +RightShiftEqual +AmpersandEqual +CaretEqual +PipeEqual
     );
     // Not used in grammar, only for parsing Exp
-    BinaryTok(+<BinaryOp> +<AssignmentOp>);
+    BinaryTok(
+        +<BinaryOp>
+        +<AssignmentOp>
+        // Not a "true" binary operator, but we do parse it like one. This will result in trying to
+// parse a ternary expression.
+        +Question
+    );
 
     // Exp is special, since its AST doesn't exactly correspond with the grammar, so we define it
     // separately
@@ -128,6 +142,11 @@ nodes! {
             lhs: Box<Exp>,
             op: BinaryOp,
             rhs: Box<Exp>,
+        },
+        Ternary {
+            condition: Box<Exp>,
+            true_case: Box<Exp>,
+            false_case: Box<Exp>,
         },
         Assignment {
             lhs: Box<Exp>, // Semantic analysis ensures this is a proper LValue
@@ -164,6 +183,7 @@ impl AssignmentOp {
 enum Precedence {
     // Sequence, // Not implemented
     Assignment,
+    Ternary,
     LogicalOr,
     LogicalAnd,
     BitwiseOr,
@@ -213,6 +233,7 @@ impl BinaryTok {
                 DoubleAmpersand => Precedence::LogicalAnd,
                 DoublePipe => Precedence::LogicalOr,
             },
+            BinaryTok::Question => Precedence::Ternary,
             BinaryTok::AssignmentOp(_) => Precedence::Assignment,
         }
     }
@@ -328,6 +349,16 @@ impl FromTokens for Exp {
                             rhs: right.boxed(),
                         };
                     }
+                    BinaryTok::Question => {
+                        let middle = parse_exp(&mut iter, Precedence::lowest())?;
+                        expect_token!(iter, Colon);
+                        let right = parse_exp(&mut iter, prec)?;
+                        left = Exp::Ternary {
+                            condition: left.boxed(),
+                            true_case: middle.boxed(),
+                            false_case: right.boxed(),
+                        }
+                    }
                 }
 
                 peek_iter = iter.clone();
@@ -378,6 +409,19 @@ impl ToTokens for Exp {
             Assignment { lhs, op, rhs } => {
                 Box::new(lhs.to_tokens().chain(op.to_tokens()).chain(rhs.to_tokens()))
             }
+            Ternary {
+                condition,
+                true_case,
+                false_case,
+            } => Box::new(
+                core::iter::once(OpenParen)
+                    .chain(condition.to_tokens())
+                    .chain([CloseParen, Question, OpenParen].into_iter())
+                    .chain(true_case.to_tokens())
+                    .chain([CloseParen, Colon, OpenParen])
+                    .chain(false_case.to_tokens())
+                    .chain(core::iter::once(CloseParen)),
+            ),
         };
         out
     }

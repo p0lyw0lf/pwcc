@@ -294,3 +294,64 @@ fn prefix_postfix_precedence() {
         "--(++(((x)--)++))",
     );
 }
+
+#[test]
+fn if_statement() {
+    let tokens = lex("if (a) if (a > 10) return a; else return 10 - a;");
+    assert_forwards(
+        &tokens,
+        &Statement::IfStmt(IfStmt {
+            exp: Exp::Var {
+                ident: "a".to_string(),
+            },
+            body: Box::new(Statement::IfStmt(IfStmt {
+                exp: Exp::Binary {
+                    lhs: Exp::Var {
+                        ident: "a".to_string(),
+                    }
+                    .boxed(),
+                    op: BinaryOp::GreaterThan,
+                    rhs: Exp::Constant { constant: 10 }.boxed(),
+                },
+                body: Box::new(Statement::ReturnStmt(ReturnStmt {
+                    exp: Exp::Var {
+                        ident: "a".to_string(),
+                    },
+                })),
+                else_stmt: Some(ElseStmt {
+                    body: Box::new(Statement::ReturnStmt(ReturnStmt {
+                        exp: Exp::Binary {
+                            lhs: Exp::Constant { constant: 10 }.boxed(),
+                            op: BinaryOp::Minus,
+                            rhs: Exp::Var {
+                                ident: "a".to_string(),
+                            }
+                            .boxed(),
+                        },
+                    })),
+                }),
+            })),
+            else_stmt: None,
+        }),
+    );
+}
+
+#[test]
+fn if_statement_naked() {
+    let tokens = lex("int main(void) { if (0) return a; }");
+    assert_forwards(
+        &tokens,
+        &Function {
+            name: "main".to_string(),
+            body: Body(vec![BlockItem::Statement(Statement::IfStmt(IfStmt {
+                exp: Exp::Constant { constant: 0 },
+                body: Box::new(Statement::ReturnStmt(ReturnStmt {
+                    exp: Exp::Var {
+                        ident: "a".to_string(),
+                    },
+                })),
+                else_stmt: None,
+            }))]),
+        },
+    );
+}

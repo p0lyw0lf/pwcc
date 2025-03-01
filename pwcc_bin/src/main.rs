@@ -67,6 +67,7 @@ fn main() -> Result<()> {
         Some(f) => f,
     };
 
+    // TODO: read from stream instead perhaps
     let source = fs::read_to_string(filename.clone())
         .into_diagnostic()
         .wrap_err("Error reading file")?;

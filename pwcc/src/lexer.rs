@@ -3,6 +3,7 @@ use core::fmt::Debug;
 use core::str::FromStr;
 
 use miette::Diagnostic;
+use miette::SourceSpan;
 use regex::Regex;
 use regex::RegexSet;
 use thiserror::Error;
@@ -57,29 +58,42 @@ Tokenizer for Token with TokenError:
     r";": Semicolon,
 }
 
+#[derive(Debug)]
+pub struct SpanToken {
+    pub token: Token,
+    pub span: SourceSpan,
+}
+
 #[derive(Error, Diagnostic, Debug)]
 #[cfg_attr(test, derive(PartialEq))]
 pub enum LexError {
-    #[error("Invalid token: {0}")]
-    InvalidToken(String),
+    #[error("Invalid token")]
+    InvalidToken {
+        #[label]
+        span: (usize, usize),
+    },
     #[error(transparent)]
     #[diagnostic(transparent)]
     TokenError(#[from] TokenError),
 }
 
 /// Lexes a source file into a list of tokens.
-pub fn lex(mut source: &str) -> Result<Vec<Token>, LexError> {
+pub fn lex(mut source: &str) -> Result<Vec<SpanToken>, LexError> {
     let tokenizer = Tokenizer::new();
-    let mut out = Vec::<Token>::new();
+    let mut out = Vec::<SpanToken>::new();
+    let mut offset = 0;
     while !source.is_empty() {
         source = source.trim_start();
         if source.is_empty() {
             break;
         }
 
-        let (token, new_source) = tokenizer.consume_token(source)?;
-        out.push(token);
-        source = new_source;
+        let (token, len) = tokenizer.consume_token(source, offset)?;
+        out.push(SpanToken {
+            token,
+            span: (offset, len).into(),
+        });
+        offset += len;
     }
 
     Ok(out)

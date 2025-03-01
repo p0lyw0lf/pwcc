@@ -1,8 +1,9 @@
 [package]
 name = "pwcc_bin"
-version = "0.0.3"
+version = "0.0.5"
 edition = "2021"
 
 [dependencies]
-pwcc = { path = "../pwcc" }
 functional = { path = "../functional" }
+miette = { version = "7.5", features = ["fancy"] }
+pwcc = { path = "../pwcc" }

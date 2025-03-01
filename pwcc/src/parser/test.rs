@@ -234,9 +234,9 @@ fn prefix_precedence() {
     assert_to_from(
         "--++x",
         Exp::Unary {
-            op: UnaryOp::PostfixOp(PostfixOp::Decrement),
+            op: UnaryOp::PrefixOp(PrefixOp::Decrement),
             exp: Exp::Unary {
-                op: UnaryOp::PostfixOp(PostfixOp::Increment),
+                op: UnaryOp::PrefixOp(PrefixOp::Increment),
                 exp: Exp::Var { ident: "x".into() }.boxed(),
             }
             .boxed(),

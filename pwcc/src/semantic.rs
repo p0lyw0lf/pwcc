@@ -1,4 +1,6 @@
-use std::{collections::HashMap, fmt::Display};
+use miette::Diagnostic;
+use std::collections::HashMap;
+use thiserror::Error;
 
 use functional::ControlFlow;
 use functional::Semigroup;
@@ -83,39 +85,23 @@ impl UniqueLabelFactory {
     }
 }
 
-#[derive(Debug)]
+#[derive(Error, Diagnostic, Debug)]
 pub enum SemanticError {
+    #[error("Duplicate declaration: {0}")]
     DuplicateDeclaration(String),
+    #[error("Unresolved variable: {0}")]
     UnresolvedVariable(String),
+    #[error("Cannot assign to: {0:?}")]
     InvalidAssignment(Exp),
 }
 
-pub struct SemanticErrors(pub Vec<SemanticError>);
+#[derive(Error, Diagnostic, Debug)]
+#[error("Semantic errors")]
+pub struct SemanticErrors(#[related] pub Vec<SemanticError>);
 
 impl From<SemanticError> for SemanticErrors {
     fn from(value: SemanticError) -> Self {
         Self(Vec::from([value]))
-    }
-}
-
-impl Display for SemanticError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use SemanticError::*;
-        match self {
-            DuplicateDeclaration(label) => write!(f, "Duplicate variable declaration: {label}"),
-            UnresolvedVariable(label) => write!(f, "Unresolved variable: {label}"),
-            // TODO: make this Display instead of Debug
-            InvalidAssignment(exp) => write!(f, "Cannot assign to: {exp:?}"),
-        }
-    }
-}
-
-impl Display for SemanticErrors {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for err in self.0.iter() {
-            writeln!(f, "{err}")?;
-        }
-        Ok(())
     }
 }
 

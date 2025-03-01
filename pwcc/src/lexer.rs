@@ -2,8 +2,10 @@ use core::concat;
 use core::fmt::Debug;
 use core::str::FromStr;
 
+use miette::Diagnostic;
 use regex::Regex;
 use regex::RegexSet;
+use thiserror::Error;
 
 mod macros;
 use macros::*;
@@ -55,15 +57,18 @@ Tokenizer for Token with TokenError:
     r";": Semicolon,
 }
 
-#[derive(Debug)]
+#[derive(Error, Diagnostic, Debug)]
 #[cfg_attr(test, derive(PartialEq))]
-pub enum LexError<'a> {
-    InvalidToken(&'a str),
-    TokenError(TokenError),
+pub enum LexError {
+    #[error("Invalid token: {0}")]
+    InvalidToken(String),
+    #[error(transparent)]
+    #[diagnostic(transparent)]
+    TokenError(#[from] TokenError),
 }
 
 /// Lexes a source file into a list of tokens.
-pub fn lex(mut source: &str) -> Result<Vec<Token>, LexError<'_>> {
+pub fn lex(mut source: &str) -> Result<Vec<Token>, LexError> {
     let tokenizer = Tokenizer::new();
     let mut out = Vec::<Token>::new();
     while !source.is_empty() {

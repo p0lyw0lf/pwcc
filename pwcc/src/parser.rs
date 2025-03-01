@@ -2,6 +2,9 @@ use core::convert::From;
 use core::fmt::Debug;
 use core::iter::Iterator;
 
+use miette::Diagnostic;
+use thiserror::Error;
+
 use crate::lexer::Token;
 
 mod macros;
@@ -10,12 +13,16 @@ use macros::*;
 #[cfg(test)]
 mod test;
 
-#[derive(Debug)]
+#[derive(Error, Diagnostic, Debug)]
 #[cfg_attr(test, derive(PartialEq))]
 pub enum ParseError {
+    #[error("Unexpected token: expected {expected:-}, got {actual}")]
     UnexpectedToken { expected: Token, actual: Token },
+    #[error("Missing token: expected {expected}")]
     MissingToken { expected: Token },
+    #[error("Expected end of tokens, got {actual}")]
     ExtraToken { actual: Token },
+    #[error("No matches found for tokens")]
     NoMatches,
 }
 

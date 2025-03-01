@@ -9,19 +9,13 @@ macro_rules! tokens {
             $($t$(($inner))?,)*
         }
 
-        #[derive(Debug)]
+        #[derive(Error, Diagnostic, Debug)]
         #[cfg_attr(test, derive(PartialEq))]
         pub enum $tokenerror {
-            $($($t(<$inner as FromStr>::Err),)?)*
-        }
-
-        impl ::core::fmt::Display for $tokenerror {
-            fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-                use $tokenerror::*;
-                match self {
-                    $($($t(e) => write!(f, "parsing {}: {}", stringify!($inner), e),)?)*
-                }
-            }
+            $($(
+            #[error("Could not parse token {}: {0}", std::stringify!($t))]
+            $t(<$inner as FromStr>::Err),
+            )?)*
         }
 
         struct $tokenizer {
@@ -63,7 +57,7 @@ macro_rules! tokens {
                 Ok((token, rest))
             }
 
-            pub fn consume_token<'a>(&self, source: &'a str) -> Result<($tokens, &'a str), LexError<'a>> {
+            pub fn consume_token<'a>(&self, source: &'a str) -> Result<($tokens, &'a str), LexError> {
                 // Truncates the string so it appears about `mid` characters long
                 fn safe_truncate(s: &str, mut mid: usize) -> &str {
                     while mid < s.len() {
@@ -77,7 +71,7 @@ macro_rules! tokens {
 
                 let first_match = match self.rs.matches_at(source, 0).iter().next() {
                     Some(m) => m,
-                    None => return Err(LexError::InvalidToken(safe_truncate(source, 8))),
+                    None => return Err(LexError::InvalidToken(safe_truncate(source, 8).to_string())),
                 };
 
                 Ok(unsafe {

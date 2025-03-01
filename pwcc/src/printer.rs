@@ -3,8 +3,6 @@ use std::fmt::Display;
 use crate::lexer::Token;
 use crate::parser::ToTokens;
 
-mod errors;
-
 impl Display for Token {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use Token::*;
@@ -64,7 +62,7 @@ impl Display for Token {
                 KeywordReturn => write!(f, "\"return\""),
                 Ident(_) if f.sign_minus() => write!(f, "identifier"),
                 Constant(_) if f.sign_minus() => write!(f, "constant"),
-                other => write!(f, "\"{other}\""),
+                other => write!(f, "\"{other:#}\""),
             }
         }
     }

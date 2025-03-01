@@ -4,6 +4,8 @@ version = "0.0.3"
 edition = "2021"
 
 [dependencies]
-regex = "1.10.*"
 functional = { path = "../functional" }
 functional_macros = { path = "../functional_macros" }
+miette = "7.5"
+regex = "1.10.*"
+thiserror = "1.0"

@@ -1,65 +1,20 @@
 use std::env;
-use std::fmt::Display;
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
-use std::process::ExitCode;
 use std::str::FromStr;
+
+use miette::{diagnostic, IntoDiagnostic, Result, WrapErr};
 
 use functional::Functor;
 use pwcc::{codegen, lexer, parser, printer, semantic, tacky};
 
-macro_rules! stages {
-($($name:ident = $val:literal ,)*) => {
+mod stages;
+use crate::stages::print_help;
+use crate::stages::Stages;
+use crate::stages::Stages::*;
 
-#[derive(Debug, Eq, PartialEq, Ord, PartialOrd)]
-enum Stages {
-    $($name,)*
-    NoExplicitStage,
-}
-use Stages::*;
-
-impl FromStr for Stages {
-    type Err = ();
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            $($val => Ok($name),)*
-            _ => Err(()),
-        }
-    }
-}
-
-impl Display for Stages {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            $($name => write!(f, $val),)*
-            NoExplicitStage => panic!("should not display NoExplicitStage"),
-        }
-    }
-}
-
-fn print_help() {
-    println!(
-        "{{{}}} <file.i>",
-        [$($name,)*]
-            .iter()
-            .map(|stage| format!("--{}", stage))
-            .collect::<Vec<_>>()
-            .join(", ")
-    );
-}
-};
-}
-
-stages! {
-    Lex = "lex",
-    Parse = "parse",
-    Validate = "validate",
-    Tacky = "tacky",
-    Codegen = "codegen",
-}
-
-fn rmain() -> Result<(), String> {
+fn main() -> Result<()> {
     let mut stage = NoExplicitStage;
     let mut filename: Option<String> = None;
 
@@ -78,7 +33,7 @@ fn rmain() -> Result<(), String> {
                 match Stages::from_str(stage_str) {
                     Err(()) => {
                         print_help();
-                        return Err(format!("Unexpected option \"{option}\""));
+                        return Err(diagnostic!("Unexpected option \"{}\"", option).into());
                     }
                     Ok(new_stage) => {
                         if stage == NoExplicitStage {
@@ -93,7 +48,12 @@ fn rmain() -> Result<(), String> {
                 None => filename = Some(other.to_string()),
                 Some(existing) => {
                     print_help();
-                    return Err(format!("Passed multiple filenames! {existing} and {other}"));
+                    return Err(diagnostic!(
+                        "Passed multiple filenames! {} and {}",
+                        existing,
+                        other
+                    )
+                    .into());
                 }
             },
         };
@@ -102,30 +62,32 @@ fn rmain() -> Result<(), String> {
     let filename = match filename {
         None => {
             print_help();
-            return Err("Must provide a filename".into());
+            return Err(diagnostic!("Must provide a filename").into());
         }
         Some(f) => f,
     };
 
-    let source =
-        fs::read_to_string(filename.clone()).map_err(|e| format!("error reading file: {e}"))?;
+    let source = fs::read_to_string(filename.clone())
+        .into_diagnostic()
+        .wrap_err("Error reading file")?;
 
-    let tokens = lexer::lex(&source).map_err(|e| format!("error lexing: {e}"))?;
+    let tokens = lexer::lex(&source)
+        .into_diagnostic()
+        .wrap_err("Error lexing")?;
 
     if stage == Lex {
         println!("{tokens:?}");
         return Ok(());
     }
 
-    let tree = parser::parse(tokens).map_err(|e| format!("error parsing: {e}"))?;
+    let tree = parser::parse(tokens).wrap_err("Error parsing")?;
 
     if stage == Parse {
         printer::pretty_print(tree);
         return Ok(());
     }
 
-    let tree =
-        semantic::validate(tree).map_err(|e| format!("error running semantic analysis: {e}"))?;
+    let tree = semantic::validate(tree)?;
 
     if stage == Validate {
         printer::pretty_print(tree);
@@ -161,20 +123,13 @@ fn rmain() -> Result<(), String> {
     let mut output_path = PathBuf::from(filename);
     output_path.set_extension("s");
 
-    let mut output =
-        fs::File::create(output_path).map_err(|e| format!("error opening output file: {e}"))?;
+    let mut output = fs::File::create(output_path)
+        .into_diagnostic()
+        .wrap_err("Error opening output file")?;
 
-    write!(output, "{code}").map_err(|e| format!("error writing to output file: {e}"))?;
+    write!(output, "{code}")
+        .into_diagnostic()
+        .wrap_err("Error writing to output file")?;
 
     Ok(())
-}
-
-fn main() -> ExitCode {
-    match rmain() {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(e) => {
-            eprintln!("{e}");
-            ExitCode::FAILURE
-        }
-    }
 }

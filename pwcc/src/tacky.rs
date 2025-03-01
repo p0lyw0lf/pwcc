@@ -214,12 +214,7 @@ impl Chompable for parser::Exp {
             Unary { op, exp } => {
                 let src = exp.chomp(ctx);
                 let dst = ctx.tf.next();
-                use parser::UnaryOp::*;
-                let op = match op {
-                    Exclamation => UnaryOp::Not,
-                    Minus => UnaryOp::Negate,
-                    Tilde => UnaryOp::Complement,
-                };
+                let op = todo!("Need to add support for prefix/postfix increment/decrement");
                 ctx.instructions.push(Instruction::Unary { op, src, dst });
 
                 Val::Var(dst)

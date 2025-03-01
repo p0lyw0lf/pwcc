@@ -1,7 +1,6 @@
 use std::env;
 use std::fs;
 use std::io::Write;
-use std::ops::Range;
 use std::path::PathBuf;
 use std::str::FromStr;
 

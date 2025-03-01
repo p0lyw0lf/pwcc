@@ -157,7 +157,7 @@ macro_rules! nodes {
                     )*
 
                     Err(ParseError::NoMatches)
-                };
+                }
 
                 run(ts).map_err(|e| ParseError::Context {
                     node_name: stringify!($node).to_string(),

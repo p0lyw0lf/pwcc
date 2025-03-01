@@ -1,11 +1,6 @@
 use core::convert::From;
 use core::fmt::Debug;
 use core::iter::Iterator;
-use std::borrow::Borrow;
-
-use miette::Diagnostic;
-use miette::SourceSpan;
-use thiserror::Error;
 
 use crate::lexer::SpanToken;
 use crate::lexer::Token;
@@ -13,42 +8,13 @@ use crate::lexer::Token;
 mod macros;
 use macros::*;
 
+mod errors;
+pub use errors::ParseError;
+
 #[cfg(test)]
 mod test;
-
-#[derive(Error, Diagnostic, Debug)]
-#[cfg_attr(test, derive(PartialEq))]
-#[error("Parse error")]
-pub enum ParseError {
-    #[error("Unexpected token: expected {expected:-}, got {actual}")]
-    #[diagnostic()]
-    UnexpectedToken {
-        expected: Token,
-        #[label("here")]
-        actual: SpanToken,
-    },
-
-    #[error("Missing token: expected {expected}, reached end of tokens")]
-    MissingToken { expected: Token },
-
-    #[error("Expected end of tokens, got {actual}")]
-    #[diagnostic()]
-    ExtraToken {
-        #[label]
-        actual: SpanToken,
-    },
-
-    #[error("No matches found")]
-    NoMatches,
-
-    #[error("While parsing node {node_name}")]
-    #[diagnostic()]
-    Context {
-        node_name: String,
-        #[source]
-        err: Box<ParseError>,
-    },
-}
+#[cfg(test)]
+mod test_errors;
 
 pub trait FromTokens: Sized {
     fn from_tokens(ts: &mut (impl Iterator<Item = SpanToken> + Clone)) -> Result<Self, ParseError>;
@@ -170,9 +136,9 @@ enum Precedence {
     Shift,
     Addition,
     Multiplication,
-    Prefix,  // Taken care of by parse_unary
-    Postfix, // Taken care of by parse_postfix
-    Literal,
+    // Prefix,  // Taken care of by parse_unary
+    // Postfix, // Taken care of by parse_postfix
+    // Literal, // Taken care of by parse_primary
 }
 
 impl Precedence {
@@ -181,7 +147,7 @@ impl Precedence {
     }
 
     fn next(self) -> Self {
-        if let Precedence::Literal = self {
+        if let Precedence::Multiplication = self {
             return self;
         }
 

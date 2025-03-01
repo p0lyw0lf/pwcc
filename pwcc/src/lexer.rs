@@ -104,10 +104,14 @@ pub fn lex(mut source: &str) -> Result<Vec<SpanToken>, LexError> {
     let mut out = Vec::<SpanToken>::new();
     let mut offset = 0;
     while !source.is_empty() {
+        let old_len = source.len();
         source = source.trim_start();
         if source.is_empty() {
             break;
         }
+
+        let new_len = source.len();
+        offset += old_len - new_len;
 
         let (token, len) = tokenizer.consume_token(source, offset)?;
         out.push(SpanToken {

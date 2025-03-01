@@ -211,14 +211,84 @@ impl Chompable for parser::Exp {
         use parser::Exp::*;
         match self {
             Constant { constant } => Val::Constant(constant),
-            Unary { op, exp } => {
+            Unary {
+                op:
+                    parser::UnaryOp::PrefixOp(
+                        op @ (parser::PrefixOp::Minus
+                        | parser::PrefixOp::Tilde
+                        | parser::PrefixOp::Exclamation),
+                    ),
+                exp,
+            } => {
                 let src = exp.chomp(ctx);
                 let dst = ctx.tf.next();
-                let op = todo!("Need to add support for prefix/postfix increment/decrement");
+                use parser::PrefixOp::*;
+                let op = match op {
+                    Minus => UnaryOp::Negate,
+                    Tilde => UnaryOp::Complement,
+                    Exclamation => UnaryOp::Not,
+                    _ => unreachable!(),
+                };
                 ctx.instructions.push(Instruction::Unary { op, src, dst });
 
                 Val::Var(dst)
             }
+            Unary {
+                op:
+                    parser::UnaryOp::PrefixOp(
+                        op @ (parser::PrefixOp::Increment | parser::PrefixOp::Decrement),
+                    ),
+                exp,
+            } => match *exp {
+                Var { ident } => {
+                    let dst = ctx.tf.var(&ident);
+                    let src = Val::Var(dst);
+
+                    use parser::PrefixOp::*;
+                    ctx.instructions.push(Instruction::Binary {
+                        src1: src,
+                        op: match op {
+                            Increment => BinaryOp::Add,
+                            Decrement => BinaryOp::Subtract,
+                            _ => unreachable!(),
+                        },
+                        src2: Val::Constant(1),
+                        dst,
+                    });
+                    Val::Var(dst)
+                }
+                ref otherwise => {
+                    panic!("building tacky: got {op:?} on expression {otherwise:?}")
+                }
+            },
+            Unary {
+                op: parser::UnaryOp::PostfixOp(op),
+                exp,
+            } => match *exp {
+                Var { ident } => {
+                    let dst = ctx.tf.var(&ident);
+                    let src = Val::Var(dst);
+                    let tmp = ctx.tf.next();
+
+                    ctx.instructions.push(Instruction::Copy { src, dst: tmp });
+
+                    let src = Val::Var(dst);
+                    use parser::PostfixOp::*;
+                    ctx.instructions.push(Instruction::Binary {
+                        src1: src,
+                        op: match op {
+                            Increment => BinaryOp::Add,
+                            Decrement => BinaryOp::Subtract,
+                        },
+                        src2: Val::Constant(1),
+                        dst,
+                    });
+                    Val::Var(tmp)
+                }
+                ref otherwise => {
+                    panic!("building tacky: got {op:?} on expression {otherwise:?}")
+                }
+            },
             Binary {
                 lhs,
                 op: op @ (parser::BinaryOp::DoubleAmpersand | parser::BinaryOp::DoublePipe),

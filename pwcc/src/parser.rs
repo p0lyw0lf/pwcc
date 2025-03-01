@@ -138,7 +138,8 @@ enum Precedence {
     Multiplication,
     // Prefix,  // Taken care of by parse_unary
     // Postfix, // Taken care of by parse_postfix
-    // Literal, // Taken care of by parse_primary
+    #[allow(dead_code)]
+    Literal, // Taken care of by parse_primary
 }
 
 impl Precedence {
@@ -147,7 +148,7 @@ impl Precedence {
     }
 
     fn next(self) -> Self {
-        if let Precedence::Multiplication = self {
+        if let Precedence::Literal = self {
             return self;
         }
 

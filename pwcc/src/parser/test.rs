@@ -137,6 +137,24 @@ fn binary_precedence() {
 }
 
 #[test]
+fn binary_associativity() {
+    assert_to_from(
+        "3/2/1",
+        Exp::Binary {
+            lhs: Exp::Binary {
+                lhs: Exp::Constant { constant: 3 }.boxed(),
+                op: BinaryOp::ForwardSlash,
+                rhs: Exp::Constant { constant: 2 }.boxed(),
+            }
+            .boxed(),
+            op: BinaryOp::ForwardSlash,
+            rhs: Exp::Constant { constant: 1 }.boxed(),
+        },
+        "((3)/(2))/(1)",
+    );
+}
+
+#[test]
 fn assign_precedence() {
     assert_convertible(
         "a = b = c",

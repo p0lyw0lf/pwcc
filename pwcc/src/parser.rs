@@ -5,89 +5,28 @@ use core::iter::Iterator;
 use crate::lexer::SpanToken;
 use crate::lexer::Token;
 
-mod macros;
-use macros::*;
-
 mod errors;
+mod macros;
+mod traits;
+
 pub use errors::ParseError;
+use macros::*;
+pub use traits::*;
 
 #[cfg(test)]
 mod test;
 #[cfg(test)]
 mod test_errors;
 
-pub trait FromTokens: Sized {
-    fn from_tokens(ts: &mut (impl Iterator<Item = SpanToken> + Clone)) -> Result<Self, ParseError>;
-    fn from_raw_tokens(ts: &mut (impl Iterator<Item = Token> + Clone)) -> Result<Self, ParseError> {
-        let tokens = ts
-            .map(|token| SpanToken {
-                token,
-                span: (0, 0).into(),
-            })
-            .collect::<Vec<_>>();
-        Self::from_tokens(&mut tokens.into_iter())
-    }
-}
-
-impl<T> FromTokens for Box<T>
-where
-    T: FromTokens,
-{
-    fn from_tokens(ts: &mut (impl Iterator<Item = SpanToken> + Clone)) -> Result<Self, ParseError> {
-        let mut iter = ts.clone();
-        let out = T::from_tokens(&mut iter)?;
-        *ts = iter;
-        Ok(Box::new(out))
-    }
-}
-
-impl<T> FromTokens for Option<T>
-where
-    T: FromTokens,
-{
-    fn from_tokens(ts: &mut (impl Iterator<Item = SpanToken> + Clone)) -> Result<Self, ParseError> {
-        let mut iter = ts.clone();
-        let out = T::from_tokens(&mut iter).ok();
-        if out.is_some() {
-            *ts = iter;
-        }
-        Ok(out)
-    }
-}
-
-// IntoIterator is too hard b/c can't name the IntoIter type
-pub trait ToTokens {
-    fn to_tokens(self) -> impl Iterator<Item = Token>;
-}
-
-impl<T> ToTokens for Box<T>
-where
-    T: ToTokens,
-{
-    fn to_tokens(self) -> impl Iterator<Item = Token> {
-        (*self).to_tokens()
-    }
-}
-
-impl<T> ToTokens for Option<T>
-where
-    T: ToTokens,
-{
-    fn to_tokens(self) -> impl Iterator<Item = Token> {
-        self.into_iter().flat_map(ToTokens::to_tokens)
-    }
-}
-
 nodes! {
     Program(*<function: Function>);
     Function(
-        *KeywordInt *{name: Ident(_ = String)} *OpenParen *KeywordVoid *CloseParen *OpenBrace
-            *<body: Body>
-        *CloseBrace
+        *KeywordInt *{name: Ident(_ = String)} *OpenParen *KeywordVoid *CloseParen
+            *<body: Block>
     );
-    Body[BlockItem];
+    Block(*OpenBrace *<items: Vec<BlockItem>> *CloseBrace);
     BlockItem(+<Statement> +<Declaration>);
-    Statement(+<ExpressionStmt> +<IfStmt> +<LabelStmt> +<GotoStmt> +<ReturnStmt> +<NullStmt>);
+    Statement(+<ExpressionStmt> +<IfStmt> +<LabelStmt> +<GotoStmt> +<ReturnStmt> +<Block> +<NullStmt>);
     ExpressionStmt(*<exp: Exp> *Semicolon);
     IfStmt(*KeywordIf *OpenParen *<exp: Exp> *CloseParen *<body: Box<Statement>> *<else_stmt: Option<ElseStmt>>);
     ElseStmt(*KeywordElse *<body: Box<Statement>>);

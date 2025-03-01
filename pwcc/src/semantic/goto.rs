@@ -4,8 +4,8 @@ use functional::TryFunctor;
 use miette::Diagnostic;
 use thiserror::Error;
 
+use crate::parser::Block;
 use crate::parser::BlockItem;
-use crate::parser::Body;
 use crate::parser::Function;
 use crate::parser::GotoStmt;
 use crate::parser::LabelStmt;
@@ -56,9 +56,9 @@ pub fn analysis(f: Function) -> Result<Function, SemanticErrors> {
 
     // TODO: make this configurable somehow
     // Check that all labels are followed by a statement, *not* a declaration.
-    let f = f.try_fmap(&mut |body: Body| -> Result<_, SemanticErrors> {
+    let f = f.try_fmap(&mut |block: Block| -> Result<_, SemanticErrors> {
         let mut prev_label = None::<&LabelStmt>;
-        for item in body.0.iter() {
+        for item in block.items.iter() {
             if let (Some(label_stmt), BlockItem::Declaration(_)) = (prev_label, item) {
                 return Err(Error::NoStatementAfterLabel {
                     label: label_stmt.label.clone(),
@@ -78,7 +78,7 @@ pub fn analysis(f: Function) -> Result<Function, SemanticErrors> {
             })?;
         }
 
-        Ok(body)
+        Ok(block)
     })?;
 
     Ok(f)

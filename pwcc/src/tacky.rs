@@ -149,13 +149,13 @@ impl Chompable for Val {
 }
 
 impl Instructions {
-    fn from_function(identifier: &Identifier, body: parser::Body) -> Self {
+    fn from_function(identifier: &Identifier, block: parser::Block) -> Self {
         let instructions = Vec::<Instruction>::new();
         let tf = TemporaryFactory::new(identifier);
 
         let mut ctx = ChompContext { instructions, tf };
 
-        for block_item in body.0 {
+        for block_item in block.items {
             block_item.chomp(&mut ctx);
         }
 
@@ -168,6 +168,18 @@ impl Instructions {
         });
 
         Self(instructions)
+    }
+}
+
+impl<T> Chompable for Vec<T>
+where
+    T: Chompable<Output = ()>,
+{
+    type Output = ();
+    fn chomp<'a>(self, ctx: &mut ChompContext<'a>) -> Self::Output {
+        for t in self {
+            t.chomp(ctx);
+        }
     }
 }
 
@@ -203,6 +215,7 @@ impl Chompable for parser::Statement {
         use parser::Statement::*;
         match self {
             NullStmt(_) => {}
+            Block(block) => block.items.chomp(ctx),
             ReturnStmt(return_statement) => {
                 let val = return_statement.exp.chomp(ctx);
                 ctx.push(Instruction::Return { val });

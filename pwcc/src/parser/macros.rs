@@ -62,10 +62,6 @@ macro_rules! nodes {
             )* )
         )?
         $(
-            // Star: repeat node
-            [$s_subnode:ident]
-        )?
-        $(
             // Other: just emit normally
             enum $oe_tt:tt
         )?
@@ -175,29 +171,6 @@ macro_rules! nodes {
                     $($a_ctoken(c) => Box::new(::core::iter::once(Token::$a_ctoken(c.into()))),)?
                 )*};
                 out
-            }
-        }
-        )?
-
-        $(
-        // Star
-        #[derive(Debug)]
-        #[cfg_attr(test, derive(PartialEq))]
-        pub struct $node(pub Vec<$s_subnode>);
-
-        impl FromTokens for $node {
-            fn from_tokens(ts: &mut (impl Iterator<Item = SpanToken> + Clone)) -> Result<Self, ParseError> {
-                let mut out = Vec::<$s_subnode>::new();
-                while let Ok(subnode) = $s_subnode::from_tokens(ts) {
-                    out.push(subnode);
-                }
-                Ok($node(out))
-            }
-        }
-
-        impl ToTokens for $node {
-            fn to_tokens(self) -> impl Iterator<Item = Token> {
-                self.0.into_iter().flat_map(ToTokens::to_tokens)
             }
         }
         )?

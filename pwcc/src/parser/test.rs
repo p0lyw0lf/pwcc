@@ -56,17 +56,19 @@ int main(void) {
 }",
         Function {
             name: "main".into(),
-            body: Body(Vec::from([
-                BlockItem::Declaration(Declaration {
-                    name: "x".into(),
-                    init: Initializer::ExpressionInit(ExpressionInit {
-                        exp: Exp::Constant { constant: 1 },
+            body: Block {
+                items: vec![
+                    BlockItem::Declaration(Declaration {
+                        name: "x".into(),
+                        init: Initializer::ExpressionInit(ExpressionInit {
+                            exp: Exp::Constant { constant: 1 },
+                        }),
                     }),
-                }),
-                BlockItem::Statement(Statement::ReturnStmt(ReturnStmt {
-                    exp: Exp::Constant { constant: 2 },
-                })),
-            ])),
+                    BlockItem::Statement(Statement::ReturnStmt(ReturnStmt {
+                        exp: Exp::Constant { constant: 2 },
+                    })),
+                ],
+            },
         },
     );
 }
@@ -343,15 +345,17 @@ fn if_statement_naked() {
         &tokens,
         &Function {
             name: "main".to_string(),
-            body: Body(vec![BlockItem::Statement(Statement::IfStmt(IfStmt {
-                exp: Exp::Constant { constant: 0 },
-                body: Box::new(Statement::ReturnStmt(ReturnStmt {
-                    exp: Exp::Var {
-                        ident: "a".to_string(),
-                    },
-                })),
-                else_stmt: None,
-            }))]),
+            body: Block {
+                items: vec![BlockItem::Statement(Statement::IfStmt(IfStmt {
+                    exp: Exp::Constant { constant: 0 },
+                    body: Box::new(Statement::ReturnStmt(ReturnStmt {
+                        exp: Exp::Var {
+                            ident: "a".to_string(),
+                        },
+                    })),
+                    else_stmt: None,
+                }))],
+            },
         },
     );
 }

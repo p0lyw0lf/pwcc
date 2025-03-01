@@ -113,6 +113,12 @@ struct ChompContext<'a> {
     tf: TemporaryFactory<'a>,
 }
 
+impl<'a> ChompContext<'a> {
+    fn push(&mut self, i: Instruction) {
+        self.instructions.push(i)
+    }
+}
+
 /// Represents a type that can be used to emit instructions
 trait Chompable {
     type Output;
@@ -127,7 +133,7 @@ impl Chompable for Val {
             Self::Var(t) => t,
             src @ Val::Constant(_) => {
                 let dst = ctx.tf.next();
-                ctx.instructions.push(Instruction::Copy {
+                ctx.push(Instruction::Copy {
                     src,
                     dst: dst.clone(),
                 });
@@ -180,7 +186,7 @@ impl Chompable for parser::Declaration {
             ExpressionInit(expression_init) => {
                 let src = expression_init.exp.chomp(ctx);
                 let dst = ctx.tf.var(&self.name);
-                ctx.instructions.push(Instruction::Copy { src, dst });
+                ctx.push(Instruction::Copy { src, dst });
             }
         }
     }
@@ -194,12 +200,45 @@ impl Chompable for parser::Statement {
             NullStmt(_) => {}
             ReturnStmt(return_statement) => {
                 let val = return_statement.exp.chomp(ctx);
-                ctx.instructions.push(Instruction::Return { val });
+                ctx.push(Instruction::Return { val });
             }
             ExpressionStmt(expression_stmt) => {
                 let _ = expression_stmt.exp.chomp(ctx);
             }
-            IfStmt(if_stmt) => todo!(),
+            IfStmt(parser::IfStmt {
+                exp,
+                body,
+                else_stmt: None,
+            }) => {
+                let condition = exp.chomp(ctx).chomp(ctx);
+                let end = ctx.tf.next_label("end");
+                ctx.push(Instruction::JumpIfZero {
+                    condition,
+                    target: end.clone(),
+                });
+                let _ = body.chomp(ctx);
+                ctx.push(Instruction::Label(end));
+            }
+            IfStmt(parser::IfStmt {
+                exp,
+                body,
+                else_stmt: Some(else_stmt),
+            }) => {
+                let condition = exp.chomp(ctx).chomp(ctx);
+                let else_label = ctx.tf.next_label("else");
+                let end = ctx.tf.next_label("end");
+                ctx.push(Instruction::JumpIfZero {
+                    condition,
+                    target: else_label.clone(),
+                });
+                let _ = body.chomp(ctx);
+                ctx.push(Instruction::Jump {
+                    target: end.clone(),
+                });
+                ctx.push(Instruction::Label(else_label));
+                let _ = else_stmt.body.chomp(ctx);
+                ctx.push(Instruction::Label(end));
+            }
         }
     }
 }
@@ -209,10 +248,10 @@ impl Chompable for parser::Statement {
 impl Chompable for parser::Exp {
     type Output = Val;
     fn chomp<'a>(self, ctx: &mut ChompContext<'a>) -> Val {
-        use parser::Exp::*;
+        use Instruction::*;
         match self {
-            Constant { constant } => Val::Constant(constant),
-            Unary {
+            parser::Exp::Constant { constant } => Val::Constant(constant),
+            parser::Exp::Unary {
                 op:
                     parser::UnaryOp::PrefixOp(
                         op @ (parser::PrefixOp::Minus
@@ -230,23 +269,23 @@ impl Chompable for parser::Exp {
                     Exclamation => UnaryOp::Not,
                     _ => unreachable!(),
                 };
-                ctx.instructions.push(Instruction::Unary { op, src, dst });
+                ctx.push(Unary { op, src, dst });
 
                 Val::Var(dst)
             }
-            Unary {
+            parser::Exp::Unary {
                 op:
                     parser::UnaryOp::PrefixOp(
                         op @ (parser::PrefixOp::Increment | parser::PrefixOp::Decrement),
                     ),
                 exp,
             } => match *exp {
-                Var { ident } => {
+                parser::Exp::Var { ident } => {
                     let dst = ctx.tf.var(&ident);
                     let src = Val::Var(dst);
 
                     use parser::PrefixOp::*;
-                    ctx.instructions.push(Instruction::Binary {
+                    ctx.push(Binary {
                         src1: src,
                         op: match op {
                             Increment => BinaryOp::Add,
@@ -262,20 +301,20 @@ impl Chompable for parser::Exp {
                     panic!("building tacky: got {op:?} on expression {otherwise:?}")
                 }
             },
-            Unary {
+            parser::Exp::Unary {
                 op: parser::UnaryOp::PostfixOp(op),
                 exp,
             } => match *exp {
-                Var { ident } => {
+                parser::Exp::Var { ident } => {
                     let dst = ctx.tf.var(&ident);
                     let src = Val::Var(dst);
                     let tmp = ctx.tf.next();
 
-                    ctx.instructions.push(Instruction::Copy { src, dst: tmp });
+                    ctx.push(Copy { src, dst: tmp });
 
                     let src = Val::Var(dst);
                     use parser::PostfixOp::*;
-                    ctx.instructions.push(Instruction::Binary {
+                    ctx.push(Binary {
                         src1: src,
                         op: match op {
                             Increment => BinaryOp::Add,
@@ -290,7 +329,7 @@ impl Chompable for parser::Exp {
                     panic!("building tacky: got {op:?} on expression {otherwise:?}")
                 }
             },
-            Binary {
+            parser::Exp::Binary {
                 lhs,
                 op: op @ (parser::BinaryOp::DoubleAmpersand | parser::BinaryOp::DoublePipe),
                 rhs,
@@ -300,26 +339,26 @@ impl Chompable for parser::Exp {
                 let shortcut_label = ctx.tf.next_label(if is_and { "false" } else { "true" });
 
                 let src1 = lhs.chomp(ctx).chomp(ctx);
-                ctx.instructions.push(if is_and {
-                    Instruction::JumpIfZero {
+                ctx.push(if is_and {
+                    JumpIfZero {
                         condition: src1,
                         target: shortcut_label.clone(),
                     }
                 } else {
-                    Instruction::JumpIfNotZero {
+                    JumpIfNotZero {
                         condition: src1,
                         target: shortcut_label.clone(),
                     }
                 });
 
                 let src2 = rhs.chomp(ctx).chomp(ctx);
-                ctx.instructions.push(if is_and {
-                    Instruction::JumpIfZero {
+                ctx.push(if is_and {
+                    JumpIfZero {
                         condition: src2,
                         target: shortcut_label.clone(),
                     }
                 } else {
-                    Instruction::JumpIfNotZero {
+                    JumpIfNotZero {
                         condition: src2,
                         target: shortcut_label.clone(),
                     }
@@ -329,26 +368,26 @@ impl Chompable for parser::Exp {
                 let end_label = ctx.tf.next_label("end");
                 ctx.instructions.extend(
                     [
-                        Instruction::Copy {
+                        Copy {
                             src: Val::Constant(if is_and { 1 } else { 0 }),
                             dst: dst.clone(),
                         },
-                        Instruction::Jump {
+                        Jump {
                             target: end_label.clone(),
                         },
-                        Instruction::Label(shortcut_label),
-                        Instruction::Copy {
+                        Label(shortcut_label),
+                        Copy {
                             src: Val::Constant(if is_and { 0 } else { 1 }),
                             dst: dst.clone(),
                         },
-                        Instruction::Label(end_label),
+                        Label(end_label),
                     ]
                     .into_iter(),
                 );
 
                 Val::Var(dst)
             }
-            Binary { lhs, op, rhs } => {
+            parser::Exp::Binary { lhs, op, rhs } => {
                 let src1 = lhs.chomp(ctx);
                 let src2 = rhs.chomp(ctx);
                 let dst = ctx.tf.next();
@@ -373,7 +412,7 @@ impl Chompable for parser::Exp {
                     RightShift => BinaryOp::BitRightShift,
                     Star => BinaryOp::Multiply,
                 };
-                ctx.instructions.push(Instruction::Binary {
+                ctx.push(Binary {
                     op,
                     src1,
                     src2,
@@ -382,9 +421,9 @@ impl Chompable for parser::Exp {
 
                 Val::Var(dst)
             }
-            Var { ident } => Val::Var(ctx.tf.var(&ident)),
-            Assignment { lhs, op, rhs } => match *lhs {
-                Var { ref ident } => {
+            parser::Exp::Var { ident } => Val::Var(ctx.tf.var(&ident)),
+            parser::Exp::Assignment { lhs, op, rhs } => match *lhs {
+                parser::Exp::Var { ref ident } => {
                     let dst = ctx.tf.var(ident);
                     let rhs = match op {
                         parser::AssignmentOp::Equal => *rhs,
@@ -397,16 +436,43 @@ impl Chompable for parser::Exp {
                         },
                     };
                     let src = rhs.chomp(ctx);
-                    ctx.instructions.push(Instruction::Copy { src, dst });
+                    ctx.push(Copy { src, dst });
                     Val::Var(dst)
                 }
                 ref otherwise => panic!("building tacky: got unexpected lhs: {otherwise:?}"),
             },
-            Ternary {
+            parser::Exp::Ternary {
                 condition,
                 true_case,
                 false_case,
-            } => todo!(),
+            } => {
+                let condition = condition.chomp(ctx).chomp(ctx);
+                let result = ctx.tf.next();
+                let else_label = ctx.tf.next_label("else");
+                let end = ctx.tf.next_label("end");
+
+                ctx.push(JumpIfZero {
+                    condition,
+                    target: else_label.clone(),
+                });
+                let true_val = true_case.chomp(ctx);
+                ctx.push(Copy {
+                    src: true_val,
+                    dst: result,
+                });
+                ctx.push(Jump {
+                    target: end.clone(),
+                });
+                ctx.push(Label(else_label));
+                let false_val = false_case.chomp(ctx);
+                ctx.push(Copy {
+                    src: false_val,
+                    dst: result,
+                });
+                ctx.push(Label(end));
+
+                Val::Var(result)
+            }
         }
     }
 }

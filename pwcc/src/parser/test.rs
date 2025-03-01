@@ -1,7 +1,15 @@
 use super::*;
 
+fn lex(source: &str) -> Vec<Token> {
+    crate::lexer::lex(source)
+        .expect("lex failed")
+        .into_iter()
+        .map(Into::into)
+        .collect()
+}
+
 fn assert_forwards<T: FromTokens + Debug + PartialEq>(tokens: &[Token], expected: &T) {
-    let actual = T::from_tokens(&mut Vec::from(tokens).into_iter());
+    let actual = T::from_raw_tokens(&mut Vec::from(tokens).into_iter());
     assert_eq!(Ok(expected), actual.as_ref());
 }
 
@@ -11,15 +19,15 @@ fn assert_backwards(tree: impl ToTokens + Debug + PartialEq, expected: &[Token])
 }
 
 fn assert_convertible(s: &str, tree: impl ToTokens + FromTokens + Debug + PartialEq) {
-    let tokens = crate::lexer::lex(s).expect("lex failed");
+    let tokens = lex(s);
     assert_forwards(&tokens, &tree);
     assert_backwards(tree, &tokens);
 }
 
 fn assert_to_from(to: &str, tree: impl ToTokens + FromTokens + Debug + PartialEq, from: &str) {
-    let to_tokens = crate::lexer::lex(to).expect("to lex failed");
+    let to_tokens = lex(to);
     assert_forwards(&to_tokens, &tree);
-    let from_tokens = crate::lexer::lex(from).expect("from lex failed");
+    let from_tokens = lex(from);
     assert_backwards(tree, &from_tokens);
 }
 
@@ -102,7 +110,7 @@ fn binary() {
 
 #[test]
 fn binary_precedence() {
-    let tokens = crate::lexer::lex("1*2-3*(4+5)").expect("lex failed");
+    let tokens = lex("1*2-3*(4+5)");
     assert_forwards(
         &tokens,
         &Exp::Binary {
@@ -242,5 +250,29 @@ fn prefix_precedence() {
             .boxed(),
         },
         "--(++(x))",
+    );
+}
+
+#[test]
+fn prefix_postfix_precedence() {
+    assert_to_from(
+        "--++x--++",
+        Exp::Unary {
+            op: UnaryOp::PrefixOp(PrefixOp::Decrement),
+            exp: Exp::Unary {
+                op: UnaryOp::PrefixOp(PrefixOp::Increment),
+                exp: Exp::Unary {
+                    op: UnaryOp::PostfixOp(PostfixOp::Increment),
+                    exp: Exp::Unary {
+                        op: UnaryOp::PostfixOp(PostfixOp::Decrement),
+                        exp: Exp::Var { ident: "x".into() }.boxed(),
+                    }
+                    .boxed(),
+                }
+                .boxed(),
+            }
+            .boxed(),
+        },
+        "--(++(((x)--)++))",
     );
 }

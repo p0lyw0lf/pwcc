@@ -85,7 +85,7 @@ macro_rules! nodes {
 
         impl FromTokens for $node {
             fn from_tokens(ts: &mut (impl Iterator<Item = SpanToken> + Clone)) -> Result<Self, ParseError> {
-                let mut run = move || -> Result<Self, ParseError> {
+                fn run(ts: &mut (impl Iterator<Item = SpanToken> + Clone)) -> Result<$node, ParseError> {
                     $(
                         $(expect_token!(ts, $m_token);)?
                         $(let $m_sname = $m_subnode::from_tokens(ts)?;)?
@@ -95,9 +95,9 @@ macro_rules! nodes {
                         $($m_sname,)?
                         $($m_cname,)?
                     )*})
-                };
+                }
 
-                run().map_err(|e| ParseError::Context {
+                run(ts).map_err(|e| ParseError::Context {
                     node_name: stringify!($node).to_string(),
                     err: Box::new(e),
                 })
@@ -133,16 +133,22 @@ macro_rules! nodes {
 
         impl FromTokens for $node {
             fn from_tokens(ts: &mut (impl Iterator<Item = SpanToken> + Clone)) -> Result<Self, ParseError> {
-                let mut run = move || {
+                fn run(ts: &mut (impl Iterator<Item = SpanToken> + Clone)) -> Result<$node, ParseError> {
                     $(
                     let mut iter = ts.clone();
-                    if let Ok(out) = (|| -> Result<Self, ParseError> {
-                        $(let out = {
+                    if let Ok(out) = (|| -> Result<$node, ParseError> {
+                        $(
+                        let out = {
                             expect_token!(iter, $a_token);
                             $node::$a_token
-                        };)?
-                        $(let out = $node::$a_subnode($a_subnode::from_tokens(&mut iter)?);)?
-                        $(let out = $node::$a_ctoken(expect_token!(iter, $a_ctoken($a_pat): $a_ty));)?
+                        };
+                        )?
+                        $(
+                        let out = $node::$a_subnode($a_subnode::from_tokens(&mut iter)?);
+                        )?
+                        $(
+                        let out = $node::$a_ctoken(expect_token!(iter, $a_ctoken($a_pat): $a_ty));
+                        )?
                         Ok(out)
                     })() {
                         *ts = iter;
@@ -153,7 +159,7 @@ macro_rules! nodes {
                     Err(ParseError::NoMatches)
                 };
 
-                run().map_err(|e| ParseError::Context {
+                run(ts).map_err(|e| ParseError::Context {
                     node_name: stringify!($node).to_string(),
                     err: Box::new(e),
                 })

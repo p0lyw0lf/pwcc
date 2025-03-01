@@ -249,7 +249,7 @@ impl FromTokens for Exp {
             ts: &mut (impl Iterator<Item = SpanToken> + Clone),
         ) -> Result<Exp, ParseError> {
             let mut iter = ts.clone();
-            let mut exp = parse_primary(ts)?;
+            let mut exp = parse_primary(&mut iter)?;
 
             let mut peek_iter = iter.clone();
             let mut next_token = PostfixOp::from_tokens(&mut peek_iter);
@@ -347,12 +347,20 @@ impl ToTokens for Exp {
         let out: Box<dyn Iterator<Item = Token>> = match self {
             Exp::Constant { constant } => Box::new(core::iter::once(Token::Constant(constant))),
             Var { ident } => Box::new(core::iter::once(Ident(ident))),
-            Unary { op, exp } => Box::new(
-                op.to_tokens()
-                    .chain(core::iter::once(OpenParen))
-                    .chain(exp.to_tokens())
-                    .chain(core::iter::once(CloseParen)),
-            ),
+            Unary { op, exp } => match op {
+                UnaryOp::PrefixOp(op) => Box::new(
+                    op.to_tokens()
+                        .chain(core::iter::once(OpenParen))
+                        .chain(exp.to_tokens())
+                        .chain(core::iter::once(CloseParen)),
+                ),
+                UnaryOp::PostfixOp(op) => Box::new(
+                    core::iter::once(OpenParen)
+                        .chain(exp.to_tokens())
+                        .chain(core::iter::once(CloseParen))
+                        .chain(op.to_tokens()),
+                ),
+            },
             Binary { lhs, op, rhs } => Box::new(
                 core::iter::once(OpenParen)
                     .chain(lhs.to_tokens())

@@ -60,6 +60,7 @@ Tokenizer for Token with TokenError:
 }
 
 #[derive(Debug, Clone)]
+#[cfg_attr(test, derive(PartialEq))]
 pub struct SpanToken {
     pub token: Token,
     pub span: SourceSpan,
@@ -127,7 +128,7 @@ mod test {
 
     fn lex(source: &str) -> Result<Vec<Token>, LexError> {
         let tokens = super_lex(source)?;
-        tokens.into_iter().map(|token| token.into()).collect()
+        Ok(tokens.into_iter().map(|token| token.into()).collect())
     }
 
     #[test]

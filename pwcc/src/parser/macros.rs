@@ -48,7 +48,7 @@ macro_rules! nodes {
             ( $(
                 *
                 $($m_token:ident)?
-                $(<$m_sname:ident : $m_subnode:ident>)?
+                $(<$m_sname:ident : $m_subnode:ty>)?
                 $({$m_cname:ident : $m_ctoken:ident ($m_pat:pat = $m_ty:ty) })?
             )* )
         )?
@@ -88,7 +88,7 @@ macro_rules! nodes {
                 fn run(ts: &mut (impl Iterator<Item = SpanToken> + Clone)) -> Result<$node, ParseError> {
                     $(
                         $(expect_token!(ts, $m_token);)?
-                        $(let $m_sname = $m_subnode::from_tokens(ts)?;)?
+                        $(let $m_sname: $m_subnode = FromTokens::from_tokens(ts)?;)?
                         $(let $m_cname = expect_token!(ts, $m_ctoken($m_pat): $m_ty);)?
                     )*
                     Ok($node {$(

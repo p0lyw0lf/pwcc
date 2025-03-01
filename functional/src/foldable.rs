@@ -21,13 +21,16 @@ where
     }
 }
 
-impl<A> Foldable<A> for Option<A> {
+impl<T, A> Foldable<A> for Option<T>
+where
+    T: Foldable<A>,
+{
     fn foldl<'s, B>(&'s self, f: fn(B, &'s A) -> B, acc: B) -> B
     where
         A: 's,
     {
         match self {
-            Some(a) => f(acc, a),
+            Some(t) => t.foldl(f, acc),
             None => acc,
         }
     }

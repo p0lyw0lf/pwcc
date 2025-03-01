@@ -29,9 +29,45 @@ pub trait FromTokens: Sized {
     }
 }
 
+impl<T> FromTokens for Box<T>
+where
+    T: FromTokens,
+{
+    fn from_tokens(ts: &mut (impl Iterator<Item = SpanToken> + Clone)) -> Result<Self, ParseError> {
+        Ok(Box::new(T::from_tokens(ts)?))
+    }
+}
+
+impl<T> FromTokens for Option<T>
+where
+    T: FromTokens,
+{
+    fn from_tokens(ts: &mut (impl Iterator<Item = SpanToken> + Clone)) -> Result<Self, ParseError> {
+        Ok(T::from_tokens(ts).ok())
+    }
+}
+
 // IntoIterator is too hard b/c can't name the IntoIter type
 pub trait ToTokens {
     fn to_tokens(self) -> impl Iterator<Item = Token>;
+}
+
+impl<T> ToTokens for Box<T>
+where
+    T: ToTokens,
+{
+    fn to_tokens(self) -> impl Iterator<Item = Token> {
+        (*self).to_tokens()
+    }
+}
+
+impl<T> ToTokens for Option<T>
+where
+    T: ToTokens,
+{
+    fn to_tokens(self) -> impl Iterator<Item = Token> {
+        self.into_iter().flat_map(ToTokens::to_tokens)
+    }
 }
 
 nodes! {
@@ -43,8 +79,10 @@ nodes! {
     );
     Body[BlockItem];
     BlockItem(+<Statement> +<Declaration>);
-    Statement(+<ExpressionStmt> +<ReturnStmt> +<NullStmt>);
+    Statement(+<ExpressionStmt> +<IfStmt> +<ReturnStmt> +<NullStmt>);
     ExpressionStmt(*<exp: Exp> *Semicolon);
+    IfStmt(*KeywordIf *OpenParen *<exp: Exp> *CloseParen *<body: Box<Statement>> *<else_stmt: Option<ElseStmt>>);
+    ElseStmt(*KeywordElse *<body: Box<Statement>>);
     ReturnStmt(*KeywordReturn *<exp: Exp> *Semicolon);
     NullStmt(*Semicolon);
     Declaration(*KeywordInt *{name: Ident(_ = String)} *<init: Initializer>);

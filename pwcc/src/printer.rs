@@ -30,6 +30,8 @@ impl Display for Token {
                 Ident(i) => write!(f, "{i}"),
                 Increment => write!(f, "++"),
                 KeywordInt => write!(f, "int "),
+                KeywordIf => write!(f, "if "),
+                KeywordElse => write!(f, "else "),
                 KeywordReturn => write!(f, "return "),
                 KeywordVoid => write!(f, "void "),
                 LeftShift => write!(f, "<<"),
@@ -53,6 +55,8 @@ impl Display for Token {
                 Star => write!(f, "*"),
                 StarEqual => write!(f, "*="),
                 Tilde => write!(f, "~"),
+                Question => write!(f, "?"),
+                Colon => write!(f, ":"),
             }
         } else {
             // Used for error output
@@ -60,6 +64,8 @@ impl Display for Token {
                 KeywordInt => write!(f, "\"int\""),
                 KeywordVoid => write!(f, "\"void\""),
                 KeywordReturn => write!(f, "\"return\""),
+                KeywordIf => write!(f, "\"if\""),
+                KeywordElse => write!(f, "\"else\""),
                 Ident(_) if f.sign_minus() => write!(f, "identifier"),
                 Constant(_) if f.sign_minus() => write!(f, "constant"),
                 other => write!(f, "\"{other:#}\""),

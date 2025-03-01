@@ -14,7 +14,9 @@ use macros::*;
 
 tokens! {
 Tokenizer for Token with TokenError:
+    r"if\b": KeywordIf,
     r"int\b": KeywordInt,
+    r"else\b": KeywordElse,
     r"void\b": KeywordVoid,
     r"return\b": KeywordReturn,
     r"[a-zA-Z_]\w*\b": Ident(String),
@@ -52,6 +54,8 @@ Tokenizer for Token with TokenError:
     r"\|": Pipe,
     r"\^": Caret,
     r"~": Tilde,
+    r"\?": Question,
+    r":": Colon,
     r"\(": OpenParen,
     r"\)": CloseParen,
     r"\{": OpenBrace,

@@ -9,8 +9,10 @@ use crate::parser::Block;
 use crate::parser::BlockItem;
 use crate::parser::Declaration;
 use crate::parser::Exp;
+use crate::parser::ExpressionStmt;
 use crate::parser::Function;
 use crate::parser::IfStmt;
+use crate::parser::ReturnStmt;
 use crate::parser::Statement;
 use crate::semantic::SemanticErrors;
 use crate::semantic::UniqueLabelFactory;
@@ -28,9 +30,8 @@ pub enum Error {
         second: Span<String>,
     },
 
-    // TODO: get spans on this. Trickier than I might otherwise hope for!
     #[error("Unresolved variable: {0}")]
-    UnresolvedVariable(String),
+    UnresolvedVariable(#[label("used here")] Span<String>),
 
     #[error("Cannot assign to expression")]
     InvalidAssignment(#[label] SourceSpan),
@@ -129,21 +130,24 @@ impl VariableResolution {
         })
     }
 
-    fn resolve_exp(self: &mut Self, exp: Exp) -> Result<Exp, SemanticErrors> {
-        match exp {
+    /// NOTE: this cannot be used in try_fmap, because it turns out it's quite tricky to get that
+    /// to acknowledge external nodes! So I gave up :)
+    fn resolve_exp(self: &mut Self, exp: Span<Exp>) -> Result<Span<Exp>, SemanticErrors> {
+        Ok(match exp.inner {
             // Make sure all assignments are to Var, and nothing else
             Exp::Assignment { lhs, op, rhs } => match *lhs.inner {
                 Exp::Var { .. } => Ok(Exp::Assignment { lhs, op, rhs }),
-                _ => Err(Error::InvalidAssignment(lhs.span))?,
+                _ => Err(Error::InvalidAssignment(lhs.span)),
             },
             // Replace all instantiations of Var with their unique name as determined by the
             // declaration
             Exp::Var { ident } => match self.variable_map.resolve(&ident) {
-                None => Err(Error::UnresolvedVariable(ident))?,
+                None => Err(Error::UnresolvedVariable(ident.span(exp.span))),
                 Some(ident) => Ok(Exp::Var { ident }),
             },
             otherwise => Ok(otherwise),
-        }
+        }?
+        .span(exp.span))
     }
 
     fn resolve_stmt(self: &mut Self, stmt: Statement) -> Result<Statement, SemanticErrors> {
@@ -159,12 +163,8 @@ impl VariableResolution {
             };
         }
 
-        macro_rules! e {
-            ($v:ident) => {
-                $v.try_fmap(&mut |exp| self.resolve_exp(exp))?
-            };
-        }
-
+        // very sad that i'm not auto-generating more of this... ;-;
+        // oh well at least it's mostly just the one spot!
         Ok(match stmt {
             Statement::Block(block) => Statement::Block(self.resolve_block(block)?),
             Statement::IfStmt(IfStmt {
@@ -172,13 +172,18 @@ impl VariableResolution {
                 body,
                 else_stmt,
             }) => Statement::IfStmt(IfStmt {
-                exp: e!(exp),
+                exp: self.resolve_exp(exp)?,
                 body: s!(body),
                 else_stmt: s!(else_stmt),
             }),
-            otherwise @ (Statement::ExpressionStmt(_) | Statement::ReturnStmt(_)) => {
-                e!(otherwise)
+            Statement::ExpressionStmt(ExpressionStmt { exp }) => {
+                Statement::ExpressionStmt(ExpressionStmt {
+                    exp: self.resolve_exp(exp)?,
+                })
             }
+            Statement::ReturnStmt(ReturnStmt { exp }) => Statement::ReturnStmt(ReturnStmt {
+                exp: self.resolve_exp(exp)?,
+            }),
             otherwise @ (Statement::LabelStmt(_)
             | Statement::GotoStmt(_)
             | Statement::NullStmt(_)) => otherwise,

@@ -21,7 +21,7 @@ fn assert_labels_eq<'a>(
 fn labels_unexpected() {
     let err = ParseError::UnexpectedToken {
         expected: Token::Plus,
-        actual: SpanToken {
+        actual: Span<Token> {
             token: Token::Star,
             span: (1, 1).into(),
         },
@@ -37,7 +37,7 @@ fn labels_context() {
         node_name: "Function".to_string(),
         err: Box::new(ParseError::UnexpectedToken {
             expected: Token::Plus,
-            actual: SpanToken {
+            actual: Span<Token> {
                 token: Token::Star,
                 span: (1, 1).into(),
             },

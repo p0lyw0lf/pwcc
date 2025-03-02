@@ -1,19 +1,24 @@
 use core::iter::Iterator;
 
-use crate::lexer::SpanToken;
+use functional::Semigroup;
+
 use crate::lexer::Token;
 use crate::parser::ParseError;
+use crate::span::SourceSpan;
+use crate::span::Span;
 
 pub trait FromTokens: Sized {
-    fn from_tokens(ts: &mut (impl Iterator<Item = SpanToken> + Clone)) -> Result<Self, ParseError>;
+    fn from_tokens(
+        ts: &mut (impl Iterator<Item = Span<Token>> + Clone),
+    ) -> Result<Span<Self>, ParseError>;
     fn from_raw_tokens(ts: &mut (impl Iterator<Item = Token> + Clone)) -> Result<Self, ParseError> {
         let tokens = ts
-            .map(|token| SpanToken {
-                token,
+            .map(|token| Span {
+                inner: token,
                 span: (0, 0).into(),
             })
             .collect::<Vec<_>>();
-        Self::from_tokens(&mut tokens.into_iter())
+        Self::from_tokens(&mut tokens.into_iter()).map(|span| span.inner)
     }
 }
 
@@ -21,11 +26,16 @@ impl<T> FromTokens for Box<T>
 where
     T: FromTokens,
 {
-    fn from_tokens(ts: &mut (impl Iterator<Item = SpanToken> + Clone)) -> Result<Self, ParseError> {
+    fn from_tokens(
+        ts: &mut (impl Iterator<Item = Span<Token>> + Clone),
+    ) -> Result<Span<Self>, ParseError> {
         let mut iter = ts.clone();
-        let out = T::from_tokens(&mut iter)?;
+        let Span { inner, span } = T::from_tokens(&mut iter)?;
         *ts = iter;
-        Ok(Box::new(out))
+        Ok(Span {
+            inner: Box::new(inner),
+            span,
+        })
     }
 }
 
@@ -33,13 +43,23 @@ impl<T> FromTokens for Option<T>
 where
     T: FromTokens,
 {
-    fn from_tokens(ts: &mut (impl Iterator<Item = SpanToken> + Clone)) -> Result<Self, ParseError> {
+    fn from_tokens(
+        ts: &mut (impl Iterator<Item = Span<Token>> + Clone),
+    ) -> Result<Span<Self>, ParseError> {
         let mut iter = ts.clone();
-        let out = T::from_tokens(&mut iter).ok();
-        if out.is_some() {
-            *ts = iter;
-        }
-        Ok(out)
+        Ok(match T::from_tokens(&mut iter).ok() {
+            Some(Span { inner, span }) => {
+                *ts = iter;
+                Span {
+                    inner: Some(inner),
+                    span,
+                }
+            }
+            None => Span {
+                inner: None,
+                span: SourceSpan::empty(),
+            },
+        })
     }
 }
 
@@ -47,14 +67,21 @@ impl<T> FromTokens for Vec<T>
 where
     T: FromTokens,
 {
-    fn from_tokens(ts: &mut (impl Iterator<Item = SpanToken> + Clone)) -> Result<Self, ParseError> {
+    fn from_tokens(
+        ts: &mut (impl Iterator<Item = Span<Token>> + Clone),
+    ) -> Result<Span<Self>, ParseError> {
         let mut out = Self::new();
+        let mut overall_span = SourceSpan::empty();
         let mut iter = ts.clone();
-        while let Ok(subnode) = T::from_tokens(&mut iter) {
-            out.push(subnode);
+        while let Ok(Span { inner, span }) = T::from_tokens(&mut iter) {
+            out.push(inner);
+            overall_span = overall_span.sconcat(span);
         }
         *ts = iter;
-        Ok(out)
+        Ok(Span {
+            inner: out,
+            span: overall_span,
+        })
     }
 }
 

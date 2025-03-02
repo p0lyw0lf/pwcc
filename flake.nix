@@ -23,12 +23,7 @@
           inherit system overlays;
         };
 
-        rust-bin = pkgs.rust-bin.stable.latest.default.override {
-          extensions = [
-            "rust-analyzer"
-            "rust-src"
-          ];
-        };
+        rust-bin = pkgs.pkgsBuildHost.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
 
         buildInputs = [
           rust-bin

@@ -23,21 +23,6 @@ pub enum Error {
     UnresolvedVariable(String),
     #[error("Cannot assign to: {0:?}")]
     InvalidAssignment(Exp),
-    #[error("While analyzing {node}")]
-    Context {
-        node: String,
-        #[source]
-        #[diagnostic_source]
-        err: Box<SemanticErrors>,
-    },
-}
-
-fn context(err: SemanticErrors, node: &str) -> SemanticErrors {
-    Error::Context {
-        node: node.to_string(),
-        err: Box::new(err),
-    }
-    .into()
 }
 
 /// Maps potentially-conflicting names to globally-unique names, in a given context
@@ -148,19 +133,17 @@ impl VariableResolution {
         // This is by far the saddest function...
 
         macro_rules! s {
-            ($v:ident, $context:literal) => {
+            ($v:ident) => {
                 $v.try_fmap_impl(
                     &mut |stmt| self.resolve_stmt(stmt),
                     functional::RecursiveCall::None,
-                )
-                .map_err(|err| context(err, $context))?
+                )?
             };
         }
 
         macro_rules! e {
-            ($v:ident, $context:literal) => {
-                $v.try_fmap(&mut |exp| self.resolve_exp(exp))
-                    .map_err(|err| context(err, $context))?
+            ($v:ident) => {
+                $v.try_fmap(&mut |exp| self.resolve_exp(exp))?
             };
         }
 
@@ -171,15 +154,12 @@ impl VariableResolution {
                 body,
                 else_stmt,
             }) => Statement::IfStmt(IfStmt {
-                exp: e!(exp, "if statement condition"),
-                body: s!(body, "if statement body"),
-                else_stmt: s!(else_stmt, "else statement body"),
+                exp: e!(exp),
+                body: s!(body),
+                else_stmt: s!(else_stmt),
             }),
-            otherwise @ Statement::ExpressionStmt(_) => {
-                e!(otherwise, "expression statement")
-            }
-            otherwise @ Statement::ReturnStmt(_) => {
-                e!(otherwise, "return statement")
+            otherwise @ (Statement::ExpressionStmt(_) | Statement::ReturnStmt(_)) => {
+                e!(otherwise)
             }
             otherwise @ (Statement::LabelStmt(_)
             | Statement::GotoStmt(_)

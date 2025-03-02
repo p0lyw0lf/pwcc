@@ -1,12 +1,15 @@
 macro_rules! expect_token {
-    ($ts:ident, $token:ident$(($pat:pat) : $ty:ty)?) => {
+    ($ts:ident, $span:ident, $token:ident$(($pat:pat) : $ty:ty)?) => {
         {
             use Token::*;
             (match $ts.next() {
                 None => Err(ParseError::MissingToken {
                     expected: $token$((<$ty as Default>::default().into()))?,
                 }),
-                Some(SpanToken { token: $token$((v @ $pat))?, .. }) => Ok(($(<$ty>::from(v))?)),
+                Some(Span { inner: $token$((v @ $pat))?, span }) => {
+                    $span = $span.sconcat(span);
+                    Ok(($(Span { inner: <$ty>::from(v), span })?))
+                }
                 Some(t) => Err(ParseError::UnexpectedToken {
                     expected: $token$((<$ty as Default>::default().into()))?,
                     actual: t,
@@ -68,29 +71,43 @@ macro_rules! nodes {
     ; )*) => {
         #[functional_macros::ast]
         mod ast {
-        use super::*;
+        use crate::span::Span;
+        use crate::span::SourceSpan;
+        use crate::lexer::Token;
+        use crate::parser::FromTokens;
+        use crate::parser::ToTokens;
+        use crate::parser::ParseError;
+        use crate::parser::expect_token;
+        use crate::parser::try_parse;
         $(
         $(
         // Multiplication
         #[derive(Debug)]
         #[cfg_attr(test, derive(PartialEq))]
         pub struct $node {$(
-            $(pub $m_sname: $m_subnode,)?
-            $(pub $m_cname: $m_ty,)?
+            $(pub $m_sname: Span<$m_subnode>,)?
+            $(pub $m_cname: Span<$m_ty>,)?
         )*}
 
         impl FromTokens for $node {
-            fn from_tokens(ts: &mut (impl Iterator<Item = SpanToken> + Clone)) -> Result<Self, ParseError> {
-                fn run(ts: &mut (impl Iterator<Item = SpanToken> + Clone)) -> Result<$node, ParseError> {
+            fn from_tokens(ts: &mut (impl Iterator<Item = Span<Token>> + Clone)) -> Result<Span<Self>, ParseError> {
+                fn run(ts: &mut (impl Iterator<Item = Span<Token>> + Clone)) -> Result<Span<$node>, ParseError> {
+                    let mut span = SourceSpan::empty();
                     $(
-                        $(expect_token!(ts, $m_token);)?
-                        $(let $m_sname: $m_subnode = FromTokens::from_tokens(ts)?;)?
-                        $(let $m_cname = expect_token!(ts, $m_ctoken($m_pat): $m_ty);)?
+                        $(expect_token!(ts, span, $m_token);)?
+                        $(
+                            let $m_sname: Span<$m_subnode> = FromTokens::from_tokens(ts)?;
+                            span = span.sconcat($m_sname.span);
+                        )?
+                        $(let $m_cname = expect_token!(ts, span, $m_ctoken($m_pat): $m_ty);)?
                     )*
-                    Ok($node {$(
-                        $($m_sname,)?
-                        $($m_cname,)?
-                    )*})
+                    Ok(Span {
+                        inner: $node {$(
+                            $($m_sname,)?
+                            $($m_cname,)?
+                        )*},
+                        span,
+                    })
                 }
 
                 run(ts).map_err(|e| ParseError::Context {
@@ -110,8 +127,8 @@ macro_rules! nodes {
                 ::core::iter::empty()
                 $(.chain(
                     $(::core::iter::once(Token::$m_token))?
-                    $($m_sname.to_tokens())?
-                    $(::core::iter::once(Token::$m_ctoken($m_cname.into())))?
+                    $($m_sname.inner.to_tokens())?
+                    $(::core::iter::once(Token::$m_ctoken($m_cname.inner.into())))?
                 ))*
             }
         }
@@ -128,31 +145,31 @@ macro_rules! nodes {
         )*}
 
         impl FromTokens for $node {
-            fn from_tokens(ts: &mut (impl Iterator<Item = SpanToken> + Clone)) -> Result<Self, ParseError> {
-                fn run(ts: &mut (impl Iterator<Item = SpanToken> + Clone)) -> Result<$node, ParseError> {
-                    $(
-                    let mut iter = ts.clone();
-                    if let Ok(out) = (|| -> Result<$node, ParseError> {
-                        $(
-                        let out = {
-                            expect_token!(iter, $a_token);
-                            $node::$a_token
-                        };
-                        )?
-                        $(
-                        let out = $node::$a_subnode($a_subnode::from_tokens(&mut iter)?);
-                        )?
-                        $(
-                        let out = $node::$a_ctoken(expect_token!(iter, $a_ctoken($a_pat): $a_ty));
-                        )?
-                        Ok(out)
-                    })() {
-                        *ts = iter;
-                        return Ok(out);
-                    }
-                    )*
-
-                    Err(ParseError::NoMatches)
+            fn from_tokens(ts: &mut (impl Iterator<Item = Span<Token>> + Clone)) -> Result<Span<Self>, ParseError> {
+                fn run(ts: &mut (impl Iterator<Item = Span<Token>> + Clone)) -> Result<Span<$node>, ParseError> {
+                    try_parse!(
+                        ts,
+                        Err(ParseError::NoMatches),
+                        $(|iter| {
+                            $(
+                                let mut span = SourceSpan::empty();
+                                expect_token!(iter, span, $a_token);
+                                let out = $node::$a_token;
+                            )?
+                            $(
+                                let Span { inner, span } = $a_subnode::from_tokens(&mut iter)?;
+                                let out = $node::$a_subnode(inner);
+                            )?
+                            $(
+                                let mut span = SourceSpan::empty();
+                                let out = $node::$a_ctoken(expect_token!(iter, span, $a_ctoken($a_pat): $a_ty));
+                            )?
+                            Ok(Span {
+                                inner: out,
+                                span,
+                            })
+                        },)*
+                    )
                 }
 
                 run(ts).map_err(|e| ParseError::Context {

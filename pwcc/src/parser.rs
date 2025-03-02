@@ -1,9 +1,11 @@
 use core::convert::From;
-use core::fmt::Debug;
 use core::iter::Iterator;
 
-use crate::lexer::SpanToken;
+use functional::Semigroup;
+
 use crate::lexer::Token;
+use crate::span::SourceSpan;
+use crate::span::Span;
 
 mod errors;
 mod macros;
@@ -76,23 +78,23 @@ nodes! {
             ident: String,
         },
         Unary {
-            op: UnaryOp,
-            exp: Box<Exp>,
+            op: Span<UnaryOp>,
+            exp: Span<Box<Exp>>,
         },
         Binary {
-            lhs: Box<Exp>,
-            op: BinaryOp,
-            rhs: Box<Exp>,
+            lhs: Span<Box<Exp>>,
+            op: Span<BinaryOp>,
+            rhs: Span<Box<Exp>>,
         },
         Ternary {
-            condition: Box<Exp>,
-            true_case: Box<Exp>,
-            false_case: Box<Exp>,
+            condition: Span<Box<Exp>>,
+            true_case: Span<Box<Exp>>,
+            false_case: Span<Box<Exp>>,
         },
         Assignment {
-            lhs: Box<Exp>, // Semantic analysis ensures this is a proper LValue
-            op: AssignmentOp,
-            rhs: Box<Exp>,
+            lhs: Span<Box<Exp>>, // Semantic analysis ensures this is a proper LValue
+            op: Span<AssignmentOp>,
+            rhs: Span<Box<Exp>>,
         },
     };
 }
@@ -188,33 +190,47 @@ impl Exp {
 }
 
 impl FromTokens for Exp {
-    fn from_tokens(ts: &mut (impl Iterator<Item = SpanToken> + Clone)) -> Result<Self, ParseError> {
+    fn from_tokens(
+        ts: &mut (impl Iterator<Item = Span<Token>> + Clone),
+    ) -> Result<Span<Self>, ParseError> {
         fn parse_primary(
-            ts: &mut (impl Iterator<Item = SpanToken> + Clone),
-        ) -> Result<Exp, ParseError> {
+            ts: &mut (impl Iterator<Item = Span<Token>> + Clone),
+        ) -> Result<Span<Exp>, ParseError> {
             try_parse!(
                 ts,
                 Err(ParseError::NoMatches),
                 |iter| {
-                    let constant = expect_token!(iter, Constant(_): isize);
-                    Ok(Exp::Constant { constant })
+                    let mut span = SourceSpan::empty();
+                    let constant = expect_token!(iter, span, Constant(_): isize);
+                    Ok(Span {
+                        inner: Exp::Constant {
+                            constant: constant.inner,
+                        },
+                        span,
+                    })
                 },
                 |iter| {
-                    let ident = expect_token!(iter, Ident(_): String);
-                    Ok(Exp::Var { ident })
+                    let mut span = SourceSpan::empty();
+                    let ident = expect_token!(iter, span, Ident(_): String);
+                    Ok(Span {
+                        inner: Exp::Var { ident: ident.inner },
+                        span,
+                    })
                 },
                 |iter| {
-                    expect_token!(iter, OpenParen);
+                    let mut _span = SourceSpan::empty();
+                    expect_token!(iter, _span, OpenParen);
                     let exp = parse_exp(&mut iter, Precedence::lowest())?;
-                    expect_token!(iter, CloseParen);
+                    expect_token!(iter, _span, CloseParen);
+                    // Don't include parenthesis in expression span
                     Ok(exp)
                 },
             )
         }
 
         fn parse_postfix(
-            ts: &mut (impl Iterator<Item = SpanToken> + Clone),
-        ) -> Result<Exp, ParseError> {
+            ts: &mut (impl Iterator<Item = Span<Token>> + Clone),
+        ) -> Result<Span<Exp>, ParseError> {
             let mut iter = ts.clone();
             let mut exp = parse_primary(&mut iter)?;
 
@@ -224,9 +240,15 @@ impl FromTokens for Exp {
                 iter = peek_iter;
 
                 // Left-associative
-                exp = Exp::Unary {
-                    op: UnaryOp::PostfixOp(op),
-                    exp: exp.boxed(),
+                exp = Span {
+                    span: op.span.sconcat(exp.span),
+                    inner: Exp::Unary {
+                        op: Span {
+                            inner: UnaryOp::PostfixOp(op.inner),
+                            span: op.span,
+                        },
+                        exp: exp.boxed(),
+                    },
                 };
 
                 peek_iter = iter.clone();
@@ -238,17 +260,23 @@ impl FromTokens for Exp {
         }
 
         fn parse_unary(
-            ts: &mut (impl Iterator<Item = SpanToken> + Clone),
-        ) -> Result<Exp, ParseError> {
+            ts: &mut (impl Iterator<Item = Span<Token>> + Clone),
+        ) -> Result<Span<Exp>, ParseError> {
             try_parse!(
                 ts,
                 Err(ParseError::NoMatches),
                 |iter| {
                     let prefix = PrefixOp::from_tokens(&mut iter)?;
                     let exp = parse_unary(&mut iter)?;
-                    Ok(Exp::Unary {
-                        op: UnaryOp::PrefixOp(prefix),
-                        exp: exp.boxed(),
+                    Ok(Span {
+                        span: prefix.span.sconcat(exp.span),
+                        inner: Exp::Unary {
+                            op: Span {
+                                inner: UnaryOp::PrefixOp(prefix.inner),
+                                span: prefix.span,
+                            },
+                            exp: exp.boxed(),
+                        },
                     })
                 },
                 |iter| { parse_postfix(&mut iter) },
@@ -256,9 +284,9 @@ impl FromTokens for Exp {
         }
 
         fn parse_exp(
-            ts: &mut (impl Iterator<Item = SpanToken> + Clone),
+            ts: &mut (impl Iterator<Item = Span<Token>> + Clone),
             min_prec: Precedence,
-        ) -> Result<Exp, ParseError> {
+        ) -> Result<Span<Exp>, ParseError> {
             let mut iter = ts.clone();
             let mut left = parse_unary(&mut iter)?;
 
@@ -271,33 +299,46 @@ impl FromTokens for Exp {
                 }
                 iter = peek_iter;
 
-                match op {
+                let mut span = op.span;
+                match op.inner {
                     BinaryTok::BinaryOp(op) => {
                         // Left-associative
                         let right = parse_exp(&mut iter, prec.next())?;
-                        left = Exp::Binary {
-                            lhs: left.boxed(),
-                            op,
-                            rhs: right.boxed(),
+                        left = Span {
+                            span: span.sconcat(left.span).sconcat(right.span),
+                            inner: Exp::Binary {
+                                lhs: left.boxed(),
+                                op: Span { inner: op, span },
+                                rhs: right.boxed(),
+                            },
                         };
                     }
                     BinaryTok::AssignmentOp(op) => {
                         // Right-associative
                         let right = parse_exp(&mut iter, prec)?;
-                        left = Exp::Assignment {
-                            lhs: left.boxed(),
-                            op,
-                            rhs: right.boxed(),
+                        left = Span {
+                            span: span.sconcat(left.span).sconcat(right.span),
+                            inner: Exp::Assignment {
+                                lhs: left.boxed(),
+                                op: Span { inner: op, span },
+                                rhs: right.boxed(),
+                            },
                         };
                     }
                     BinaryTok::Question => {
                         let middle = parse_exp(&mut iter, Precedence::lowest())?;
-                        expect_token!(iter, Colon);
+                        expect_token!(iter, span, Colon);
                         let right = parse_exp(&mut iter, prec)?;
-                        left = Exp::Ternary {
-                            condition: left.boxed(),
-                            true_case: middle.boxed(),
-                            false_case: right.boxed(),
+                        left = Span {
+                            span: span
+                                .sconcat(left.span)
+                                .sconcat(middle.span)
+                                .sconcat(right.span),
+                            inner: Exp::Ternary {
+                                condition: left.boxed(),
+                                true_case: middle.boxed(),
+                                false_case: right.boxed(),
+                            },
                         }
                     }
                 }
@@ -324,43 +365,46 @@ impl ToTokens for Exp {
         let out: Box<dyn Iterator<Item = Token>> = match self {
             Exp::Constant { constant } => Box::new(core::iter::once(Token::Constant(constant))),
             Var { ident } => Box::new(core::iter::once(Ident(ident))),
-            Unary { op, exp } => match op {
+            Unary { op, exp } => match op.inner {
                 UnaryOp::PrefixOp(op) => Box::new(
                     op.to_tokens()
                         .chain(core::iter::once(OpenParen))
-                        .chain(exp.to_tokens())
+                        .chain(exp.inner.to_tokens())
                         .chain(core::iter::once(CloseParen)),
                 ),
                 UnaryOp::PostfixOp(op) => Box::new(
                     core::iter::once(OpenParen)
-                        .chain(exp.to_tokens())
+                        .chain(exp.inner.to_tokens())
                         .chain(core::iter::once(CloseParen))
                         .chain(op.to_tokens()),
                 ),
             },
             Binary { lhs, op, rhs } => Box::new(
                 core::iter::once(OpenParen)
-                    .chain(lhs.to_tokens())
+                    .chain(lhs.inner.to_tokens())
                     .chain(core::iter::once(CloseParen))
-                    .chain(op.to_tokens())
+                    .chain(op.inner.to_tokens())
                     .chain(core::iter::once(OpenParen))
-                    .chain(rhs.to_tokens())
+                    .chain(rhs.inner.to_tokens())
                     .chain(core::iter::once(CloseParen)),
             ),
-            Assignment { lhs, op, rhs } => {
-                Box::new(lhs.to_tokens().chain(op.to_tokens()).chain(rhs.to_tokens()))
-            }
+            Assignment { lhs, op, rhs } => Box::new(
+                lhs.inner
+                    .to_tokens()
+                    .chain(op.inner.to_tokens())
+                    .chain(rhs.inner.to_tokens()),
+            ),
             Ternary {
                 condition,
                 true_case,
                 false_case,
             } => Box::new(
                 core::iter::once(OpenParen)
-                    .chain(condition.to_tokens())
+                    .chain(condition.inner.to_tokens())
                     .chain([CloseParen, Question, OpenParen].into_iter())
-                    .chain(true_case.to_tokens())
+                    .chain(true_case.inner.to_tokens())
                     .chain([CloseParen, Colon, OpenParen])
-                    .chain(false_case.to_tokens())
+                    .chain(false_case.inner.to_tokens())
                     .chain(core::iter::once(CloseParen)),
             ),
         };
@@ -370,12 +414,12 @@ impl ToTokens for Exp {
 
 pub fn parse<TS>(tokens: TS) -> Result<Program, ParseError>
 where
-    TS: IntoIterator<Item = SpanToken>,
+    TS: IntoIterator<Item = Span<Token>>,
     TS::IntoIter: Clone,
 {
     let mut iter = tokens.into_iter();
     Program::from_tokens(&mut iter).and_then(|p| match iter.next() {
         Some(token) => Err(ParseError::ExtraToken { actual: token }),
-        None => Ok(p),
+        None => Ok(p.inner),
     })
 }

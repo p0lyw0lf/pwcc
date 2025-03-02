@@ -1,10 +1,8 @@
 use core::concat;
 use core::fmt::Debug;
-use core::fmt::Display;
 use core::str::FromStr;
 
 use miette::Diagnostic;
-use miette::SourceSpan;
 use regex::Regex;
 use regex::RegexSet;
 use thiserror::Error;
@@ -64,31 +62,6 @@ Tokenizer for Token with TokenError:
     r";": Semicolon,
 }
 
-#[derive(Debug, Clone)]
-#[cfg_attr(test, derive(PartialEq))]
-pub struct SpanToken {
-    pub token: Token,
-    pub span: SourceSpan,
-}
-
-impl Display for SpanToken {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "{}", self.token)
-    }
-}
-
-impl From<SpanToken> for Token {
-    fn from(value: SpanToken) -> Self {
-        value.token
-    }
-}
-
-impl Into<SourceSpan> for SpanToken {
-    fn into(self) -> SourceSpan {
-        self.span
-    }
-}
-
 #[derive(Error, Diagnostic, Debug)]
 #[cfg_attr(test, derive(PartialEq))]
 pub enum LexError {
@@ -104,9 +77,9 @@ pub enum LexError {
 }
 
 /// Lexes a source file into a list of tokens.
-pub fn lex(mut source: &str) -> Result<Vec<SpanToken>, LexError> {
+pub fn lex(mut source: &str) -> Result<Vec<Span<Token>>, LexError> {
     let tokenizer = Tokenizer::new();
-    let mut out = Vec::<SpanToken>::new();
+    let mut out = Vec::new();
     let mut offset = 0;
     while !source.is_empty() {
         let old_len = source.len();
@@ -119,8 +92,8 @@ pub fn lex(mut source: &str) -> Result<Vec<SpanToken>, LexError> {
         offset += old_len - new_len;
 
         let (token, len) = tokenizer.consume_token(source, offset)?;
-        out.push(SpanToken {
-            token,
+        out.push(Span {
+            inner: token,
             span: (offset, len).into(),
         });
         source = &source[len..];

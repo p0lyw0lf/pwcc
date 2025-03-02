@@ -24,7 +24,7 @@ impl BaseCaseEmitter for Emitter {
     ) -> TokenStream2 {
         quote! {
             impl #impl_generics TryFunctor<#output> for #input #where_clause {
-                fn try_fmap<E: Semigroup + ControlFlow>(self, f: &mut impl FnMut(<Self as Functor<#output>>::Input) -> Result<#output, E>) -> Result<<Self as Functor<#output>>::Mapped, E> {
+                fn try_fmap_impl<E: Semigroup + ControlFlow>(self, f: &mut impl FnMut(<Self as Functor<#output>>::Input) -> Result<#output, E>, _how: RecursiveCall) -> Result<<Self as Functor<#output>>::Mapped, E> {
                     f(self)
                 }
             }
@@ -47,14 +47,23 @@ impl InductiveCaseEmitter for Emitter {
         let mut fn_body = make_fn_body(container, inner, output_inner.to_token_stream(), self);
         if container.ident() == inner.ident {
             fn_body = quote! {
-                let out = { #fn_body };
-                f(out?)
+                if how == RecursiveCall::None {
+                    return f(self);
+                }
+                if how == RecursiveCall::Begin {
+                    self = f(self)?;
+                }
+                let mut out = { #fn_body };
+                if how == RecursiveCall::End {
+                    out = f(out?)
+                }
+                out
             };
         }
 
         quote! {
             impl #impl_generics TryFunctor<#output_inner> for #input_outer #where_clause {
-                fn try_fmap<E: Semigroup + ControlFlow>(self, f: &mut impl FnMut(<Self as Functor<#output_inner>>::Input) -> Result<#output_inner, E>) -> Result<<Self as Functor<#output_inner>>::Mapped, E> {
+                fn try_fmap_impl<E: Semigroup + ControlFlow>(mut self, f: &mut impl FnMut(<Self as Functor<#output_inner>>::Input) -> Result<#output_inner, E>, how: RecursiveCall) -> Result<<Self as Functor<#output_inner>>::Mapped, E> {
                     let mut err = Option::<E>::None;
                     #fn_body
                 }
@@ -79,7 +88,7 @@ impl BodyEmitter for Emitter {
             }
             let ident = &field.ident;
             Some(quote! {
-                let #ident = match TryFunctor::<#output_inner>::try_fmap(#ident, f) {
+                let #ident = match TryFunctor::<#output_inner>::try_fmap_impl(#ident, f, how) {
                     Ok(v) => ::core::mem::MaybeUninit::new(v),
                     Err(e) => {
                         let new_err = err.sconcat(Some(e)).unwrap();

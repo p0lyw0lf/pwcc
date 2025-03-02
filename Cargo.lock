@@ -74,14 +74,14 @@ dependencies = [
 
 [[package]]
 name = "functional"
-version = "0.0.6"
+version = "0.0.7"
 dependencies = [
  "functional_macros",
 ]
 
 [[package]]
 name = "functional_macros"
-version = "0.0.6"
+version = "0.0.7"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -184,7 +184,7 @@ dependencies = [
 
 [[package]]
 name = "pwcc"
-version = "0.0.6"
+version = "0.0.7"
 dependencies = [
  "functional",
  "functional_macros",
@@ -195,7 +195,7 @@ dependencies = [
 
 [[package]]
 name = "pwcc_bin"
-version = "0.0.5"
+version = "0.0.7"
 dependencies = [
  "functional",
  "miette",

@@ -1,3 +1,5 @@
+use std::borrow::Borrow;
+
 use miette::Diagnostic;
 use thiserror::Error;
 
@@ -63,5 +65,11 @@ impl Semigroup for SemanticErrors {
 impl ControlFlow for SemanticErrors {
     fn cont(&self) -> bool {
         true
+    }
+}
+
+impl Borrow<dyn Diagnostic> for Box<SemanticErrors> {
+    fn borrow(&self) -> &(dyn Diagnostic + 'static) {
+        self.as_ref()
     }
 }

@@ -6,10 +6,10 @@ use std::str::FromStr;
 use proc_macro::TokenStream;
 use proc_macro::TokenTree;
 
+use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use quote::TokenStreamExt;
 use syn::ItemMod;
-use proc_macro2::TokenStream as TokenStream2;
 
 mod emitter;
 mod generics;
@@ -139,7 +139,7 @@ macro_rules! maybe {
 
 #[proc_macro_attribute]
 pub fn ast(attrs: TokenStream, item: TokenStream) -> TokenStream {
-let crate_name = proc_macro2::Ident::new("functional", proc_macro2::Span::call_site());
+    let crate_name = proc_macro2::Ident::new("functional", proc_macro2::Span::call_site());
 
     let enabled = EnabledTypeclasses::parse_attrs(attrs);
 
@@ -182,9 +182,12 @@ let crate_name = proc_macro2::Ident::new("functional", proc_macro2::Span::call_s
         let nodes = crate::nodes::coherence::filter_coherent(nodes);
 
         #[cfg(feature = "functor")]
-        if enabled.has_typeclass(&Typeclass::Functor) || enabled.has_typeclass(&Typeclass::TryFunctor) {
+        if enabled.has_typeclass(&Typeclass::Functor)
+            || enabled.has_typeclass(&Typeclass::TryFunctor)
+        {
             out.append_all(quote! {
                 use #crate_name::Functor;
+                use #crate_name::RecursiveCall;
             });
             traits::functor::emit(&mut out, &nodes, &traits::functor::Emitter);
         }

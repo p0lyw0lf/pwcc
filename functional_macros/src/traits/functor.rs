@@ -84,7 +84,7 @@ impl BaseCaseEmitter for Emitter {
             impl #impl_generics Functor<#output> for #input #where_clause {
                 type Input = #input;
                 type Mapped = #output;
-                fn fmap(self, f: &mut impl FnMut(Self::Input) -> #output) -> Self::Mapped {
+                fn fmap_impl(self, f: &mut impl FnMut(Self::Input) -> #output, _how: RecursiveCall) -> Self::Mapped {
                     f(self)
                 }
             }
@@ -180,8 +180,17 @@ impl InductiveCaseEmitter for Emitter {
         let mut fn_body = make_fn_body(container, inner, output_inner.to_token_stream(), self);
         if container.ident() == inner.ident {
             fn_body = quote! {
-                let out = { #fn_body };
-                f(out)
+                if how == RecursiveCall::None {
+                    return f(self);
+                }
+                if how == RecursiveCall::Begin {
+                    self = f(self);
+                }
+                let mut out = { #fn_body };
+                if how == RecursiveCall::End {
+                    out = f(out)
+                }
+                out
             };
         }
 
@@ -189,7 +198,7 @@ impl InductiveCaseEmitter for Emitter {
             impl #impl_generics Functor<#output_inner> for #input_outer #where_clause {
                 type Input = #input_inner;
                 type Mapped = #output_outer;
-                fn fmap(self, f: &mut impl FnMut(Self::Input) -> #output_inner) -> Self::Mapped {
+                fn fmap_impl(mut self, f: &mut impl FnMut(Self::Input) -> #output_inner, how: RecursiveCall) -> Self::Mapped {
                     #fn_body
                 }
             }
@@ -209,13 +218,13 @@ impl FieldEmitter for Emitter {
         // separate cases like this
         if named {
             if has_inner {
-                quote! { #ident: Functor::<#output_inner>::fmap(#ident, f) }
+                quote! { #ident: Functor::<#output_inner>::fmap_impl(#ident, f, how) }
             } else {
                 quote! { #ident }
             }
         } else {
             if has_inner {
-                quote! { Functor::<#output_inner>::fmap(#ident, f) }
+                quote! { Functor::<#output_inner>::fmap_impl(#ident, f, how) }
             } else {
                 quote! { #ident }
             }

@@ -12,9 +12,11 @@ use syn::Ident;
 use syn::Token;
 use syn::Type;
 
-use super::ANode;
-use super::ANodes;
-use super::AType;
+use crate::nodes::instantiation_collect_context;
+use crate::nodes::ANode;
+use crate::nodes::ANodes;
+use crate::nodes::AType;
+use crate::nodes::GenericContext;
 
 /// Given a path like A -> B -> C, collapse it into A -> C
 ///
@@ -49,7 +51,12 @@ use super::AType;
 /// So, we need to do something smarter. Given the definition in `LevelZero` substitutes `A` for
 /// the parameter `B` in `LevelOne`, we need to replace all instantiations of `B` with `A` if we're
 /// to move `LevelTwo` up to `LevelZero`. That's what this function does.
-pub fn collapse_ty_edge<'ast>(ab: &AType<'ast>, b: &ANode<'ast>, bc: &AType<'ast>) -> AType<'ast> {
+pub fn collapse_ty_edge<'ast>(
+    a_ctx: &GenericContext<'ast>,
+    ab: &AType<'ast>,
+    b: &ANode<'ast>,
+    bc: &AType<'ast>,
+) -> AType<'ast> {
     /// There's considerations like:
     /// one: LevelOne<A::Mapped>, two: LevelTwo<B::Mapped> needs to turn into
     /// LevelOne<(A::Mapped)::Mapped>. Similarly, we could have generic expressions instead of just
@@ -80,7 +87,10 @@ pub fn collapse_ty_edge<'ast>(ab: &AType<'ast>, b: &ANode<'ast>, bc: &AType<'ast
                     Some(s) => s,
                     None => return,
                 };
-                assert!(path.qself.is_none());
+                assert!(
+                    path.qself.is_none(),
+                    "unexpected qualified type in substituter"
+                );
                 if rest.len() > 0 {
                     // Best-effort; not 100% sure this will work all the time, may run into E0223:
                     // ambiguous associated type errors.
@@ -128,7 +138,13 @@ pub fn collapse_ty_edge<'ast>(ab: &AType<'ast>, b: &ANode<'ast>, bc: &AType<'ast
     let mut constant_map = HashMap::new();
 
     // Make substituter maps by iterating over the definition and instantiation at the same time
-    assert_eq!(b.generics().params.len(), ab.instantiation.len());
+    assert_eq!(
+        b.generics().params.len(),
+        ab.instantiation.len(),
+        "generic instantiations for node {} and edge {} should have the same length. Do you have an error in your declaration?",
+        b.ident(),
+        ab.ident
+    );
     for (key, value) in b.generics().params.iter().zip(ab.instantiation.iter()) {
         match key {
             GenericParam::Lifetime(key) => {
@@ -183,11 +199,13 @@ pub fn collapse_ty_edge<'ast>(ab: &AType<'ast>, b: &ANode<'ast>, bc: &AType<'ast
                 b.ident()
             ),
         })
-        .collect();
+        .collect::<Vec<_>>();
 
+    let ctx = instantiation_collect_context(a_ctx, ac_instantiation.iter().map(Deref::deref));
     AType {
         ident: bc.ident,
         instantiation: ac_instantiation,
+        ctx,
     }
 }
 
@@ -222,7 +240,7 @@ pub(crate) fn make_lattice<'ast>(mut nodes: ANodes<'ast>) -> Lattice<'ast> {
                 for ab in a_field.all_tys() {
                     let b = nodes.get(ab.ident).unwrap();
                     for bc in b.all_tys() {
-                        new_field_types.insert(collapse_ty_edge(ab, b, bc));
+                        new_field_types.insert(collapse_ty_edge(a.ctx(), ab, b, bc));
                     }
                 }
                 new_types.push(new_field_types);
@@ -245,7 +263,11 @@ pub(crate) fn make_lattice<'ast>(mut nodes: ANodes<'ast>) -> Lattice<'ast> {
         }
 
         // new_types should be completely clear at this point
-        assert_eq!(new_types.len(), 0);
+        assert_eq!(
+            new_types.len(),
+            0,
+            "new types should be complerely clear at this point"
+        );
     }
 
     // Pass 4: Check all nodes for coherence.

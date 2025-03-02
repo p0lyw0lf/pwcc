@@ -16,7 +16,6 @@ use crate::generics::generics_add_suffix;
 use crate::generics::generics_merge;
 use crate::generics::instantiation_add_suffix;
 use crate::generics::Behavior;
-use crate::nodes::instantiation_collect_context;
 use crate::nodes::ANode;
 use crate::nodes::ANodes;
 use crate::nodes::AType;
@@ -84,7 +83,7 @@ impl BaseCaseEmitter for Emitter {
             impl #impl_generics Functor<#output> for #input #where_clause {
                 type Input = #input;
                 type Mapped = #output;
-                fn fmap_impl(self, f: &mut impl FnMut(Self::Input) -> #output, _how: RecursiveCall) -> Self::Mapped {
+                fn fmap_impl(self, f: &mut impl FnMut(#input) -> #output, _how: RecursiveCall) -> #output {
                     f(self)
                 }
             }
@@ -118,10 +117,7 @@ fn emit_inductive_case<'ast>(
     let ident = container.ident();
     let inner_node = lattice.get(inner.ident).expect("missing node");
     let inner_ident = inner_node.ident();
-
-    let container_ctx = container.ctx();
-    let inner_ctx =
-        instantiation_collect_context(container_ctx, inner.instantiation.iter().map(Deref::deref));
+    let inner_ctx = &inner.ctx;
 
     let container_generics = container.generics();
 
@@ -198,7 +194,7 @@ impl InductiveCaseEmitter for Emitter {
             impl #impl_generics Functor<#output_inner> for #input_outer #where_clause {
                 type Input = #input_inner;
                 type Mapped = #output_outer;
-                fn fmap_impl(mut self, f: &mut impl FnMut(Self::Input) -> #output_inner, how: RecursiveCall) -> Self::Mapped {
+                fn fmap_impl(mut self, f: &mut impl FnMut(#input_inner) -> #output_inner, how: RecursiveCall) -> #output_outer {
                     #fn_body
                 }
             }

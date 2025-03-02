@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::collections::HashSet;
+use std::hash::Hash;
 use std::ops::Deref;
 
 use syn::spanned::Spanned;
@@ -60,7 +61,7 @@ impl<'ast> Visit<'ast> for BaseNodes<'ast> {
 ///
 /// Then the GenericContext inside the `Result` body is `<T, E>`, and the GenericContext used by
 /// the `Ok` variant is `T`.
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, Default, PartialEq, Eq, Clone)]
 pub struct GenericContext<'ast> {
     lifetimes: HashSet<&'ast Ident>,
     types: HashSet<&'ast Ident>,
@@ -71,11 +72,20 @@ impl<'ast> GenericContext<'ast> {
     pub fn has_lifetime(&self, i: &'ast Ident) -> bool {
         self.lifetimes.contains(i)
     }
+    pub fn get_lifetime(&self, i: &Ident) -> Option<&'ast Ident> {
+        self.lifetimes.get(i).map(|x| *x)
+    }
     pub fn has_type(&self, i: &'ast Ident) -> bool {
         self.types.contains(i)
     }
+    pub fn get_type(&self, i: &Ident) -> Option<&'ast Ident> {
+        self.types.get(i).map(|x| *x)
+    }
     pub fn has_const(&self, i: &'ast Ident) -> bool {
         self.consts.contains(i)
+    }
+    pub fn get_const(&self, i: &Ident) -> Option<&'ast Ident> {
+        self.consts.get(i).map(|x| *x)
     }
     pub fn intersects(&self, other: &GenericContext<'ast>) -> bool {
         !self.types.is_disjoint(&other.types)
@@ -103,40 +113,39 @@ pub fn generics_collect_context<'ast>(generics: &'ast Generics) -> GenericContex
 
 /// Collects all the idents found in an instantiation, given a parent `ctx`.
 /// In the previous example with `Result`, this would be the `Ok(T)` part.
-pub fn instantiation_collect_context<'vec, 'ast: 'vec>(
+///
+/// NOTE: The lifetimes work out because we can copy the &'ast references out of the parent context.
+pub fn instantiation_collect_context<'vec, 'ast>(
     ctx: &GenericContext<'ast>,
-    // NOTE: this seems a bit expensive, but it's entirely necessary for the lifetimes to work out:
-    // `AType.instantation` _must_ be `Cow` (or something equivalent, because I do not want to do
-    // arena things), so a borrowed version of this iterator would restrict `'ast` to be the
-    // lifetime of the `Cow`, which is not what we want.
-    // https://play.rust-lang.org/?version=stable&mode=debug&edition=2021&gist=c2b2dcc3a384575f24218ec1bb5ee6fd
-    instantiation: impl Iterator<Item = &'ast GenericArgument> + 'vec,
-) -> GenericContext<'vec> {
+    instantiation: impl Iterator<Item = &'vec GenericArgument> + 'vec,
+) -> GenericContext<'ast> {
     struct Collect<'ast, 'outer> {
         parent_ctx: &'outer GenericContext<'ast>,
         ctx: GenericContext<'ast>,
     }
 
-    impl<'ast, 'outer> Visit<'ast> for Collect<'ast, 'outer> {
-        fn visit_lifetime(&mut self, l: &'ast syn::Lifetime) {
-            if self.parent_ctx.has_lifetime(&l.ident) {
-                self.ctx.lifetimes.insert(&l.ident);
+    impl<'ast, 'vec, 'outer> Visit<'vec> for Collect<'ast, 'outer> {
+        fn visit_lifetime(&mut self, l: &'vec syn::Lifetime) {
+            if let Some(ident) = self.parent_ctx.get_lifetime(&l.ident) {
+                self.ctx.lifetimes.insert(ident);
             }
             visit::visit_lifetime(self, l);
         }
 
-        fn visit_type_path(&mut self, t: &'ast syn::TypePath) {
-            if let Some(first) = t.path.segments.first() {
-                if t.qself.is_none() && self.parent_ctx.has_type(&first.ident) {
-                    self.ctx.types.insert(&first.ident);
+        fn visit_type_path(&mut self, t: &'vec syn::TypePath) {
+            if t.qself.is_none() {
+                if let Some(first) = t.path.segments.first() {
+                    if let Some(ident) = self.parent_ctx.get_type(&first.ident) {
+                        self.ctx.types.insert(ident);
+                    }
                 }
             }
             visit::visit_type_path(self, t);
         }
 
-        fn visit_ident(&mut self, i: &'ast syn::Ident) {
-            if self.parent_ctx.has_const(&i) {
-                self.ctx.consts.insert(&i);
+        fn visit_ident(&mut self, i: &'vec syn::Ident) {
+            if let Some(ident) = self.parent_ctx.get_const(i) {
+                self.ctx.consts.insert(ident);
             }
             visit::visit_ident(self, i);
         }
@@ -174,21 +183,39 @@ impl<'ast> AField<'ast> {
 }
 
 /// An "annotated type" of a field that corresponds to one of our lattice types.
-#[derive(Debug, Hash, PartialEq, Eq, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AType<'ast> {
     /// An index into the outer Nodes structure
     pub ident: &'ast Ident,
     /// The instantiation of generic arguments for this type. May correspond to the instantion
     /// defined in the field, or may be created as a result of propagating child relationships.
-    pub instantiation: Vec<Cow<'ast, GenericArgument>>, // Vec<Cow<'ast, GenericArgument>>,
+    pub instantiation: Vec<Cow<'ast, GenericArgument>>,
+    /// The computed generic context, as collected from the parent. This can be used to determine
+    /// which parts of `instantiation` are generic vs which are concrete.
+    pub ctx: GenericContext<'ast>,
 }
 
-fn convert_field<'ast>(nodes: &BaseNodes<'ast>, field: &'ast Field, index: usize) -> AField<'ast> {
+// We need to derive this and other traits manually, to ignore `ctx`
+impl<'ast> Hash for AType<'ast> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.ident.hash(state);
+        self.instantiation.hash(state);
+    }
+}
+
+fn convert_field<'ast>(
+    nodes: &BaseNodes<'ast>,
+    ctx: &GenericContext<'ast>,
+    field: &'ast Field,
+    index: usize,
+) -> AField<'ast> {
     struct TypeVisitor<'ast, 'a> {
         /// The types we're looking for
         nodes: &'a BaseNodes<'ast>,
         /// All the collected types we've seen so far
         tys: HashSet<AType<'ast>>,
+        /// The generic context of the node we're currently at
+        ctx: &'a GenericContext<'ast>,
     }
     impl<'ast, 'a> Visit<'ast> for TypeVisitor<'ast, 'a> {
         fn visit_type_path(&mut self, ty: &'ast syn::TypePath) {
@@ -198,15 +225,20 @@ fn convert_field<'ast>(nodes: &BaseNodes<'ast>, field: &'ast Field, index: usize
                 let segment = ty.path.segments.first().unwrap();
                 let ident = &segment.ident;
                 if self.nodes.contains_key(ident) {
-                    self.tys.insert(AType {
-                        ident,
-                        instantiation: if let PathArguments::AngleBracketed(args) =
-                            &segment.arguments
-                        {
+                    let instantiation =
+                        if let PathArguments::AngleBracketed(args) = &segment.arguments {
                             args.args.iter().map(Cow::Borrowed).collect()
                         } else {
                             Vec::default()
-                        },
+                        };
+                    let ctx = instantiation_collect_context(
+                        self.ctx,
+                        instantiation.iter().map(Deref::deref),
+                    );
+                    self.tys.insert(AType {
+                        ident,
+                        instantiation,
+                        ctx,
                     });
                 }
             }
@@ -218,6 +250,7 @@ fn convert_field<'ast>(nodes: &BaseNodes<'ast>, field: &'ast Field, index: usize
     let mut visitor = TypeVisitor {
         nodes,
         tys: HashSet::new(),
+        ctx,
     };
     visitor.visit_field(field);
 
@@ -249,6 +282,7 @@ pub struct AVariant<'ast> {
 fn convert_variant<'nodes, 'ast>(
     nodes: &'nodes BaseNodes<'ast>,
     ident: &'ast Ident,
+    ctx: &GenericContext<'ast>,
     fields: &'ast Fields,
 ) -> AVariant<'ast> {
     let named = matches!(fields, syn::Fields::Named(_));
@@ -256,7 +290,7 @@ fn convert_variant<'nodes, 'ast>(
     let fields = fields
         .iter()
         .enumerate()
-        .map(|(index, field)| convert_field(nodes, field, index))
+        .map(|(index, field)| convert_field(nodes, ctx, field, index))
         .collect();
 
     AVariant {
@@ -331,15 +365,11 @@ impl<'ast> ANode<'ast> {
     }
 
     pub fn all_tys(&self) -> impl Iterator<Item = &'_ AType<'ast>> + '_ {
-        self.fields()
-            .map(|field| field.all_tys())
-            .flatten()
+        self.fields().map(|field| field.all_tys()).flatten()
     }
 
     pub fn direct_tys(&self) -> impl Iterator<Item = &'_ AType<'ast>> + '_ {
-        self.fields()
-            .map(|field| field.tys.iter())
-            .flatten()
+        self.fields().map(|field| field.tys.iter()).flatten()
     }
 
     pub fn fields_mut(&mut self) -> Box<dyn Iterator<Item = &'_ mut AField<'ast>> + '_> {
@@ -359,8 +389,8 @@ fn convert_struct<'nodes, 'ast>(
     nodes: &'nodes BaseNodes<'ast>,
     item_struct: &'ast ItemStruct,
 ) -> AStruct<'ast> {
-    let data = convert_variant(nodes, &item_struct.ident, &item_struct.fields);
     let ctx = generics_collect_context(&item_struct.generics);
+    let data = convert_variant(nodes, &item_struct.ident, &ctx, &item_struct.fields);
 
     AStruct {
         data,
@@ -371,12 +401,12 @@ fn convert_struct<'nodes, 'ast>(
 
 fn convert_enum<'ast>(nodes: &BaseNodes<'ast>, item_enum: &'ast ItemEnum) -> AEnum<'ast> {
     let ident = &item_enum.ident;
+    let ctx = generics_collect_context(&item_enum.generics);
     let variants = item_enum
         .variants
         .iter()
-        .map(|variant| convert_variant(nodes, &variant.ident, &variant.fields))
+        .map(|variant| convert_variant(nodes, &variant.ident, &ctx, &variant.fields))
         .collect();
-    let ctx = generics_collect_context(&item_enum.generics);
 
     AEnum {
         ident,
@@ -476,7 +506,9 @@ mod test {
                                 tys: [AType {
                                     ident,
                                     instantiation: Default::default(),
-                                }].into_iter().collect(),
+                                }]
+                                .into_iter()
+                                .collect(),
                                 indirect_tys: Default::default(),
                             }
                         })

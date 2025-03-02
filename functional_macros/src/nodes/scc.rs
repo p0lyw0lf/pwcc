@@ -11,7 +11,7 @@
 //!     b: B<T>,
 //!     c: C<T>,
 //! }
-//! struct B {
+//! struct B<T> {
 //!     c: C<T>,
 //! }
 //! struct C<T>(T);

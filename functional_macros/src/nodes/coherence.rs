@@ -28,16 +28,18 @@
 //! The check for this is simple: If, for a given outgoing edge, there exists another outgoing edge
 //! with a different generic context, we should remove that edge.
 //!
+//! Note that this should the _generic context_, not the _generic instantiation_. If things are
+//! instantiated to concrete values, and the generic contexts (things that are actually still
+//! generic given the declaration in the container) all overlap, then we're fine!
+//!
 //! Because we're already going thru all nodes to remove edges based on SCC connectivity, we should
 //! remove these edges before that pass, or, during that pass. To keep the invariant imposed by
 //! `Lattice`, we'll do it at the same time.
 
 use std::collections::HashSet;
-use std::ops::Deref;
 
 use syn::Ident;
 
-use crate::nodes::instantiation_collect_context;
 use crate::nodes::lattice::collapse_ty_edge;
 use crate::nodes::lattice::Lattice;
 use crate::nodes::scc::find_sccs;
@@ -45,7 +47,6 @@ use crate::nodes::scc::StronglyConnectedComponents;
 use crate::nodes::ANode;
 use crate::nodes::ANodes;
 use crate::nodes::AType;
-use crate::nodes::GenericContext;
 
 /// The first order of business is to run the topological sort to find the ordering we do the
 /// filtering in. We'll use the [Depth-first search](https://en.wikipedia.org/wiki/Topological_sorting#Depth-first_search) method.
@@ -115,16 +116,23 @@ pub fn filter_coherent<'ast>(lattice: Lattice<'ast>) -> ANodes<'ast> {
         // 1. Remove all outgoing edges where there are multiple different generic contexts
         let node = nodes.0.get(ident).unwrap();
         for other_ident in order.iter() {
-            // Clone is perhaps expensive here, but necessary, because otherwise we may be left
-            // with stale references to edges we want to remove
             let edges_with_other_ident = node
                 .all_tys()
                 .filter(|ty| ty.ident == *other_ident)
                 .map(Clone::clone)
                 .collect::<HashSet<_>>();
-            if edges_with_other_ident.len() > 1 {
-                eprintln!("// Node {ident}: filtering {other_ident} due to multiple conflicting generic contexts");
-                bad_edges.extend(edges_with_other_ident);
+            for edge_b in edges_with_other_ident.iter() {
+                for edge_c in edges_with_other_ident
+                    .iter()
+                    .filter(|edge_c| edge_b.ctx.intersects(&edge_c.ctx) && edge_b.ctx != edge_c.ctx)
+                {
+                    // Clone is perhaps expensive here, but necessary, because otherwise we may be left
+                    // with stale references to edges we want to remove
+                    let is_new = bad_edges.insert(edge_c.clone());
+                    if is_new {
+                        eprintln!("// Node {ident}: filtering {other_ident} due to multiple conflicting generic contexts");
+                    }
+                }
             }
         }
 
@@ -138,45 +146,27 @@ pub fn filter_coherent<'ast>(lattice: Lattice<'ast>) -> ANodes<'ast> {
 
         // 2. Remove all outgoing edges where there's other edges w/ overlapping generic contexts
         //    that cannot be transformed.
-        // First, let's cache all the generic contexts that result from the types
-        #[derive(Debug)]
-        struct ATypeWithContext<'ast, 'local> {
-            ty: AType<'ast>,
-            ctx: GenericContext<'local>,
-        }
         let node = nodes.0.get(ident).unwrap();
-        let tys = node
-            .all_tys()
-            .collect::<HashSet<_>>()
-            .into_iter()
-            .map(|ty| ATypeWithContext {
-                ty: ty.clone(),
-                ctx: instantiation_collect_context(
-                    node.ctx(),
-                    ty.instantiation.iter().map(Deref::deref),
-                ),
-            })
-            .collect::<Vec<_>>();
+        let tys = node.all_tys().collect::<HashSet<_>>();
         let direct_tys = node.direct_tys().collect::<HashSet<_>>();
         // Then, we'll look for pairs of edges where the contexts intersect, and the latter edge is
         // a direct edge.
         for edge_b in tys.iter() {
-            for edge_c in tys.iter().filter(|edge_c| {
-                direct_tys.contains(&edge_c.ty)
-                    && edge_b.ty != edge_c.ty
-                    && edge_b.ctx.intersects(&edge_c.ctx)
-            }) {
-                let node_c = &nodes[edge_c.ty.ident];
+            for edge_c in direct_tys
+                .iter()
+                .filter(|edge_c| edge_b != *edge_c && edge_b.ctx.intersects(&edge_c.ctx))
+            {
+                let node_c = &nodes[edge_c.ident];
                 // Look for an edge c -> b. If we can't find it, then a -> b is a bad edge.
                 if !node_c
                     .all_tys()
-                    .map(|ty| collapse_ty_edge(&edge_c.ty, node_c, ty))
-                    .any(|ty| ty == edge_b.ty)
+                    .map(|ty| collapse_ty_edge(node.ctx(), &edge_c, node_c, ty))
+                    .any(|ty| &&ty == edge_b)
                 {
-                    let edge_b_ident = edge_b.ty.ident;
-                    let edge_c_ident = edge_c.ty.ident;
+                    let edge_b_ident = edge_b.ident;
+                    let edge_c_ident = edge_c.ident;
                     eprintln!("// Node {ident}: filtering {edge_b_ident} due to {edge_c_ident} not being able to be transformed by it");
-                    bad_edges.insert(edge_b.ty.clone());
+                    bad_edges.insert((*edge_b).clone());
                 }
             }
         }

@@ -58,18 +58,28 @@ impl Display for Token {
                 Star => write!(f, "*"),
                 StarEqual => write!(f, "*="),
                 Tilde => write!(f, "~"),
+                KeywordBreak => write!(f, "break"),
+                KeywordContinue => write!(f, "continue"),
+                KeywordDo => write!(f, "do"),
+                KeywordFor => write!(f, "for "),
+                KeywordWhile => write!(f, "while "),
             }
         } else {
             // Used for error output
             match self {
                 Constant(_) if f.sign_minus() => write!(f, "constant"),
                 Ident(_) if f.sign_minus() => write!(f, "identifier"),
+                KeywordBreak => write!(f, "\"break\""),
+                KeywordContinue => write!(f, "\"continue\""),
+                KeywordDo => write!(f, "\"do\""),
                 KeywordElse => write!(f, "\"else\""),
+                KeywordFor => write!(f, "\"for\""),
                 KeywordGoto => write!(f, "\"goto\""),
                 KeywordIf => write!(f, "\"if\""),
                 KeywordInt => write!(f, "\"int\""),
                 KeywordReturn => write!(f, "\"return\""),
                 KeywordVoid => write!(f, "\"void\""),
+                KeywordWhile => write!(f, "\"while\""),
                 other => write!(f, "\"{other:#}\""),
             }
         }

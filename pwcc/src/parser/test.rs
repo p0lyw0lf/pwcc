@@ -329,12 +329,12 @@ fn if_statement() {
     assert_forwards(
         &tokens,
         &Statement::IfStmt(IfStmt {
-            exp: Exp::Var {
+            guard: Exp::Var {
                 ident: "a".to_string(),
             }
             .span((0, 0).into()),
             body: Statement::IfStmt(IfStmt {
-                exp: Exp::Binary {
+                guard: Exp::Binary {
                     lhs: Exp::Var {
                         ident: "a".to_string(),
                     }
@@ -386,7 +386,7 @@ fn if_statement_naked() {
             name: "main".to_string().span((0, 0).into()),
             body: Block {
                 items: vec![BlockItem::Statement(Statement::IfStmt(IfStmt {
-                    exp: Exp::Constant { constant: 0 }.span((0, 0).into()),
+                    guard: Exp::Constant { constant: 0 }.span((0, 0).into()),
                     body: Statement::ReturnStmt(ReturnStmt {
                         exp: Exp::Var {
                             ident: "a".to_string(),

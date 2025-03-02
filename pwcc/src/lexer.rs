@@ -15,12 +15,17 @@ use macros::*;
 
 tokens! {
 Tokenizer for Token with TokenError:
+    r"break\b": KeywordBreak,
+    r"continue\b": KeywordContinue,
+    r"do\b": KeywordDo,
+    r"else\b": KeywordElse,
+    r"for\b": KeywordFor,
+    r"goto\b": KeywordGoto,
     r"if\b": KeywordIf,
     r"int\b": KeywordInt,
-    r"else\b": KeywordElse,
-    r"goto\b": KeywordGoto,
-    r"void\b": KeywordVoid,
     r"return\b": KeywordReturn,
+    r"void\b": KeywordVoid,
+    r"while\b": KeywordWhile,
     r"[a-zA-Z_]\w*\b": Ident(String),
     r"[0-9]+\b": Constant(isize),
     r"\+=": PlusEqual,

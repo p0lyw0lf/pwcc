@@ -65,8 +65,12 @@ macro_rules! nodes {
             )* )
         )?
         $(
-            // Other: just emit normally
+            // Other enum: just emit normally
             enum $oe_tt:tt
+        )?
+        $(
+            // Other struct: just emit normally
+            struct $os_tt:tt
         )?
     ; )*) => {
         #[functional_macros::ast]
@@ -192,10 +196,16 @@ macro_rules! nodes {
         }
         )?
         $(
-        // Other
+        // Other enum
         #[derive(Debug)]
         #[cfg_attr(test, derive(PartialEq))]
         pub enum $node $oe_tt
+        )?
+        $(
+        // Other struct
+        #[derive(Debug)]
+        #[cfg_attr(test, derive(PartialEq))]
+        pub struct $node $os_tt;
         )?
         )* }
         pub use ast::*;

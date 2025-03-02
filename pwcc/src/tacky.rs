@@ -254,11 +254,11 @@ impl Chompable for parser::Statement {
                 });
             }
             IfStmt(parser::IfStmt {
-                exp,
+                guard,
                 body,
                 else_stmt: Span { inner: None, .. },
             }) => {
-                let condition = exp.chomp(ctx).chomp(ctx);
+                let condition = guard.chomp(ctx).chomp(ctx);
                 let end = ctx.tf.next_label("end");
                 ctx.push(Instruction::JumpIfZero {
                     condition,
@@ -268,7 +268,7 @@ impl Chompable for parser::Statement {
                 ctx.push(Instruction::Label(end));
             }
             IfStmt(parser::IfStmt {
-                exp,
+                guard,
                 body,
                 else_stmt:
                     Span {
@@ -276,7 +276,7 @@ impl Chompable for parser::Statement {
                         ..
                     },
             }) => {
-                let condition = exp.chomp(ctx).chomp(ctx);
+                let condition = guard.chomp(ctx).chomp(ctx);
                 let else_label = ctx.tf.next_label("else");
                 let end = ctx.tf.next_label("end");
                 ctx.push(Instruction::JumpIfZero {
@@ -291,6 +291,11 @@ impl Chompable for parser::Statement {
                 let _ = else_stmt.body.chomp(ctx);
                 ctx.push(Instruction::Label(end));
             }
+            BreakStmt(_break_stmt) => todo!(),
+            ContinueStmt(_continue_stmt) => todo!(),
+            WhileStmt(_while_stmt) => todo!(),
+            DoWhileStmt(_do_while_stmt) => todo!(),
+            ForStmt(_for_stmt) => todo!(),
         }
     }
 }

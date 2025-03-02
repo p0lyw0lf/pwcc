@@ -168,11 +168,11 @@ impl VariableResolution {
         Ok(match stmt {
             Statement::Block(block) => Statement::Block(self.resolve_block(block)?),
             Statement::IfStmt(IfStmt {
-                exp,
+                guard,
                 body,
                 else_stmt,
             }) => Statement::IfStmt(IfStmt {
-                exp: self.resolve_exp(exp)?,
+                guard: self.resolve_exp(guard)?,
                 body: s!(body),
                 else_stmt: s!(else_stmt),
             }),
@@ -184,9 +184,14 @@ impl VariableResolution {
             Statement::ReturnStmt(ReturnStmt { exp }) => Statement::ReturnStmt(ReturnStmt {
                 exp: self.resolve_exp(exp)?,
             }),
-            otherwise @ (Statement::LabelStmt(_)
+            otherwise @ (Statement::BreakStmt(_)
+            | Statement::ContinueStmt(_)
+            | Statement::LabelStmt(_)
             | Statement::GotoStmt(_)
             | Statement::NullStmt(_)) => otherwise,
+            Statement::WhileStmt(_while_stmt) => todo!(),
+            Statement::DoWhileStmt(_do_while_stmt) => todo!(),
+            Statement::ForStmt(_for_stmt) => todo!(),
         })
     }
 

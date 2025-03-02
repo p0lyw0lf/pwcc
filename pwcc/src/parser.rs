@@ -29,14 +29,39 @@ nodes! {
     );
     Block(*OpenBrace *<items: Vec<BlockItem>> *CloseBrace);
     BlockItem(+<Statement> +<Declaration>);
-    Statement(+<ExpressionStmt> +<IfStmt> +<LabelStmt> +<GotoStmt> +<ReturnStmt> +<Block> +<NullStmt>);
+    Statement(
+        +<ReturnStmt>
+        +<ExpressionStmt>
+        +<IfStmt>
+        +<BreakStmt>
+        +<ContinueStmt>
+        +<WhileStmt>
+        +<DoWhileStmt>
+        +<ForStmt>
+        +<Block>
+        +<LabelStmt>
+        +<GotoStmt>
+        +<NullStmt>
+    );
+    ReturnStmt(*KeywordReturn *<exp: Exp> *Semicolon);
     ExpressionStmt(*<exp: Exp> *Semicolon);
-    IfStmt(*KeywordIf *OpenParen *<exp: Exp> *CloseParen *<body: Box<Statement>> *<else_stmt: Option<ElseStmt>>);
+
+    IfStmt(*KeywordIf *OpenParen *<guard: Exp> *CloseParen *<body: Box<Statement>> *<else_stmt: Option<ElseStmt>>);
     ElseStmt(*KeywordElse *<body: Box<Statement>>);
+
+    BreakStmt(*KeywordBreak *<label: Option<LoopLabel>> *Semicolon);
+    ContinueStmt(*KeywordContinue *<label: Option<LoopLabel>> *Semicolon);
+    WhileStmt(*KeywordWhile *<label: Option<LoopLabel>> *OpenParen *<guard: Exp> *CloseParen *<body: Box<Statement>>);
+    DoWhileStmt(*KeywordDo *<body: Box<Statement>> *KeywordWhile *<label: Option<LoopLabel>> *OpenParen *<guard: Exp> *CloseParen *Semicolon);
+    ForStmt(*KeywordFor *<label: Option<LoopLabel>> *OpenParen *<init: ForInit> *<exp1: Option<Exp>> *Semicolon *<exp2: Option<Exp>> *CloseParen *<body: Box<Statement>>);
+    ForInit(+<Declaration> +<ForInitExp>);
+    ForInitExp(*<exp: Option<Exp>> *Semicolon);
+
     LabelStmt(*{label: Ident(_ = String)} *Colon);
     GotoStmt(*KeywordGoto *{label: Ident(_ = String)} *Semicolon);
-    ReturnStmt(*KeywordReturn *<exp: Exp> *Semicolon);
+
     NullStmt(*Semicolon);
+
     Declaration(*KeywordInt *{name: Ident(_ = String)} *<init: Initializer>);
     Initializer(+<NoInit> +<ExpressionInit>);
     NoInit(*Semicolon);
@@ -98,6 +123,23 @@ nodes! {
             rhs: Span<Box<Exp>>,
         },
     };
+    // Similarly with LoopLabel; we never want to be able to parse it from tokens, but we do want
+// to be able to create one later and see it
+    LoopLabel struct (pub String);
+}
+
+impl FromTokens for LoopLabel {
+    fn from_tokens(
+        _ts: &mut (impl Iterator<Item = Span<Token>> + Clone),
+    ) -> Result<Span<Self>, ParseError> {
+        Err(ParseError::NoMatches)
+    }
+}
+
+impl ToTokens for LoopLabel {
+    fn to_tokens(self) -> impl Iterator<Item = Token> {
+        core::iter::once(Token::Ident(self.0))
+    }
 }
 
 impl AssignmentOp {

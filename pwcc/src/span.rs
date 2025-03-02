@@ -37,9 +37,21 @@ impl Semigroup for SourceSpan {
     }
 }
 
+impl Display for SourceSpan {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({}, {})", self.start, self.end)
+    }
+}
+
 impl Into<miette::SourceSpan> for SourceSpan {
     fn into(self) -> miette::SourceSpan {
         (self.start, self.end - self.start).into()
+    }
+}
+
+impl Into<miette::SourceSpan> for &SourceSpan {
+    fn into(self) -> miette::SourceSpan {
+        (*self).into()
     }
 }
 
@@ -74,6 +86,12 @@ impl<T> Span<T> {
 }
 
 impl<T> Into<miette::SourceSpan> for Span<T> {
+    fn into(self) -> miette::SourceSpan {
+        self.span.into()
+    }
+}
+
+impl<T> Into<miette::SourceSpan> for &Span<T> {
     fn into(self) -> miette::SourceSpan {
         self.span.into()
     }

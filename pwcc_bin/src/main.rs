@@ -84,12 +84,7 @@ fn main() -> Result<()> {
 
     if stage == Lex {
         for token in tokens.into_iter() {
-            println!(
-                "{}: ({}, {})",
-                token.token,
-                token.span.offset(),
-                token.span.len()
-            );
+            println!("{}: {}", token.inner, token.span);
         }
         return Ok(());
     }
@@ -101,7 +96,7 @@ fn main() -> Result<()> {
     })?;
 
     if stage == Parse {
-        printer::pretty_print(tree);
+        println!("{}", printer::printable(tree));
         return Ok(());
     }
 
@@ -109,7 +104,7 @@ fn main() -> Result<()> {
         semantic::validate(tree).map_err(|e| Report::from(e).with_source_code(source.clone()))?;
 
     if stage == Validate {
-        printer::pretty_print(tree);
+        println!("{}", printer::printable(tree));
         return Ok(());
     }
 

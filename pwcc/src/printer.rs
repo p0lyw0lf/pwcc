@@ -76,44 +76,52 @@ impl Display for Token {
     }
 }
 
-pub fn pretty_print(tree: impl ToTokens) {
-    use Token::*;
+struct Printable(Vec<Token>);
 
-    let indentation = &mut 0usize;
-    let mut newline = |inc: bool, dec: bool| {
-        if inc {
-            *indentation = indentation.saturating_add(1);
+impl Display for Printable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let indentation = &mut 0usize;
+        let mut newline =
+            |f: &mut std::fmt::Formatter<'_>, inc: bool, dec: bool| -> std::fmt::Result {
+                if inc {
+                    *indentation = indentation.saturating_add(1);
+                }
+                if dec {
+                    *indentation = indentation.saturating_sub(1);
+                }
+
+                writeln!(f)?;
+                if *indentation > 0 {
+                    write!(f, "{}", "\t".repeat(*indentation))?;
+                }
+
+                Ok(())
+            };
+
+        for token in self.0.iter() {
+            match token {
+                Token::CloseBrace => {
+                    newline(f, false, true)?;
+                }
+                _ => {}
+            };
+
+            write!(f, "{token:#}")?;
+
+            match token {
+                Token::OpenBrace => {
+                    newline(f, true, false)?;
+                }
+                Token::Semicolon => {
+                    newline(f, false, false)?;
+                }
+                _ => {}
+            };
         }
-        if dec {
-            *indentation = indentation.saturating_sub(1);
-        }
-
-        println!();
-        if *indentation > 0 {
-            print!("{}", "\t".repeat(*indentation));
-        }
-    };
-
-    for token in tree.to_tokens() {
-        match token {
-            CloseBrace => {
-                newline(false, true);
-            }
-            _ => {}
-        };
-
-        print!("{token:#}");
-
-        match token {
-            OpenBrace => {
-                newline(true, false);
-            }
-            Semicolon => {
-                newline(false, false);
-            }
-            _ => {}
-        };
+        Ok(())
     }
+}
 
-    println!();
+pub fn printable(tree: impl ToTokens) -> impl Display {
+    Printable(tree.to_tokens().collect())
 }

@@ -7,6 +7,8 @@ use regex::Regex;
 use regex::RegexSet;
 use thiserror::Error;
 
+use crate::span::Span;
+
 mod macros;
 use macros::*;
 

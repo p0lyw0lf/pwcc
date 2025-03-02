@@ -9,6 +9,7 @@ use crate::printer::printable;
 use crate::semantic::SemanticErrors;
 use crate::span::SourceSpan;
 use crate::span::Span;
+use crate::span::Spanned;
 
 pub(super) fn check_operator_types(exp: Exp) -> Result<Exp, SemanticErrors> {
     match exp {
@@ -26,10 +27,7 @@ pub(super) fn check_operator_types(exp: Exp) -> Result<Exp, SemanticErrors> {
                 Ok(Exp::Unary { op, exp })
             } else {
                 return Err(Error::InvalidUnaryOp {
-                    op: Span {
-                        span: op.span,
-                        inner: format!("{}", printable(op.inner)),
-                    },
+                    op: format!("{}", printable(op.inner)).span(op.span),
                     exp: exp.span,
                 })?;
             }

@@ -12,11 +12,11 @@ use crate::parser::Exp;
 use crate::parser::Function;
 use crate::parser::IfStmt;
 use crate::parser::Statement;
-use crate::printer::printable;
 use crate::semantic::SemanticErrors;
 use crate::semantic::UniqueLabelFactory;
 use crate::span::SourceSpan;
 use crate::span::Span;
+use crate::span::Spanned;
 
 #[derive(Error, Diagnostic, Debug)]
 pub enum Error {
@@ -32,8 +32,8 @@ pub enum Error {
     #[error("Unresolved variable: {0}")]
     UnresolvedVariable(String),
 
-    #[error("Cannot assign to expression: {0}")]
-    InvalidAssignment(#[label] Span<String>),
+    #[error("Cannot assign to expression")]
+    InvalidAssignment(#[label] SourceSpan),
 }
 
 /// Maps potentially-conflicting names to globally-unique names, in a given context
@@ -78,10 +78,7 @@ impl VariableMap {
 
     /// Inserts a new mapping into the current block
     fn new_mapping(&mut self, uf: &mut UniqueLabelFactory, ident: Span<String>) -> Span<String> {
-        let unique_name = Span {
-            inner: uf.unique_label(&ident),
-            span: ident.span,
-        };
+        let unique_name = uf.unique_label(&ident).span(ident.span);
         self.this_block.insert(ident.inner, unique_name.clone());
         unique_name
     }
@@ -134,13 +131,13 @@ impl VariableResolution {
 
     fn resolve_exp(self: &mut Self, exp: Exp) -> Result<Exp, SemanticErrors> {
         match exp {
+            // Make sure all assignments are to Var, and nothing else
             Exp::Assignment { lhs, op, rhs } => match *lhs.inner {
                 Exp::Var { .. } => Ok(Exp::Assignment { lhs, op, rhs }),
-                otherwise => Err(Error::InvalidAssignment(Span {
-                    span: lhs.span,
-                    inner: format!("{}", printable(otherwise)),
-                }))?,
+                _ => Err(Error::InvalidAssignment(lhs.span))?,
             },
+            // Replace all instantiations of Var with their unique name as determined by the
+            // declaration
             Exp::Var { ident } => match self.variable_map.resolve(&ident) {
                 None => Err(Error::UnresolvedVariable(ident))?,
                 Some(ident) => Ok(Exp::Var { ident }),
@@ -150,8 +147,9 @@ impl VariableResolution {
     }
 
     fn resolve_stmt(self: &mut Self, stmt: Statement) -> Result<Statement, SemanticErrors> {
-        // This is by far the saddest function...
-
+        // This function is pretty tricky! Need to control the recursion pretty tightly so that we
+        // don't parse more expressions than we want to. We should only parse expressions when the
+        // block is correct, which also depends on our depth into resolve_stmt.
         macro_rules! s {
             ($v:ident) => {
                 $v.try_fmap_impl(

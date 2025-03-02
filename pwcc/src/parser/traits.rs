@@ -6,6 +6,7 @@ use crate::lexer::Token;
 use crate::parser::ParseError;
 use crate::span::SourceSpan;
 use crate::span::Span;
+use crate::span::Spanned;
 
 pub trait FromTokens: Sized {
     fn from_tokens(
@@ -13,10 +14,7 @@ pub trait FromTokens: Sized {
     ) -> Result<Span<Self>, ParseError>;
     fn from_raw_tokens(ts: &mut (impl Iterator<Item = Token> + Clone)) -> Result<Self, ParseError> {
         let tokens = ts
-            .map(|token| Span {
-                inner: token,
-                span: (0, 0).into(),
-            })
+            .map(|token| token.span(SourceSpan::empty()))
             .collect::<Vec<_>>();
         Self::from_tokens(&mut tokens.into_iter()).map(|span| span.inner)
     }
@@ -30,12 +28,9 @@ where
         ts: &mut (impl Iterator<Item = Span<Token>> + Clone),
     ) -> Result<Span<Self>, ParseError> {
         let mut iter = ts.clone();
-        let Span { inner, span } = T::from_tokens(&mut iter)?;
+        let out = T::from_tokens(&mut iter)?;
         *ts = iter;
-        Ok(Span {
-            inner: Box::new(inner),
-            span,
-        })
+        Ok(out.boxed())
     }
 }
 

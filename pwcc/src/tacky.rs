@@ -3,6 +3,7 @@ use std::collections::HashMap;
 
 use crate::parser;
 use crate::span::Span;
+use crate::span::Spanned;
 
 #[derive(Debug)]
 pub struct Program {
@@ -497,12 +498,10 @@ impl Chompable for parser::Exp {
                         parser::AssignmentOp::Equal => *rhs.inner,
                         otherwise => parser::Exp::Binary {
                             lhs,
-                            op: Span {
-                                inner: otherwise
-                                    .to_binary_op()
-                                    .expect("to convert AssignmentOp to BinaryOp"),
-                                span: op.span,
-                            },
+                            op: otherwise
+                                .to_binary_op()
+                                .expect("to convert AssignmentOp to BinaryOp")
+                                .span(op.span),
                             rhs,
                         },
                     };

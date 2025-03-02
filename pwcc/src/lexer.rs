@@ -8,6 +8,7 @@ use regex::RegexSet;
 use thiserror::Error;
 
 use crate::span::Span;
+use crate::span::Spanned;
 
 mod macros;
 use macros::*;
@@ -94,10 +95,7 @@ pub fn lex(mut source: &str) -> Result<Vec<Span<Token>>, LexError> {
         offset += old_len - new_len;
 
         let (token, len) = tokenizer.consume_token(source, offset)?;
-        out.push(Span {
-            inner: token,
-            span: (offset, len).into(),
-        });
+        out.push(token.span((offset, len).into()));
         source = &source[len..];
         offset += len;
     }
@@ -112,7 +110,7 @@ mod test {
 
     fn lex(source: &str) -> Result<Vec<Token>, LexError> {
         let tokens = super_lex(source)?;
-        Ok(tokens.into_iter().map(|token| token.into()).collect())
+        Ok(tokens.into_iter().map(|s| s.inner).collect())
     }
 
     #[test]

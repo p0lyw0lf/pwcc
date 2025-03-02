@@ -76,15 +76,6 @@ pub struct Span<T> {
     pub span: SourceSpan,
 }
 
-impl<T> Span<T> {
-    pub fn boxed(self) -> Span<Box<T>> {
-        Span {
-            inner: Box::new(self.inner),
-            span: self.span,
-        }
-    }
-}
-
 impl<T> Into<miette::SourceSpan> for Span<T> {
     fn into(self) -> miette::SourceSpan {
         self.span.into()
@@ -94,6 +85,31 @@ impl<T> Into<miette::SourceSpan> for Span<T> {
 impl<T> Into<miette::SourceSpan> for &Span<T> {
     fn into(self) -> miette::SourceSpan {
         self.span.into()
+    }
+}
+
+impl<T> Span<T> {
+    pub fn boxed(self) -> Span<Box<T>> {
+        Span {
+            inner: Box::new(self.inner),
+            span: self.span,
+        }
+    }
+}
+
+/// Helper trait so that, when constructing nodes that are surrounded by Span<> for testing, it's
+/// much easier
+pub trait Spanned: Sized {
+    fn span(self, s: SourceSpan) -> Span<Self>;
+}
+
+impl<T> Spanned for T {
+    #[inline(always)]
+    fn span(self, s: SourceSpan) -> Span<Self> {
+        Span {
+            inner: self,
+            span: s,
+        }
     }
 }
 

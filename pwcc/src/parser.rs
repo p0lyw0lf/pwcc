@@ -6,6 +6,7 @@ use functional::Semigroup;
 use crate::lexer::Token;
 use crate::span::SourceSpan;
 use crate::span::Span;
+use crate::span::Spanned;
 
 mod errors;
 mod macros;
@@ -202,20 +203,15 @@ impl FromTokens for Exp {
                 |iter| {
                     let mut span = SourceSpan::empty();
                     let constant = expect_token!(iter, span, Constant(_): isize);
-                    Ok(Span {
-                        inner: Exp::Constant {
-                            constant: constant.inner,
-                        },
-                        span,
-                    })
+                    Ok(Exp::Constant {
+                        constant: constant.inner,
+                    }
+                    .span(span))
                 },
                 |iter| {
                     let mut span = SourceSpan::empty();
                     let ident = expect_token!(iter, span, Ident(_): String);
-                    Ok(Span {
-                        inner: Exp::Var { ident: ident.inner },
-                        span,
-                    })
+                    Ok(Exp::Var { ident: ident.inner }.span(span))
                 },
                 |iter| {
                     let mut _span = SourceSpan::empty();
@@ -240,16 +236,12 @@ impl FromTokens for Exp {
                 iter = peek_iter;
 
                 // Left-associative
-                exp = Span {
-                    span: op.span.sconcat(exp.span),
-                    inner: Exp::Unary {
-                        op: Span {
-                            inner: UnaryOp::PostfixOp(op.inner),
-                            span: op.span,
-                        },
-                        exp: exp.boxed(),
-                    },
-                };
+                let span = op.span.sconcat(exp.span);
+                exp = Exp::Unary {
+                    op: UnaryOp::PostfixOp(op.inner).span(op.span),
+                    exp: exp.boxed(),
+                }
+                .span(span);
 
                 peek_iter = iter.clone();
                 next_token = PostfixOp::from_tokens(&mut peek_iter);
@@ -268,16 +260,12 @@ impl FromTokens for Exp {
                 |iter| {
                     let prefix = PrefixOp::from_tokens(&mut iter)?;
                     let exp = parse_unary(&mut iter)?;
-                    Ok(Span {
-                        span: prefix.span.sconcat(exp.span),
-                        inner: Exp::Unary {
-                            op: Span {
-                                inner: UnaryOp::PrefixOp(prefix.inner),
-                                span: prefix.span,
-                            },
-                            exp: exp.boxed(),
-                        },
-                    })
+                    let span = prefix.span.sconcat(exp.span);
+                    Ok(Exp::Unary {
+                        op: UnaryOp::PrefixOp(prefix.inner).span(prefix.span),
+                        exp: exp.boxed(),
+                    }
+                    .span(span))
                 },
                 |iter| { parse_postfix(&mut iter) },
             )
@@ -304,42 +292,39 @@ impl FromTokens for Exp {
                     BinaryTok::BinaryOp(op) => {
                         // Left-associative
                         let right = parse_exp(&mut iter, prec.next())?;
-                        left = Span {
-                            span: span.sconcat(left.span).sconcat(right.span),
-                            inner: Exp::Binary {
-                                lhs: left.boxed(),
-                                op: Span { inner: op, span },
-                                rhs: right.boxed(),
-                            },
-                        };
+                        let exp_span = span.sconcat(left.span).sconcat(right.span);
+                        left = Exp::Binary {
+                            lhs: left.boxed(),
+                            op: op.span(span),
+                            rhs: right.boxed(),
+                        }
+                        .span(exp_span);
                     }
                     BinaryTok::AssignmentOp(op) => {
                         // Right-associative
                         let right = parse_exp(&mut iter, prec)?;
-                        left = Span {
-                            span: span.sconcat(left.span).sconcat(right.span),
-                            inner: Exp::Assignment {
-                                lhs: left.boxed(),
-                                op: Span { inner: op, span },
-                                rhs: right.boxed(),
-                            },
-                        };
+                        let exp_span = span.sconcat(left.span).sconcat(right.span);
+                        left = Exp::Assignment {
+                            lhs: left.boxed(),
+                            op: op.span(span),
+                            rhs: right.boxed(),
+                        }
+                        .span(exp_span);
                     }
                     BinaryTok::Question => {
                         let middle = parse_exp(&mut iter, Precedence::lowest())?;
                         expect_token!(iter, span, Colon);
                         let right = parse_exp(&mut iter, prec)?;
-                        left = Span {
-                            span: span
-                                .sconcat(left.span)
-                                .sconcat(middle.span)
-                                .sconcat(right.span),
-                            inner: Exp::Ternary {
-                                condition: left.boxed(),
-                                true_case: middle.boxed(),
-                                false_case: right.boxed(),
-                            },
+                        let span = span
+                            .sconcat(left.span)
+                            .sconcat(middle.span)
+                            .sconcat(right.span);
+                        left = Exp::Ternary {
+                            condition: left.boxed(),
+                            true_case: middle.boxed(),
+                            false_case: right.boxed(),
                         }
+                        .span(span);
                     }
                 }
 

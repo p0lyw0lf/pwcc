@@ -10,13 +10,15 @@ use functional::TryFunctor;
 use crate::parser::Program;
 
 mod goto;
+mod loop_labeling;
 mod operator_types;
 mod variable_resolution;
 
 pub fn validate(p: Program) -> Result<Program, SemanticErrors> {
-    let p = p.try_fmap(&mut variable_resolution::resolve_variables)?;
     let p = p.try_fmap(&mut operator_types::check_operator_types)?;
     let p = p.try_fmap(&mut goto::analysis)?;
+    let p = p.try_fmap(&mut variable_resolution::resolve_variables)?;
+    let p = p.try_fmap(&mut loop_labeling::labeling)?;
     Ok(p)
 }
 
@@ -37,13 +39,16 @@ impl UniqueLabelFactory {
 pub enum SemanticError {
     #[error(transparent)]
     #[diagnostic(transparent)]
-    VariableResolutionError(#[from] variable_resolution::Error),
-    #[error(transparent)]
-    #[diagnostic(transparent)]
     OperandError(#[from] operator_types::Error),
     #[error(transparent)]
     #[diagnostic(transparent)]
     GotoError(#[from] goto::Error),
+    #[error(transparent)]
+    #[diagnostic(transparent)]
+    VariableResolutionError(#[from] variable_resolution::Error),
+    #[error(transparent)]
+    #[diagnostic(transparent)]
+    LoopLabelingError(#[from] loop_labeling::Error),
 }
 
 #[derive(Error, Diagnostic, Debug)]

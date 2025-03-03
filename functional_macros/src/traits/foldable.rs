@@ -108,11 +108,13 @@ fn emit_inductive_case<'ast>(out: &mut TokenStream2, container: &ANode<'ast>, in
 }
 
 pub fn emit<'ast>(out: &mut TokenStream2, nodes: &Lattice<'ast>) {
-    for node in nodes.values() {
-        emit_base_case(out, node);
-    }
-
     for container in nodes.values() {
+        if !container.emittable() {
+            continue;
+        }
+
+        emit_base_case(out, container);
+
         let types = container.all_tys().collect::<HashSet<_>>();
         for inner in types.into_iter() {
             emit_inductive_case(out, container, inner);

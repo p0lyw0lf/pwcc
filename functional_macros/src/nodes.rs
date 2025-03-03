@@ -17,9 +17,12 @@ use syn::ItemEnum;
 use syn::ItemStruct;
 use syn::PathArguments;
 
+use crate::options::ExtraNode;
+
 enum BaseNode<'ast> {
     Struct(&'ast ItemStruct),
     Enum(&'ast ItemEnum),
+    Extra(&'ast ExtraNode),
 }
 
 pub mod coherence;
@@ -92,6 +95,13 @@ impl<'ast> GenericContext<'ast> {
             || !self.lifetimes.is_disjoint(&other.lifetimes)
             || !self.consts.is_disjoint(&other.consts)
     }
+    fn merge(self, other: &GenericContext<'ast>) -> Self {
+        Self {
+            lifetimes: self.lifetimes.union(&other.lifetimes).copied().collect(),
+            types: self.types.union(&other.types).copied().collect(),
+            consts: self.consts.union(&other.consts).copied().collect(),
+        }
+    }
 }
 
 /// Collects all the idents found in a Generics node, which is found at a
@@ -111,6 +121,38 @@ pub fn generics_collect_context<'ast>(generics: &'ast Generics) -> GenericContex
     out
 }
 
+struct Collect<'ast, 'outer> {
+    parent_ctx: &'outer GenericContext<'ast>,
+    ctx: GenericContext<'ast>,
+}
+
+impl<'ast, 'vec, 'outer> Visit<'vec> for Collect<'ast, 'outer> {
+    fn visit_lifetime(&mut self, l: &'vec syn::Lifetime) {
+        if let Some(ident) = self.parent_ctx.get_lifetime(&l.ident) {
+            self.ctx.lifetimes.insert(ident);
+        }
+        visit::visit_lifetime(self, l);
+    }
+
+    fn visit_type_path(&mut self, t: &'vec syn::TypePath) {
+        if t.qself.is_none() {
+            if let Some(first) = t.path.segments.first() {
+                if let Some(ident) = self.parent_ctx.get_type(&first.ident) {
+                    self.ctx.types.insert(ident);
+                }
+            }
+        }
+        visit::visit_type_path(self, t);
+    }
+
+    fn visit_ident(&mut self, i: &'vec syn::Ident) {
+        if let Some(ident) = self.parent_ctx.get_const(i) {
+            self.ctx.consts.insert(ident);
+        }
+        visit::visit_ident(self, i);
+    }
+}
+
 /// Collects all the idents found in an instantiation, given a parent `ctx`.
 /// In the previous example with `Result`, this would be the `Ok(T)` part.
 ///
@@ -119,38 +161,6 @@ pub fn instantiation_collect_context<'vec, 'ast>(
     ctx: &GenericContext<'ast>,
     instantiation: impl Iterator<Item = &'vec GenericArgument> + 'vec,
 ) -> GenericContext<'ast> {
-    struct Collect<'ast, 'outer> {
-        parent_ctx: &'outer GenericContext<'ast>,
-        ctx: GenericContext<'ast>,
-    }
-
-    impl<'ast, 'vec, 'outer> Visit<'vec> for Collect<'ast, 'outer> {
-        fn visit_lifetime(&mut self, l: &'vec syn::Lifetime) {
-            if let Some(ident) = self.parent_ctx.get_lifetime(&l.ident) {
-                self.ctx.lifetimes.insert(ident);
-            }
-            visit::visit_lifetime(self, l);
-        }
-
-        fn visit_type_path(&mut self, t: &'vec syn::TypePath) {
-            if t.qself.is_none() {
-                if let Some(first) = t.path.segments.first() {
-                    if let Some(ident) = self.parent_ctx.get_type(&first.ident) {
-                        self.ctx.types.insert(ident);
-                    }
-                }
-            }
-            visit::visit_type_path(self, t);
-        }
-
-        fn visit_ident(&mut self, i: &'vec syn::Ident) {
-            if let Some(ident) = self.parent_ctx.get_const(i) {
-                self.ctx.consts.insert(ident);
-            }
-            visit::visit_ident(self, i);
-        }
-    }
-
     let mut c = Collect {
         parent_ctx: ctx,
         ctx: GenericContext::default(),
@@ -170,6 +180,8 @@ pub struct AField<'ast> {
     pub tys: HashSet<AType<'ast>>,
     /// All the other types that appear in this field. We need this to be a collection instead of just one because it may track _all_ types that are at or below the one defined for the field.
     pub indirect_tys: HashSet<AType<'ast>>,
+    /// The context used by this field. Is a superset of anything in tys
+    pub ctx: GenericContext<'ast>,
 }
 
 impl<'ast> AField<'ast> {
@@ -215,7 +227,7 @@ fn convert_field<'ast>(
         /// All the collected types we've seen so far
         tys: HashSet<AType<'ast>>,
         /// The generic context of the node we're currently at
-        ctx: &'a GenericContext<'ast>,
+        parent_ctx: &'a GenericContext<'ast>,
     }
     impl<'ast, 'a> Visit<'ast> for TypeVisitor<'ast, 'a> {
         fn visit_type_path(&mut self, ty: &'ast syn::TypePath) {
@@ -232,7 +244,7 @@ fn convert_field<'ast>(
                             Vec::default()
                         };
                     let ctx = instantiation_collect_context(
-                        self.ctx,
+                        self.parent_ctx,
                         instantiation.iter().map(Deref::deref),
                     );
                     self.tys.insert(AType {
@@ -250,9 +262,19 @@ fn convert_field<'ast>(
     let mut visitor = TypeVisitor {
         nodes,
         tys: HashSet::new(),
-        ctx,
+        parent_ctx: ctx,
     };
     visitor.visit_field(field);
+
+    let tys = visitor.tys;
+
+    let mut visitor = Collect {
+        parent_ctx: ctx,
+        ctx: Default::default(),
+    };
+    visitor.visit_field(field);
+
+    let ctx = visitor.ctx;
 
     let ident = field.ident.as_ref().map_or_else(
         || Cow::Owned(Ident::new(&format!("tmp_{index}"), field.ty.span())),
@@ -261,8 +283,9 @@ fn convert_field<'ast>(
 
     AField {
         ident,
-        tys: visitor.tys,
+        tys,
         indirect_tys: Default::default(),
+        ctx,
     }
 }
 
@@ -328,27 +351,38 @@ pub struct AEnum<'ast> {
 pub enum ANode<'ast> {
     Struct(AStruct<'ast>),
     Enum(AEnum<'ast>),
+    Extra(&'ast ExtraNode, GenericContext<'ast>),
 }
 
 impl<'ast> ANode<'ast> {
+    pub fn emittable(&self) -> bool {
+        match self {
+            ANode::Struct(_) | ANode::Enum(_) => true,
+            ANode::Extra(_, _) => false,
+        }
+    }
+
     pub fn ident(&self) -> &'ast Ident {
         match self {
             ANode::Struct(s) => s.data.ident,
-            ANode::Enum(s) => s.ident,
+            ANode::Enum(e) => e.ident,
+            ANode::Extra(x, _) => &x.ident,
         }
     }
 
     pub fn generics(&self) -> &'ast Generics {
         match self {
             ANode::Struct(s) => s.generics,
-            ANode::Enum(s) => s.generics,
+            ANode::Enum(e) => e.generics,
+            ANode::Extra(x, _) => &x.generics,
         }
     }
 
     pub fn ctx(&self) -> &GenericContext<'ast> {
         match self {
             ANode::Struct(s) => &s.ctx,
-            ANode::Enum(s) => &s.ctx,
+            ANode::Enum(e) => &e.ctx,
+            ANode::Extra(_, ctx) => &ctx,
         }
     }
 
@@ -361,6 +395,7 @@ impl<'ast> ANode<'ast> {
                     .map(|variant| variant.fields.iter())
                     .flatten(),
             ),
+            ANode::Extra(_, _) => Box::new(core::iter::empty()),
         }
     }
 
@@ -381,6 +416,7 @@ impl<'ast> ANode<'ast> {
                     .map(|variant| variant.fields.iter_mut())
                     .flatten(),
             ),
+            ANode::Extra(_, _) => Box::new(core::iter::empty()),
         }
     }
 }
@@ -428,9 +464,14 @@ impl<'ast> Deref for ANodes<'ast> {
     }
 }
 
-pub fn make_nodes<'ast>(m: &'ast syn::ItemMod) -> ANodes<'ast> {
-    // Pass 1: Read in most basic data by visiting all structs/enums
+pub fn make_nodes<'ast>(m: &'ast syn::ItemMod, extra_nodes: &'ast Vec<ExtraNode>) -> ANodes<'ast> {
+    // Pass 0: Popuplate from the extra nodes
     let mut base = BaseNodes::default();
+    for node in extra_nodes {
+        base.0.insert(&node.ident, BaseNode::Extra(node));
+    }
+
+    // Pass 1: Read in most basic data by visiting all structs/enums
     base.visit_item_mod(m);
 
     // Pass 2: Annotate nodes with generic context data for their direct children.
@@ -442,6 +483,9 @@ pub fn make_nodes<'ast>(m: &'ast syn::ItemMod) -> ANodes<'ast> {
                     match node {
                         BaseNode::Struct(s) => ANode::Struct(convert_struct(&base, s)),
                         BaseNode::Enum(e) => ANode::Enum(convert_enum(&base, e)),
+                        BaseNode::Extra(x) => {
+                            ANode::Extra(x, generics_collect_context(&x.generics))
+                        }
                     },
                 )
             })
@@ -460,9 +504,7 @@ mod test {
     use std::borrow::Cow;
 
     use proc_macro2::Span;
-    use syn::Generics;
 
-    use crate::nodes::lattice::make_lattice;
     use crate::nodes::AField;
     use crate::nodes::ANodes;
     use crate::nodes::AStruct;
@@ -474,19 +516,49 @@ mod test {
     struct NodeBuilder {
         /// Because so much relies on &'ast Ident, we need to make an arena for those
         label_arena: Vec<Ident>,
-        empty_generics: Generics,
+
+        // For adding generic context <T> to nodes
+        t_ident: syn::Ident,
+        t_arg: syn::GenericArgument,
+        t_generics: syn::Generics,
     }
 
     impl NodeBuilder {
         /// Initializes the NodeBuilder arena with the given labels. These labels will be referred
         /// to be index in the `add_node` function.
         fn with_labels(labels: &[impl Borrow<str>]) -> Self {
+            let ident = syn::Ident::new("T", Span::call_site());
+            let path_segment: syn::PathSegment = ident.clone().into();
+            let path: syn::Path = path_segment.into();
+            let type_path = syn::TypePath { qself: None, path };
+            let ty: syn::Type = type_path.into();
+            let arg = GenericArgument::Type(ty);
             Self {
                 label_arena: labels
                     .iter()
                     .map(|label| Ident::new(label.borrow(), Span::call_site()))
                     .collect(),
-                empty_generics: Default::default(),
+                t_ident: ident.clone(),
+                t_arg: arg,
+                t_generics: syn::Generics {
+                    lt_token: None,
+                    params: [syn::GenericParam::Type(ident.into())]
+                        .into_iter()
+                        .collect(),
+                    gt_token: None,
+                    where_clause: None,
+                },
+            }
+        }
+
+        fn instantiation(&self) -> Vec<Cow<'_, GenericArgument>> {
+            vec![Cow::Borrowed(&self.t_arg)]
+        }
+
+        fn ctx(&self) -> GenericContext<'_> {
+            GenericContext {
+                types: [&self.t_ident].into_iter().collect(),
+                ..Default::default()
             }
         }
 
@@ -505,7 +577,8 @@ mod test {
                                 ident: Cow::Borrowed(ident),
                                 tys: [AType {
                                     ident,
-                                    instantiation: Default::default(),
+                                    instantiation: self.instantiation(),
+                                    ctx: self.ctx(),
                                 }]
                                 .into_iter()
                                 .collect(),
@@ -514,8 +587,8 @@ mod test {
                         })
                         .collect(),
                 },
-                ctx: Default::default(),
-                generics: &self.empty_generics,
+                ctx: self.ctx(),
+                generics: &self.t_generics,
             });
 
             nodes.0.insert(ident, node);

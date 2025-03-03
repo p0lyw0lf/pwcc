@@ -1,4 +1,5 @@
 //! Hand-rolled parser, for partial parsing of TokenTrees without the need for all of syn
+#![allow(dead_code)]
 
 use proc_macro::token_stream;
 use proc_macro::Delimiter;

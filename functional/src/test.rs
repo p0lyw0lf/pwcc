@@ -1,7 +1,7 @@
 use crate as functional;
 use functional_macros::ast;
 
-#[ast]
+#[ast(typeclasses = [Functor])]
 mod variants {
     use super::*;
     #[derive(Debug, PartialEq)]
@@ -46,22 +46,54 @@ mod variants {
     }
 }
 
-// There should be a comment in the output when you test:
-// // Node A: filtering B due to C not being able to be transformed by it
-// TODO: investigate why doc comments seem to mess things up here.
-#[ast]
+/// There should be a comment in the output when you test:
+/// // Node A: filtering B due to C not being able to be transformed by it
+#[ast(typeclasses = [Functor])]
 mod coherence {
     use super::*;
+
     struct A<T> {
         b: B<T>,
         c: C<T>,
     }
-    struct B<T> {
+    pub struct B<T> {
         c: C<T>,
     }
-    struct C<T>(T);
+    pub struct C<T>(T);
 }
 
+struct Wrap<T>(T);
+impl<T, Output> crate::Functor<Output> for Wrap<T>
+where
+    T: crate::Functor<Output>,
+{
+    type Input = T::Input;
+    type Mapped = Wrap<T::Mapped>;
+    fn fmap_impl(
+        self,
+        f: &mut impl FnMut(Self::Input) -> Output,
+        how: crate::RecursiveCall,
+    ) -> Self::Mapped {
+        Wrap(self.0.fmap_impl(f, how))
+    }
+}
+
+#[ast(extra_nodes = [Wrap<T>], typeclasses = [Functor])]
+mod extra_nodes {
+    use super::*;
+
+    struct IntList {
+        val: i32,
+        next: Wrap<Box<IntList>>,
+    }
+
+    struct List<T> {
+        val: T,
+        next: Box<List<T>>,
+    }
+}
+
+/*
 #[ast]
 mod ast {
     use super::*;
@@ -184,3 +216,4 @@ mod ast {
         assert_eq!(x_expected, x_actual.expect("should not error"));
     }
 }
+*/

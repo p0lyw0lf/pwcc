@@ -65,7 +65,7 @@ fn emit_base_case<'ast>(
         quote! { #ident #output_ty_generics },
     );
 
-    // eprintln!("{out_toks}");
+    eprintln!("{out_toks}");
     out.append_all(out_toks);
 }
 
@@ -157,7 +157,7 @@ fn emit_inductive_case<'ast>(
         quote! { #inner_ident < #output_inner_instantiation > },
     );
 
-    // eprintln!("{out_toks}");
+    eprintln!("{out_toks}");
     out.append_all(out_toks);
 }
 
@@ -271,13 +271,13 @@ pub fn emit<'ast>(
     nodes: &ANodes<'ast>,
     emitter: &(impl BaseCaseEmitter + InductiveCaseEmitter),
 ) {
-    // Emit all base cases
-    for node in nodes.values() {
-        emit_base_case(out, node, emitter);
-    }
-
-    // Emit all inductive cases
     for container in nodes.values() {
+        if !container.emittable() {
+            continue;
+        }
+
+        emit_base_case(out, container, emitter);
+
         let types = container.all_tys().collect::<HashSet<_>>();
         for inner in types.into_iter() {
             emit_inductive_case(out, nodes, container, inner, emitter)

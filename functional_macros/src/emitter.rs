@@ -89,9 +89,14 @@ fn make_variant_destructor<'ast>(ident: TokenStream2, variant: &AVariant<'ast>) 
     }
 }
 
-
 pub trait BodyEmitter {
-    fn body<'ast>(&self, variant: &AVariant<'ast>, inner: &AType<'ast>, output_inner: impl ToTokens, in_enum: bool) -> TokenStream2;
+    fn body<'ast>(
+        &self,
+        variant: &AVariant<'ast>,
+        inner: &AType<'ast>,
+        output_inner: impl ToTokens,
+        in_enum: bool,
+    ) -> TokenStream2;
 }
 
 /// Writes the body of the trait implementation. Automatically destructures the fields and puts
@@ -106,7 +111,7 @@ pub fn make_fn_body<'ast>(
         ANode::Struct(s) => {
             let destructor = make_variant_destructor(quote! { Self }, &s.data);
             let body = emitter.body(&s.data, inner, &output_inner, false);
-            
+
             quote! {
                 let #destructor = self;
                 #body
@@ -130,5 +135,6 @@ pub fn make_fn_body<'ast>(
                 }
             }
         }
+        ANode::Extra(x, _) => panic!("Should not be emitter extra node {}", x.ident),
     }
 }

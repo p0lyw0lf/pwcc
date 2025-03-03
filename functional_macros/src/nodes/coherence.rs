@@ -122,13 +122,17 @@ pub fn filter_coherent<'ast>(lattice: Lattice<'ast>) -> ANodes<'ast> {
                 .map(Clone::clone)
                 .collect::<HashSet<_>>();
             for edge_b in edges_with_other_ident.iter() {
-                for edge_c in edges_with_other_ident
-                    .iter()
-                    .filter(|edge_c| edge_b.ctx.intersects(&edge_c.ctx) && edge_b.ctx != edge_c.ctx)
+                // TODO: I think this needs to check the field context too, not just the types,
+                // because we should also be filtering out edge_b if there exists a field_c that
+                // cannot be transformed by it, not just an edge_c.
+                // I'm trying to do this here, but it doesn't seem to be working...
+                if node
+                    .fields()
+                    .any(|field_c| edge_b.ctx.intersects(&field_c.ctx) && edge_b.ctx != field_c.ctx)
                 {
                     // Clone is perhaps expensive here, but necessary, because otherwise we may be left
                     // with stale references to edges we want to remove
-                    let is_new = bad_edges.insert(edge_c.clone());
+                    let is_new = bad_edges.insert(edge_b.clone());
                     if is_new {
                         eprintln!("// Node {ident}: filtering {other_ident} due to multiple conflicting generic contexts");
                     }
@@ -215,11 +219,9 @@ mod test {
         });
     }
 
-    /*
     #[test]
     fn simple() {
         // This is the example I reference everywhere
         coherence_test(&[&[1, 2], &[2], &[]], &[&[2], &[2], &[]]);
     }
-    */
 }

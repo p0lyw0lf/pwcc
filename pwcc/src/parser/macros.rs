@@ -73,7 +73,7 @@ macro_rules! nodes {
             struct $os_tt:tt
         )?
     ; )*) => {
-        #[functional_macros::ast]
+        #[functional_macros::ast(extra_nodes = [Span<T>])]
         mod ast {
         use crate::span::Span;
         use crate::span::SourceSpan;
@@ -207,7 +207,11 @@ macro_rules! nodes {
         #[cfg_attr(test, derive(PartialEq))]
         pub struct $node $os_tt;
         )?
-        )* }
+        )*
+
+        // Specialize all these impls for span
+        crate::span::specialize_span!($($node,)*);
+        }
         pub use ast::*;
     };
 }

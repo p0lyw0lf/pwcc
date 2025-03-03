@@ -101,7 +101,9 @@ nodes! {
             constant: isize,
         },
         Var {
-            ident: String,
+            // I don't really want to do this, but to get unused variables to work right, I have no
+            // other choice unfortunately...
+            ident: Span<String>,
         },
         Unary {
             op: Span<UnaryOp>,
@@ -253,7 +255,7 @@ impl FromTokens for Exp {
                 |iter| {
                     let mut span = SourceSpan::empty();
                     let ident = expect_token!(iter, span, Ident(_): String);
-                    Ok(Exp::Var { ident: ident.inner }.span(span))
+                    Ok(Exp::Var { ident }.span(span))
                 },
                 |iter| {
                     let mut _span = SourceSpan::empty();
@@ -391,7 +393,7 @@ impl ToTokens for Exp {
         use Token::*;
         let out: Box<dyn Iterator<Item = Token>> = match self {
             Exp::Constant { constant } => Box::new(core::iter::once(Token::Constant(constant))),
-            Var { ident } => Box::new(core::iter::once(Ident(ident))),
+            Var { ident } => Box::new(core::iter::once(Ident(ident.inner))),
             Unary { op, exp } => match op.inner {
                 UnaryOp::PrefixOp(op) => Box::new(
                     op.to_tokens()

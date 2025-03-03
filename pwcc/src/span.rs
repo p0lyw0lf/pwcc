@@ -2,8 +2,10 @@ use std::fmt::Display;
 use std::ops::Deref;
 use std::ops::DerefMut;
 
+use functional::ControlFlow;
 use functional::Foldable;
 use functional::Functor;
+use functional::RecursiveCall;
 use functional::Semigroup;
 use functional::TryFunctor;
 
@@ -135,6 +137,8 @@ where
     }
 }
 
+/// First, we need to make sure that Span is transparent as a wrapper type, similar to how Vec,
+/// Box, and Option behave.
 impl<T, Output> Functor<Output> for Span<T>
 where
     T: Functor<Output>,
@@ -184,54 +188,3 @@ where
         self.inner.foldl(f, acc)
     }
 }
-
-/// Creates Functor, TryFunctor, and Foldable implementations for Span given the inner node to map
-/// over. Must be specialized, because otherwise we run into recursion limits with these traits :(
-macro_rules! specialize_span {
-    ($($t:ident,)*) => { $(
-
-impl<Input, Output, Mapped> Functor<Output> for $t
-where
-    $t: Functor<Span<Output>, Input = Span<Input>, Mapped = Span<Mapped>>,
-{
-    type Input = Input;
-    type Mapped = Mapped;
-
-    #[inline(always)]
-    fn fmap_impl(
-        self,
-        f: &mut impl FnMut(Self::Input) -> Output,
-        how: functional::RecursiveCall,
-    ) -> Self::Mapped {
-        todo!()
-    }
-}
-
-impl<$t, Input, Output, Mapped> TryFunctor<Output> for $t
-where
-    $t: TryFunctor<Span<Output>, Input = Span<Input>, Mapped = Span<Mapped>>,
-{
-    fn try_fmap_impl<E: Semigroup + functional::ControlFlow>(
-        self,
-        f: &mut impl FnMut(Self::Input) -> Result<Output, E>,
-        how: functional::RecursiveCall,
-    ) -> Result<Self::Mapped, E> {
-        todo!()
-    }
-}
-
-impl<$t, A> Foldable<A> for $t
-where
-    $t: Foldable<Span<A>>,
-{
-    fn foldl<'s, B>(&'s self, f: fn(B, &'s A) -> B, acc: B) -> B
-    where
-        A: 's,
-    {
-        todo!()
-    }
-}
-
-    )* }
-}
-pub(crate) use specialize_span;

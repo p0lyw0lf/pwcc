@@ -10,13 +10,10 @@ use crate::parser::BlockItem;
 use crate::parser::Declaration;
 use crate::parser::DoWhileStmt;
 use crate::parser::Exp;
-use crate::parser::ExpressionStmt;
 use crate::parser::ForInit;
-use crate::parser::ForInitExp;
 use crate::parser::ForStmt;
 use crate::parser::Function;
 use crate::parser::IfStmt;
-use crate::parser::ReturnStmt;
 use crate::parser::Statement;
 use crate::parser::WhileStmt;
 use crate::semantic::SemanticErrors;
@@ -36,7 +33,7 @@ pub enum Error {
     },
 
     #[error("Unresolved variable: {0}")]
-    UnresolvedVariable(#[label("in this expression")] Span<String>),
+    UnresolvedVariable(#[label("used here")] Span<String>),
 
     #[error("Cannot assign to expression")]
     InvalidAssignment(#[label] SourceSpan),
@@ -135,28 +132,23 @@ impl VariableResolution {
         })
     }
 
-    /// TODO: this is broken until I get external nodes to work in fmap & co. Great!!!
-    fn resolve_exp(self: &mut Self, exp: Span<Exp>) -> Result<Span<Exp>, SemanticErrors> {
-        let span = exp.span;
-        Ok(exp
-            .inner
-            .try_fmap(&mut |exp| -> Result<_, SemanticErrors> {
-                match exp {
-                    // Make sure all assignments are to Var, and nothing else
-                    Exp::Assignment { lhs, op, rhs } => match *lhs.inner {
-                        Exp::Var { .. } => Ok(Exp::Assignment { lhs, op, rhs }),
-                        _ => Err(Error::InvalidAssignment(lhs.span))?,
-                    },
-                    // Replace all instantiations of Var with their unique name as determined by the
-                    // declaration
-                    Exp::Var { ident } => match self.variable_map.resolve(&ident) {
-                        None => Err(Error::UnresolvedVariable(ident.span(span)))?,
-                        Some(ident) => Ok(Exp::Var { ident }),
-                    },
-                    otherwise => Ok(otherwise),
-                }
-            })?
-            .span(span))
+    fn resolve_exp(self: &mut Self, exp: Exp) -> Result<Exp, SemanticErrors> {
+        match exp {
+            // Make sure all assignments are to Var, and nothing else
+            Exp::Assignment { lhs, op, rhs } => match *lhs.inner {
+                Exp::Var { .. } => Ok(Exp::Assignment { lhs, op, rhs }),
+                _ => Err(Error::InvalidAssignment(lhs.span))?,
+            },
+            // Replace all instantiations of Var with their unique name as determined by the
+            // declaration
+            Exp::Var { ident } => match self.variable_map.resolve(&ident) {
+                None => Err(Error::UnresolvedVariable(ident))?,
+                Some(new_ident) => Ok(Exp::Var {
+                    ident: new_ident.span(ident.span),
+                }),
+            },
+            otherwise => Ok(otherwise),
+        }
     }
 
     fn resolve_stmt(self: &mut Self, stmt: Statement) -> Result<Statement, SemanticErrors> {
@@ -174,23 +166,7 @@ impl VariableResolution {
 
         macro_rules! e {
             ($v: ident) => {
-                self.resolve_exp($v)?
-            };
-        }
-
-        macro_rules! oe {
-            ($v: ident) => {
-                match $v.inner {
-                    Some(v) => Some(
-                        self.resolve_exp(Span {
-                            inner: v,
-                            span: $v.span,
-                        })?
-                        .inner,
-                    ),
-                    None => None,
-                }
-                .span($v.span)
+                $v.try_fmap(&mut |exp| self.resolve_exp(exp))?
             };
         }
 
@@ -232,9 +208,7 @@ impl VariableResolution {
                 self.variable_map.enter_block();
                 let out = (|| -> Result<_, SemanticErrors> {
                     let init = match init.inner {
-                        ForInit::ForInitExp(ForInitExp { exp }) => {
-                            ForInit::ForInitExp(ForInitExp { exp: oe!(exp) })
-                        }
+                        ForInit::ForInitExp(for_init_exp) => ForInit::ForInitExp(e!(for_init_exp)),
                         ForInit::Declaration(decl) => {
                             ForInit::Declaration(self.resolve_decl(decl)?)
                         }
@@ -243,25 +217,16 @@ impl VariableResolution {
                     Ok(Statement::ForStmt(ForStmt {
                         label,
                         init,
-                        exp1: {
-                            println!("resolving {exp1:?}");
-                            oe!(exp1)
-                        },
-                        exp2: {
-                            println!("resolving {exp2:?}");
-                            oe!(exp2)
-                        },
+                        exp1: e!(exp1),
+                        exp2: e!(exp2),
                         body: s!(body),
                     }))
                 })();
                 self.variable_map.exit_block();
                 out?
             }
-            Statement::ExpressionStmt(ExpressionStmt { exp }) => {
-                Statement::ExpressionStmt(ExpressionStmt { exp: e!(exp) })
-            }
-            Statement::ReturnStmt(ReturnStmt { exp }) => {
-                Statement::ReturnStmt(ReturnStmt { exp: e!(exp) })
+            otherwise @ (Statement::ExpressionStmt(_) | Statement::ReturnStmt(_)) => {
+                e!(otherwise)
             }
             otherwise @ (Statement::BreakStmt(_)
             | Statement::ContinueStmt(_)

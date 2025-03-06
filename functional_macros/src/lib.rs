@@ -22,7 +22,7 @@ pub fn ast(attrs: TokenStream, item: TokenStream) -> TokenStream {
 
     let item_mod: ItemMod = syn::parse(item).expect("must be applied to module");
 
-    let nodes = crate::nodes::make_nodes(&item_mod, &options.extra_nodes);
+    let nodes = crate::nodes::make_nodes(&item_mod);
 
     let mut out = TokenStream2::new();
 

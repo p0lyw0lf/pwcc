@@ -17,12 +17,9 @@ use syn::ItemEnum;
 use syn::ItemStruct;
 use syn::PathArguments;
 
-use crate::options::ExtraNode;
-
 enum BaseNode<'ast> {
     Struct(&'ast ItemStruct),
     Enum(&'ast ItemEnum),
-    Extra(&'ast ExtraNode),
 }
 
 pub mod coherence;
@@ -195,7 +192,7 @@ impl<'ast> AField<'ast> {
 }
 
 /// An "annotated type" of a field that corresponds to one of our lattice types.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct AType<'ast> {
     /// An index into the outer Nodes structure
     pub ident: &'ast Ident,
@@ -215,12 +212,49 @@ impl<'ast> Hash for AType<'ast> {
     }
 }
 
+impl<'ast> PartialEq for AType<'ast> {
+    fn eq(&self, other: &Self) -> bool {
+        self.ident == other.ident && self.instantiation == other.instantiation
+    }
+}
+impl<'ast> Eq for AType<'ast> {}
+
+/// An "extra" type that we should generate implementations over, but should not generate
+/// implementations for.
+#[derive(Debug)]
+struct AExtern<'ast> {
+    pub ident: &'ast Ident,
+    /// A dummy set of generics, whose identifiers are inferred based on usage.
+    pub generics: &'ast Generics,
+    /// The generic context as defined by the above generics, cached for convenience.
+    pub ctx: GenericContext<'ast>,
+}
+
+struct WithExtern<'ast, T>(T, Vec<AExtern<'ast>>);
+
+impl<'ast, T, C> FromIterator<WithExtern<'ast, T>> for WithExtern<'ast, C>
+where
+    C: FromIterator<T>,
+{
+    fn from_iter<I: IntoIterator<Item = WithExtern<'ast, T>>>(iter: I) -> Self {
+        let mut all_externs = Vec::new();
+        let c = iter
+            .into_iter()
+            .map(|WithExtern(t, externs)| {
+                all_externs.extend(externs.into_iter());
+                t
+            })
+            .collect();
+        WithExtern(c, all_externs)
+    }
+}
+
 fn convert_field<'ast>(
     nodes: &BaseNodes<'ast>,
     ctx: &GenericContext<'ast>,
     field: &'ast Field,
     index: usize,
-) -> AField<'ast> {
+) -> WithExtern<'ast, AField<'ast>> {
     struct TypeVisitor<'ast, 'a> {
         /// The types we're looking for
         nodes: &'a BaseNodes<'ast>,
@@ -270,7 +304,7 @@ fn convert_field<'ast>(
 
     let mut visitor = Collect {
         parent_ctx: ctx,
-        ctx: Default::default(),
+        ctx: GenericContext::default(),
     };
     visitor.visit_field(field);
 
@@ -281,12 +315,15 @@ fn convert_field<'ast>(
         Cow::Borrowed,
     );
 
-    AField {
-        ident,
-        tys,
-        indirect_tys: Default::default(),
-        ctx,
-    }
+    WithExtern(
+        AField {
+            ident,
+            tys,
+            indirect_tys: Default::default(),
+            ctx,
+        },
+        todo!("you need to find a way to collect all possible instantiated types in this field, including all the possible wrapper types. I _think_ this should work to give us what we want, so long as the wrapper types truly are transparent"),
+    )
 }
 
 /// An "annotated variant", representing either a standalone struct or an enum variant
@@ -307,21 +344,24 @@ fn convert_variant<'nodes, 'ast>(
     ident: &'ast Ident,
     ctx: &GenericContext<'ast>,
     fields: &'ast Fields,
-) -> AVariant<'ast> {
+) -> WithExtern<'ast, AVariant<'ast>> {
     let named = matches!(fields, syn::Fields::Named(_));
     let unit = matches!(fields, syn::Fields::Unit);
-    let fields = fields
+    let WithExtern(fields, externs) = fields
         .iter()
         .enumerate()
         .map(|(index, field)| convert_field(nodes, ctx, field, index))
         .collect();
 
-    AVariant {
-        ident,
-        named,
-        unit,
-        fields,
-    }
+    WithExtern(
+        AVariant {
+            ident,
+            named,
+            unit,
+            fields,
+        },
+        externs,
+    )
 }
 
 /// An "annotated struct", which we model as consisting of a single variant
@@ -351,14 +391,14 @@ pub struct AEnum<'ast> {
 pub enum ANode<'ast> {
     Struct(AStruct<'ast>),
     Enum(AEnum<'ast>),
-    Extra(&'ast ExtraNode, GenericContext<'ast>),
+    Extern(AExtern<'ast>),
 }
 
 impl<'ast> ANode<'ast> {
     pub fn emittable(&self) -> bool {
         match self {
             ANode::Struct(_) | ANode::Enum(_) => true,
-            ANode::Extra(_, _) => false,
+            ANode::Extern(_) => false,
         }
     }
 
@@ -366,7 +406,7 @@ impl<'ast> ANode<'ast> {
         match self {
             ANode::Struct(s) => s.data.ident,
             ANode::Enum(e) => e.ident,
-            ANode::Extra(x, _) => &x.ident,
+            ANode::Extern(x) => &x.ident,
         }
     }
 
@@ -374,7 +414,7 @@ impl<'ast> ANode<'ast> {
         match self {
             ANode::Struct(s) => s.generics,
             ANode::Enum(e) => e.generics,
-            ANode::Extra(x, _) => &x.generics,
+            ANode::Extern(x) => &x.generics,
         }
     }
 
@@ -382,7 +422,7 @@ impl<'ast> ANode<'ast> {
         match self {
             ANode::Struct(s) => &s.ctx,
             ANode::Enum(e) => &e.ctx,
-            ANode::Extra(_, ctx) => &ctx,
+            ANode::Extern(x) => &x.ctx,
         }
     }
 
@@ -395,7 +435,7 @@ impl<'ast> ANode<'ast> {
                     .map(|variant| variant.fields.iter())
                     .flatten(),
             ),
-            ANode::Extra(_, _) => Box::new(core::iter::empty()),
+            ANode::Extern(_) => Box::new(core::iter::empty()),
         }
     }
 
@@ -416,7 +456,7 @@ impl<'ast> ANode<'ast> {
                     .map(|variant| variant.fields.iter_mut())
                     .flatten(),
             ),
-            ANode::Extra(_, _) => Box::new(core::iter::empty()),
+            ANode::Extern(_) => Box::new(core::iter::empty()),
         }
     }
 }
@@ -424,32 +464,42 @@ impl<'ast> ANode<'ast> {
 fn convert_struct<'nodes, 'ast>(
     nodes: &'nodes BaseNodes<'ast>,
     item_struct: &'ast ItemStruct,
-) -> AStruct<'ast> {
+) -> WithExtern<'ast, AStruct<'ast>> {
     let ctx = generics_collect_context(&item_struct.generics);
-    let data = convert_variant(nodes, &item_struct.ident, &ctx, &item_struct.fields);
+    let WithExtern(data, externs) =
+        convert_variant(nodes, &item_struct.ident, &ctx, &item_struct.fields);
 
-    AStruct {
-        data,
-        ctx,
-        generics: &item_struct.generics,
-    }
+    WithExtern(
+        AStruct {
+            data,
+            ctx,
+            generics: &item_struct.generics,
+        },
+        externs,
+    )
 }
 
-fn convert_enum<'ast>(nodes: &BaseNodes<'ast>, item_enum: &'ast ItemEnum) -> AEnum<'ast> {
+fn convert_enum<'ast>(
+    nodes: &BaseNodes<'ast>,
+    item_enum: &'ast ItemEnum,
+) -> WithExtern<'ast, AEnum<'ast>> {
     let ident = &item_enum.ident;
     let ctx = generics_collect_context(&item_enum.generics);
-    let variants = item_enum
+    let WithExtern(variants, externs) = item_enum
         .variants
         .iter()
         .map(|variant| convert_variant(nodes, &variant.ident, &ctx, &variant.fields))
         .collect();
 
-    AEnum {
-        ident,
-        variants,
-        ctx,
-        generics: &item_enum.generics,
-    }
+    WithExtern(
+        AEnum {
+            ident,
+            variants,
+            ctx,
+            generics: &item_enum.generics,
+        },
+        externs,
+    )
 }
 
 /// INVARIANT: \forall i. nodes[i].ident() == i
@@ -464,36 +514,38 @@ impl<'ast> Deref for ANodes<'ast> {
     }
 }
 
-pub fn make_nodes<'ast>(m: &'ast syn::ItemMod, extra_nodes: &'ast Vec<ExtraNode>) -> ANodes<'ast> {
-    // Pass 0: Popuplate from the extra nodes
-    let mut base = BaseNodes::default();
-    for node in extra_nodes {
-        base.0.insert(&node.ident, BaseNode::Extra(node));
-    }
-
+pub fn make_nodes<'ast>(m: &'ast syn::ItemMod) -> ANodes<'ast> {
     // Pass 1: Read in most basic data by visiting all structs/enums
+    let mut base = BaseNodes::default();
     base.visit_item_mod(m);
 
     // Pass 2: Annotate nodes with generic context data for their direct children.
-    let nodes = ANodes(
-        base.iter()
-            .map(|(key, node)| {
-                (
-                    *key,
-                    match node {
-                        BaseNode::Struct(s) => ANode::Struct(convert_struct(&base, s)),
-                        BaseNode::Enum(e) => ANode::Enum(convert_enum(&base, e)),
-                        BaseNode::Extra(x) => {
-                            ANode::Extra(x, generics_collect_context(&x.generics))
-                        }
-                    },
-                )
-            })
-            .collect(),
+    let WithExtern(mut nodes, externs) = base
+        .iter()
+        .map(|(key, node)| {
+            let (node, externs) = match node {
+                BaseNode::Struct(s) => {
+                    let WithExtern(s, externs) = convert_struct(&base, s);
+                    (ANode::Struct(s), externs)
+                }
+                BaseNode::Enum(e) => {
+                    let WithExtern(e, externs) = convert_enum(&base, e);
+                    (ANode::Enum(e), externs)
+                }
+            };
+            WithExtern((*key, node), externs)
+        })
+        .collect::<WithExtern<'ast, BTreeMap<_, _>>>();
+
+    // Pass 3: Add all extern nodes to the map
+    nodes.extend(
+        externs
+            .into_iter()
+            .map(|node| (node.ident, ANode::Extern(node))),
     );
 
     // For more complicated passes, see the `lattice` and `scc` modules.
-    nodes
+    ANodes(nodes)
 }
 
 #[cfg(test)]
@@ -583,6 +635,7 @@ mod test {
                                 .into_iter()
                                 .collect(),
                                 indirect_tys: Default::default(),
+                                ctx: self.ctx(),
                             }
                         })
                         .collect(),

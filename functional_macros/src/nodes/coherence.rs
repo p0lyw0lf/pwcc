@@ -25,12 +25,10 @@
 //! impl<T, U> Trait<B<U>> for A<T, U> {}
 //! ```
 //!
-//! The check for this is simple: If, for a given outgoing edge, there exists another outgoing edge
-//! with a different generic context, we should remove that edge.
-//!
-//! Note that this should the _generic context_, not the _generic instantiation_. If things are
-//! instantiated to concrete values, and the generic contexts (things that are actually still
-//! generic given the declaration in the container) all overlap, then we're fine!
+//! To check this for all cases (like `B<i32>` and `B<U>`, or `C<i32, T>` and `C<T, i32>`), we have
+//! to check the instantiations and apply the same logic Rust uses: concrete types must not appear
+//! in the same location as generic types, and if generic types appear in the same location, they
+//! must be the same.
 //!
 //! Because we're already going thru all nodes to remove edges based on SCC connectivity, we should
 //! remove these edges before that pass, or, during that pass. To keep the invariant imposed by
@@ -115,26 +113,50 @@ pub fn filter_coherent<'ast>(lattice: Lattice<'ast>) -> ANodes<'ast> {
         let mut bad_edges = HashSet::<AType<'ast>>::new();
         // 1. Remove all outgoing edges where there are multiple different generic contexts
         let node = nodes.0.get(ident).unwrap();
-        for other_ident in order.iter() {
+        'other_ident: for other_ident in order.iter() {
             let edges_with_other_ident = node
                 .all_tys()
                 .filter(|ty| ty.ident == *other_ident)
                 .map(Clone::clone)
                 .collect::<HashSet<_>>();
-            for edge_b in edges_with_other_ident.iter() {
-                // TODO: I think this needs to check the field context too, not just the types,
-                // because we should also be filtering out edge_b if there exists a field_c that
-                // cannot be transformed by it, not just an edge_c.
-                // I'm trying to do this here, but it doesn't seem to be working...
-                if node
-                    .fields()
-                    .any(|field_c| edge_b.ctx.intersects(&field_c.ctx) && edge_b.ctx != field_c.ctx)
-                {
-                    // Clone is perhaps expensive here, but necessary, because otherwise we may be left
-                    // with stale references to edges we want to remove
-                    let is_new = bad_edges.insert(edge_b.clone());
-                    if is_new {
-                        eprintln!("// Node {ident}: filtering {other_ident} due to multiple conflicting generic contexts");
+            'next_edge: for edge_b in edges_with_other_ident.iter() {
+                if edge_b.instantiation.is_empty() {
+                    // There is no chance of this other type conflicting with anything, we can
+                    // go to the next one
+                    continue 'other_ident;
+                }
+                if bad_edges.contains(edge_b) {
+                    // If we've already processed this edge, go to the next one
+                    continue 'next_edge;
+                }
+                if let Some(edge_c) = edges_with_other_ident.iter().find(|edge_c| {
+                    edge_b
+                        .instantiation
+                        .iter()
+                        .zip(edge_c.instantiation.iter())
+                        .any(|(arg_b, arg_c)| {
+                            match (edge_b.ctx.has_arg(arg_b), edge_c.ctx.has_arg(arg_c)) {
+                                // If they are both generic arguments, then they conflict if they're
+                                // different arguments
+                                (true, true) => arg_b != arg_c,
+                                // If only one is generic, then it's a conflict
+                                (true, false) | (false, true) => true,
+                                // If both are not generic, there is no conflict
+                                (false, false) => false,
+                            }
+                        })
+                }) {
+                    for bad_edge in [edge_b.clone(), edge_c.clone()] {
+                        if !bad_edge.ctx.is_empty() {
+                            // We should only filter the edges that have a generic context; this
+                            // way, we don't filter the edges that won't conflict
+                            let is_new = bad_edges.insert(bad_edge);
+                            if is_new {
+                                eprintln!(
+                                    "// Node {ident}: filtering {other_ident} due to multiple conflicting generic contexts",
+                                );
+                            }
+                        }
                     }
                 }
             }

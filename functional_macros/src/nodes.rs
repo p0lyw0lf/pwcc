@@ -72,6 +72,30 @@ pub struct GenericContext<'ast> {
 }
 
 impl<'ast> GenericContext<'ast> {
+    pub fn has_arg(&self, arg: &GenericArgument) -> bool {
+        match arg {
+            GenericArgument::Lifetime(l) => self.has_lifetime(&l.ident),
+            GenericArgument::Type(t) => match t {
+                syn::Type::Path(p) => {
+                    p.qself.is_none()
+                        && p.path.segments.len() == 1
+                        && self.has_type(&p.path.segments[0].ident)
+                }
+                _ => false,
+            },
+            GenericArgument::Const(expr) => match expr {
+                syn::Expr::Path(p) => {
+                    p.qself.is_none()
+                        && p.path.segments.len() == 1
+                        && self.has_const(&p.path.segments[0].ident)
+                }
+                _ => false,
+            },
+            otherwise => {
+                panic!("Unrecognized generic argument in type instantiation: {otherwise:?}")
+            }
+        }
+    }
     pub fn has_lifetime(&self, i: &'ast Ident) -> bool {
         self.lifetimes.contains(i)
     }
@@ -94,6 +118,14 @@ impl<'ast> GenericContext<'ast> {
         !self.types.is_disjoint(&other.types)
             || !self.lifetimes.is_disjoint(&other.lifetimes)
             || !self.consts.is_disjoint(&other.consts)
+    }
+    pub fn is_subset(&self, other: &GenericContext<'ast>) -> bool {
+        self.types.is_subset(&other.types)
+            && self.lifetimes.is_subset(&other.lifetimes)
+            && self.consts.is_subset(&other.consts)
+    }
+    pub fn is_empty(&self) -> bool {
+        self.types.is_empty() && self.lifetimes.is_empty() && self.consts.is_empty()
     }
 }
 

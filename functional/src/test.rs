@@ -2,6 +2,34 @@ use crate as functional;
 use functional_macros::ast;
 
 #[ast(typeclasses = [Functor])]
+mod coherence_direct {
+    #![allow(dead_code)]
+    use super::*;
+
+    struct B<T>(T);
+
+    struct AFiltered1<T, U> {
+        bt: B<T>,
+        bu: B<U>,
+    }
+    struct AFiltered2<T> {
+        bt: B<T>,
+        bi: B<i32>,
+    }
+
+    struct C<T, U>(T, U);
+
+    struct DFiltered1<T> {
+        ct: C<T, i32>,
+        cu: C<i32, T>,
+    }
+    struct DFiltered2<T, U> {
+        ct: C<T, i32>,
+        cu: C<i32, U>,
+    }
+}
+
+#[ast(typeclasses = [Functor])]
 mod variants {
     use super::*;
     #[derive(Debug, PartialEq)]
@@ -49,17 +77,17 @@ mod variants {
 /// There should be a comment in the output when you test:
 /// // Node A: filtering B due to C not being able to be transformed by it
 #[ast(typeclasses = [Functor])]
-mod coherence {
+mod coherence_indirect {
     use super::*;
 
     struct A<T> {
         b: B<T>,
         c: C<T>,
     }
-    pub struct B<T> {
+    struct B<T> {
         c: C<T>,
     }
-    pub struct C<T>(T);
+    struct C<T>(T);
 }
 
 #[ast(typeclasses = [Functor])]

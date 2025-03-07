@@ -1,5 +1,11 @@
 use crate as functional;
+use crate::functor_base;
+use crate::functor_wrap;
 use functional_macros::ast;
+
+#[derive(Debug, PartialEq)]
+struct Wrap<T>(T);
+functor_wrap!(Wrap);
 
 #[ast(typeclasses = [Functor])]
 mod variants {
@@ -8,7 +14,9 @@ mod variants {
     struct Container {
         byte: Inner<i8>,
         word: Inner<i16>,
+        long: Wrap<i32>,
     }
+
     #[derive(Debug, PartialEq)]
     struct Inner<T>(T);
 
@@ -17,11 +25,13 @@ mod variants {
         let x = variants::Container {
             byte: Inner(1),
             word: Inner(3),
+            long: Wrap(9),
         };
         assert_eq!(
             Container {
                 byte: Inner(2),
                 word: Inner(3),
+                long: Wrap(9),
             },
             x.fmap(&mut |mut i: Inner<i8>| {
                 i.0 *= 2;
@@ -32,11 +42,13 @@ mod variants {
         let x = Container {
             byte: Inner(1),
             word: Inner(3),
+            long: Wrap(10),
         };
         assert_eq!(
             Container {
                 byte: Inner(1),
                 word: Inner(9),
+                long: Wrap(10),
             },
             x.fmap(&mut |mut i: Inner<i16>| {
                 i.0 *= 3;
@@ -62,34 +74,71 @@ mod coherence {
     pub struct C<T>(T);
 }
 
-struct Wrap<T>(T);
-impl<T, Output> crate::Functor<Output> for Wrap<T>
-where
-    T: crate::Functor<Output>,
-{
-    type Input = T::Input;
-    type Mapped = Wrap<T::Mapped>;
-    fn fmap_impl(
-        self,
-        f: &mut impl FnMut(Self::Input) -> Output,
-        how: crate::RecursiveCall,
-    ) -> Self::Mapped {
-        Wrap(self.0.fmap_impl(f, how))
-    }
-}
-
-#[ast(extra_nodes = [Wrap<T>], typeclasses = [Functor])]
-mod extra_nodes {
+#[ast(typeclasses = [Functor])]
+mod raw_extern {
     use super::*;
 
+    #[derive(Debug, PartialEq)]
     struct IntList {
         val: i32,
-        next: Wrap<Box<IntList>>,
+        next: Option<Box<i32>>,
     }
 
+    /*
+    #[test]
+    fn test() {
+        let x = IntList {
+            val: 0,
+            next: Some(Box::new(IntList {
+                val: 1,
+                next: Some(Box::new(IntList { val: 2, next: None })),
+            })),
+        };
+        let x_expected = IntList {
+            val: 0,
+            next: Some(Box::new(IntList {
+                val: 2,
+                next: Some(Box::new(IntList { val: 4, next: None })),
+            })),
+        };
+        let x_actual = x.fmap(&mut |i: i32| i * 2);
+        assert_eq!(x_expected, x_actual);
+    }
+    */
+}
+
+#[ast(typeclasses = [Functor])]
+mod raw_generic {
+    use super::*;
+
+    #[derive(Debug, PartialEq)]
     struct List<T> {
         val: T,
-        next: Box<List<T>>,
+        next: Option<Box<List<T>>>,
+    }
+
+    #[test]
+    fn test() {
+        let x = List {
+            val: 0i32,
+            next: Some(Box::new(List {
+                val: 1,
+                next: Some(Box::new(List { val: 2, next: None })),
+            })),
+        };
+        let x_expected = List {
+            val: 1i32,
+            next: Some(Box::new(List {
+                val: 4,
+                next: Some(Box::new(List { val: 9, next: None })),
+            })),
+        };
+        // We don't support fmap-ing over raw generics
+        let x_actual = x.fmap(&mut |List { val: i, next }| List {
+            val: (i + 1) * (i + 1),
+            next,
+        });
+        assert_eq!(x_expected, x_actual);
     }
 }
 

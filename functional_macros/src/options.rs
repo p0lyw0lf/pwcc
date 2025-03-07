@@ -2,7 +2,6 @@ use std::collections::HashSet;
 
 use syn::parse::Parse;
 use syn::punctuated::Punctuated;
-use syn::Generics;
 use syn::Ident;
 use syn::Token;
 
@@ -75,7 +74,6 @@ impl Parse for Options {
                         let enabled;
                         let _ = syn::bracketed!(enabled in input);
                         Ok(Options {
-                            extra_nodes: Vec::new(),
                             enabled: Some(enabled.parse()?),
                         })
                     }
@@ -86,7 +84,7 @@ impl Parse for Options {
 
         let out = all_options
             .into_iter()
-            .fold(Options::default(), |mut left, right| Options {
+            .fold(Options::default(), |left, right| Options {
                 enabled: match (left.enabled, right.enabled) {
                     (Some(mut left), Some(right)) => {
                         left.0.extend(right.0);

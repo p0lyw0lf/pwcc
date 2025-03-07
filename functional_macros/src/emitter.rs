@@ -135,6 +135,6 @@ pub fn make_fn_body<'ast>(
                 }
             }
         }
-        ANode::Extra(x, _) => panic!("Should not be emitter extra node {}", x.ident),
+        ANode::Extern(x) => panic!("Should not emit extra node {}", x.ident),
     }
 }

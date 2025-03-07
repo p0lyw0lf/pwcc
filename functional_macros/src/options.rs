@@ -6,6 +6,8 @@ use syn::Generics;
 use syn::Ident;
 use syn::Token;
 
+use crate::nodes::ExtraNode;
+
 #[derive(Default)]
 pub struct Options {
     pub extra_nodes: Vec<ExtraNode>,
@@ -63,13 +65,6 @@ impl Parse for EnabledTypeclasses {
             .collect::<syn::Result<HashSet<_>>>()?;
         Ok(Self(typeclasses))
     }
-}
-
-/// An extra node we should add to the module that is considered part of the tree.
-#[derive(Debug)]
-pub struct ExtraNode {
-    pub ident: Ident,
-    pub generics: Generics,
 }
 
 impl Parse for ExtraNode {

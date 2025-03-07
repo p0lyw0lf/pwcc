@@ -17,7 +17,9 @@ use syn::ItemEnum;
 use syn::ItemStruct;
 use syn::PathArguments;
 
-use crate::options::ExtraNode;
+pub mod coherence;
+pub mod lattice;
+pub mod scc;
 
 enum BaseNode<'ast> {
     Struct(&'ast ItemStruct),
@@ -25,9 +27,12 @@ enum BaseNode<'ast> {
     Extra(&'ast ExtraNode),
 }
 
-pub mod coherence;
-pub mod lattice;
-pub mod scc;
+/// An extra node we should add to the module that is considered part of the tree.
+#[derive(Debug)]
+pub struct ExtraNode {
+    pub ident: Ident,
+    pub generics: Generics,
+}
 
 /// Maps ident string to original definition
 #[derive(Default)]
@@ -277,6 +282,8 @@ fn convert_field<'ast>(
                         instantiation,
                         ctx,
                     });
+                    // We don't recur into types that are part of our tree
+                    return;
                 }
             }
 

@@ -5,3 +5,4 @@ edition = "2021"
 
 [dependencies]
 functional_macros = { path = "../functional_macros" }
+paste = "1.0"

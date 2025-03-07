@@ -62,38 +62,44 @@ mod coherence {
     pub struct C<T>(T);
 }
 
-struct Wrap<T>(T);
-impl<T, Output> crate::Functor<Output> for Wrap<T>
-where
-    T: crate::Functor<Output>,
-{
-    type Input = T::Input;
-    type Mapped = Wrap<T::Mapped>;
-    fn fmap_impl(
-        self,
-        f: &mut impl FnMut(Self::Input) -> Output,
-        how: crate::RecursiveCall,
-    ) -> Self::Mapped {
-        Wrap(self.0.fmap_impl(f, how))
-    }
-}
-
-#[ast(extra_nodes = [Wrap<T>], typeclasses = [Functor])]
+#[ast(typeclasses = [Functor])]
 mod extra_nodes {
     use super::*;
 
+    #[derive(Debug, PartialEq)]
     struct IntList {
         val: i32,
-        next: Wrap<Box<IntList>>,
+        next: Option<Box<IntList>>,
     }
 
+    #[test]
+    fn test() {
+        let x = IntList {
+            val: 0,
+            next: Some(Box::new(IntList {
+                val: 1,
+                next: Some(Box::new(IntList { val: 2, next: None })),
+            })),
+        };
+        let x_expected = IntList {
+            val: 0,
+            next: Some(Box::new(IntList {
+                val: 2,
+                next: Some(Box::new(IntList { val: 4, next: None })),
+            })),
+        };
+        let x_actual = x.fmap(&mut |IntList { val: i, next }| IntList { val: i * 2, next });
+        assert_eq!(x_expected, x_actual);
+    }
+    // We don't support raw generics
+    /*
     struct List<T> {
         val: T,
         next: Box<List<T>>,
     }
+    */
 }
 
-/*
 #[ast]
 mod ast {
     use super::*;
@@ -216,4 +222,3 @@ mod ast {
         assert_eq!(x_expected, x_actual.expect("should not error"));
     }
 }
-*/

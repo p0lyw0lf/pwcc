@@ -15,3 +15,15 @@ pub use semigroup::Semigroup;
 pub use try_functor::TryFunctor;
 
 pub use functional_macros::*;
+
+macro_rules! base {
+    ($($ty:ident),*) => {
+        functor_base!($($ty,)*);
+        try_functor_base!($($ty,)*);
+    }
+}
+
+// All the main primitive types
+base!(bool, char, f32, f64, i8, i16, i32, i64, isize, u8, u16, u32, u64, usize);
+// Other prelude types
+base!(String);

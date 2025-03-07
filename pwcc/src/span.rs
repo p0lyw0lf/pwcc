@@ -150,7 +150,7 @@ where
     fn fmap_impl(
         self,
         f: &mut impl FnMut(Self::Input) -> Output,
-        how: functional::RecursiveCall,
+        how: RecursiveCall,
     ) -> Self::Mapped {
         Span {
             inner: self.inner.fmap_impl(f, how),
@@ -164,10 +164,10 @@ where
     T: TryFunctor<Output>,
 {
     #[inline(always)]
-    fn try_fmap_impl<E: functional::Semigroup + functional::ControlFlow>(
+    fn try_fmap_impl<E: Semigroup + ControlFlow>(
         self,
         f: &mut impl FnMut(Self::Input) -> Result<Output, E>,
-        how: functional::RecursiveCall,
+        how: RecursiveCall,
     ) -> Result<Self::Mapped, E> {
         Ok(Span {
             inner: self.inner.try_fmap_impl(f, how)?,

@@ -175,12 +175,24 @@ fn assign_precedence() {
     assert_convertible(
         "a = b = c",
         Exp::Assignment {
-            lhs: Exp::Var { ident: "a".into() }.boxed().span((0, 0).into()),
+            lhs: Exp::Var {
+                ident: "a".to_string().span((0, 0).into()),
+            }
+            .boxed()
+            .span((0, 0).into()),
             op: AssignmentOp::Equal.span((0, 0).into()),
             rhs: Exp::Assignment {
-                lhs: Exp::Var { ident: "b".into() }.boxed().span((0, 0).into()),
+                lhs: Exp::Var {
+                    ident: "b".to_string().span((0, 0).into()),
+                }
+                .boxed()
+                .span((0, 0).into()),
                 op: AssignmentOp::Equal.span((0, 0).into()),
-                rhs: Exp::Var { ident: "c".into() }.boxed().span((0, 0).into()),
+                rhs: Exp::Var {
+                    ident: "c".to_string().span((0, 0).into()),
+                }
+                .boxed()
+                .span((0, 0).into()),
             }
             .boxed()
             .span((0, 0).into()),
@@ -220,7 +232,7 @@ fn assign_statement() {
         Statement::ExpressionStmt(ExpressionStmt {
             exp: Exp::Assignment {
                 lhs: Exp::Var {
-                    ident: "sex".to_string(),
+                    ident: "sex".to_string().span((0, 0).into()),
                 }
                 .boxed()
                 .span((0, 0).into()),
@@ -250,7 +262,7 @@ fn block_item() {
         BlockItem::Statement(Statement::ExpressionStmt(ExpressionStmt {
             exp: Exp::Assignment {
                 lhs: Exp::Var {
-                    ident: "sex".into(),
+                    ident: "sex".to_string().span((0, 0).into()),
                 }
                 .boxed()
                 .span((0, 0).into()),
@@ -270,7 +282,11 @@ fn postfix_precedence() {
             op: UnaryOp::PostfixOp(PostfixOp::Increment).span((0, 0).into()),
             exp: Exp::Unary {
                 op: UnaryOp::PostfixOp(PostfixOp::Decrement).span((0, 0).into()),
-                exp: Exp::Var { ident: "x".into() }.boxed().span((0, 0).into()),
+                exp: Exp::Var {
+                    ident: "x".to_string().span((0, 0).into()),
+                }
+                .boxed()
+                .span((0, 0).into()),
             }
             .boxed()
             .span((0, 0).into()),
@@ -287,7 +303,11 @@ fn prefix_precedence() {
             op: UnaryOp::PrefixOp(PrefixOp::Decrement).span((0, 0).into()),
             exp: Exp::Unary {
                 op: UnaryOp::PrefixOp(PrefixOp::Increment).span((0, 0).into()),
-                exp: Exp::Var { ident: "x".into() }.boxed().span((0, 0).into()),
+                exp: Exp::Var {
+                    ident: "x".to_string().span((0, 0).into()),
+                }
+                .boxed()
+                .span((0, 0).into()),
             }
             .boxed()
             .span((0, 0).into()),
@@ -308,7 +328,11 @@ fn prefix_postfix_precedence() {
                     op: UnaryOp::PostfixOp(PostfixOp::Increment).span((0, 0).into()),
                     exp: Exp::Unary {
                         op: UnaryOp::PostfixOp(PostfixOp::Decrement).span((0, 0).into()),
-                        exp: Exp::Var { ident: "x".into() }.boxed().span((0, 0).into()),
+                        exp: Exp::Var {
+                            ident: "x".to_string().span((0, 0).into()),
+                        }
+                        .boxed()
+                        .span((0, 0).into()),
                     }
                     .boxed()
                     .span((0, 0).into()),
@@ -330,13 +354,13 @@ fn if_statement() {
         &tokens,
         &Statement::IfStmt(IfStmt {
             guard: Exp::Var {
-                ident: "a".to_string(),
+                ident: "a".to_string().span((0, 0).into()),
             }
             .span((0, 0).into()),
             body: Statement::IfStmt(IfStmt {
                 guard: Exp::Binary {
                     lhs: Exp::Var {
-                        ident: "a".to_string(),
+                        ident: "a".to_string().span((0, 0).into()),
                     }
                     .boxed()
                     .span((0, 0).into()),
@@ -346,7 +370,7 @@ fn if_statement() {
                 .span((0, 0).into()),
                 body: Statement::ReturnStmt(ReturnStmt {
                     exp: Exp::Var {
-                        ident: "a".to_string(),
+                        ident: "a".to_string().span((0, 0).into()),
                     }
                     .span((0, 0).into()),
                 })
@@ -358,7 +382,7 @@ fn if_statement() {
                             lhs: Exp::Constant { constant: 10 }.boxed().span((0, 0).into()),
                             op: BinaryOp::Minus.span((0, 0).into()),
                             rhs: Exp::Var {
-                                ident: "a".to_string(),
+                                ident: "a".to_string().span((0, 0).into()),
                             }
                             .boxed()
                             .span((0, 0).into()),
@@ -389,7 +413,7 @@ fn if_statement_naked() {
                     guard: Exp::Constant { constant: 0 }.span((0, 0).into()),
                     body: Statement::ReturnStmt(ReturnStmt {
                         exp: Exp::Var {
-                            ident: "a".to_string(),
+                            ident: "a".to_string().span((0, 0).into()),
                         }
                         .span((0, 0).into()),
                     })

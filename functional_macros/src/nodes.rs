@@ -95,13 +95,6 @@ impl<'ast> GenericContext<'ast> {
             || !self.lifetimes.is_disjoint(&other.lifetimes)
             || !self.consts.is_disjoint(&other.consts)
     }
-    fn merge(self, other: &GenericContext<'ast>) -> Self {
-        Self {
-            lifetimes: self.lifetimes.union(&other.lifetimes).copied().collect(),
-            types: self.types.union(&other.types).copied().collect(),
-            consts: self.consts.union(&other.consts).copied().collect(),
-        }
-    }
 }
 
 /// Collects all the idents found in a Generics node, which is found at a
@@ -236,7 +229,7 @@ fn convert_field<'ast>(
             if ty.qself.is_none() && ty.path.segments.len() == 1 {
                 let segment = ty.path.segments.first().unwrap();
                 let ident = &segment.ident;
-                if self.nodes.contains_key(ident) {
+                if self.nodes.contains_key(ident) && !self.parent_ctx.has_type(ident) {
                     let instantiation =
                         if let PathArguments::AngleBracketed(args) = &segment.arguments {
                             args.args.iter().map(Cow::Borrowed).collect()
@@ -583,6 +576,7 @@ mod test {
                                 .into_iter()
                                 .collect(),
                                 indirect_tys: Default::default(),
+                                ctx: self.ctx(),
                             }
                         })
                         .collect(),

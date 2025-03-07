@@ -4,12 +4,9 @@ use std::collections::HashSet;
 use std::hash::Hash;
 use std::ops::Deref;
 
-use proc_macro2::Span;
-use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::visit;
 use syn::visit::Visit;
-use syn::ConstParam;
 use syn::Field;
 use syn::Fields;
 use syn::GenericArgument;
@@ -18,14 +15,14 @@ use syn::Generics;
 use syn::Ident;
 use syn::ItemEnum;
 use syn::ItemStruct;
-use syn::Lifetime;
-use syn::LifetimeParam;
 use syn::PathArguments;
-use syn::TypeParam;
+
+use crate::options::ExtraNode;
 
 enum BaseNode<'ast> {
     Struct(&'ast ItemStruct),
     Enum(&'ast ItemEnum),
+    Extra(&'ast ExtraNode),
 }
 
 pub mod coherence;
@@ -98,6 +95,13 @@ impl<'ast> GenericContext<'ast> {
             || !self.lifetimes.is_disjoint(&other.lifetimes)
             || !self.consts.is_disjoint(&other.consts)
     }
+    fn merge(self, other: &GenericContext<'ast>) -> Self {
+        Self {
+            lifetimes: self.lifetimes.union(&other.lifetimes).copied().collect(),
+            types: self.types.union(&other.types).copied().collect(),
+            consts: self.consts.union(&other.consts).copied().collect(),
+        }
+    }
 }
 
 /// Collects all the idents found in a Generics node, which is found at a
@@ -167,66 +171,6 @@ pub fn instantiation_collect_context<'vec, 'ast>(
     c.ctx
 }
 
-struct DummyGenericFactory(usize);
-
-impl DummyGenericFactory {
-    fn lifetime(&mut self) -> LifetimeParam {
-        let i = self.0;
-        self.0 += 1;
-        LifetimeParam {
-            attrs: Vec::new(),
-            lifetime: Lifetime::new(&format!("'a_{i}"), Span::call_site()),
-            colon_token: None,
-            bounds: Punctuated::new(),
-        }
-    }
-
-    fn ty(&mut self) -> TypeParam {
-        let i = self.0;
-        self.0 += 1;
-        TypeParam {
-            attrs: Vec::new(),
-            ident: Ident::new(&format!("T_{i}"), Span::call_site()),
-            colon_token: None,
-            bounds: Punctuated::new(),
-            eq_token: None,
-            default: None,
-        }
-    }
-
-    fn constant(&mut self) -> ConstParam {
-        unimplemented!("inferring the types of external constant parameters is not supported")
-    }
-}
-
-/// Creates a dummy Generics based off the kinds (lifetime, type, constant) of the instantiated
-/// parameters.
-fn instantiation_collect_dummy_generics<'vec, 'ast>(
-    instantiation: impl Iterator<Item = &'vec GenericArgument> + 'vec,
-) -> &'ast Generics {
-    let mut f = DummyGenericFactory(0);
-    let params = instantiation
-        .map(|arg| match arg {
-            GenericArgument::Lifetime(_) => GenericParam::Lifetime(f.lifetime()),
-            GenericArgument::Type(_) => GenericParam::Type(f.ty()),
-            GenericArgument::Const(_) => GenericParam::Const(f.constant()),
-            otherwise => {
-                panic!("Found weird instantiation while looking at field types: {otherwise:?}")
-            }
-        })
-        .collect();
-    // TODO: the lifetimes just don't work out otherwise...
-    // The "correct" way to get these lifetimes to work out is to pass in an allocator function to
-    // `make_nodes`, and thread it all the way through to here, but yeah no I'm not doing that
-    // sorry. Leaking the box has basically the same effect, since this is just run once
-    Box::leak(Box::new(Generics {
-        lt_token: None,
-        params,
-        gt_token: None,
-        where_clause: None,
-    }))
-}
-
 /// An "annotated field" in a struct/enum annotated with the requisite data to do introspection on.
 #[derive(Debug)]
 pub struct AField<'ast> {
@@ -251,7 +195,7 @@ impl<'ast> AField<'ast> {
 }
 
 /// An "annotated type" of a field that corresponds to one of our lattice types.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AType<'ast> {
     /// An index into the outer Nodes structure
     pub ident: &'ast Ident,
@@ -271,64 +215,12 @@ impl<'ast> Hash for AType<'ast> {
     }
 }
 
-impl<'ast> PartialEq for AType<'ast> {
-    fn eq(&self, other: &Self) -> bool {
-        self.ident == other.ident && self.instantiation == other.instantiation
-    }
-}
-impl<'ast> Eq for AType<'ast> {}
-
-/// An "extra" type that we should generate implementations over, but should not generate
-/// implementations for.
-#[derive(Debug)]
-pub struct AExtern<'ast> {
-    pub ident: &'ast Ident,
-    /// A dummy set of generics, whose identifiers are inferred based on usage.
-    pub generics: &'ast Generics,
-    /// The generic context as defined by the above generics, cached for convenience.
-    pub ctx: GenericContext<'ast>,
-}
-
-// We need to derive this and other traits manually, to ignore `ctx`
-impl<'ast> Hash for AExtern<'ast> {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.ident.hash(state);
-        self.generics.hash(state);
-    }
-}
-
-impl<'ast> PartialEq for AExtern<'ast> {
-    fn eq(&self, other: &Self) -> bool {
-        self.ident == other.ident && self.generics == other.generics
-    }
-}
-impl<'ast> Eq for AExtern<'ast> {}
-
-struct WithExtern<'ast, T>(T, HashSet<AExtern<'ast>>);
-
-impl<'ast, T, C> FromIterator<WithExtern<'ast, T>> for WithExtern<'ast, C>
-where
-    C: FromIterator<T>,
-{
-    fn from_iter<I: IntoIterator<Item = WithExtern<'ast, T>>>(iter: I) -> Self {
-        let mut all_externs = HashSet::new();
-        let c = iter
-            .into_iter()
-            .map(|WithExtern(t, externs)| {
-                all_externs.extend(externs.into_iter());
-                t
-            })
-            .collect();
-        WithExtern(c, all_externs)
-    }
-}
-
 fn convert_field<'ast>(
     nodes: &BaseNodes<'ast>,
     ctx: &GenericContext<'ast>,
     field: &'ast Field,
     index: usize,
-) -> WithExtern<'ast, AField<'ast>> {
+) -> AField<'ast> {
     struct TypeVisitor<'ast, 'a> {
         /// The types we're looking for
         nodes: &'a BaseNodes<'ast>,
@@ -336,16 +228,7 @@ fn convert_field<'ast>(
         tys: HashSet<AType<'ast>>,
         /// The generic context of the node we're currently at
         parent_ctx: &'a GenericContext<'ast>,
-        /// All the extern types we've seen to far.
-        externs: HashSet<AExtern<'ast>>,
     }
-    /// NOTE: Traversing Rust types is quite difficult. In order to make things easier for me, I'll
-    /// only support types that look like `Ident $( < Generics > )?`, where we can recur into
-    /// `Generics`. This way we don't have to care about tuple types, array types, function types,
-    /// pointer types, all that nonsense.
-    ///
-    /// I probably _should_ support those eventually, but it's not needed for now, and besides
-    /// that's a lot harder to do anyways.
     impl<'ast, 'a> Visit<'ast> for TypeVisitor<'ast, 'a> {
         fn visit_type_path(&mut self, ty: &'ast syn::TypePath) {
             // If it's just a single name in the path, it's highly likely it's part of the AST
@@ -353,44 +236,22 @@ fn convert_field<'ast>(
             if ty.qself.is_none() && ty.path.segments.len() == 1 {
                 let segment = ty.path.segments.first().unwrap();
                 let ident = &segment.ident;
-                if !self.parent_ctx.has_type(ident) {
-                    let args = if let PathArguments::AngleBracketed(args) = &segment.arguments {
-                        Some(args.args.iter())
-                    } else {
-                        None
-                    };
-
-                    let instantiation = args
-                        .map(|args| args.map(Cow::Borrowed).collect::<Vec<_>>())
-                        .unwrap_or_default();
+                if self.nodes.contains_key(ident) {
+                    let instantiation =
+                        if let PathArguments::AngleBracketed(args) = &segment.arguments {
+                            args.args.iter().map(Cow::Borrowed).collect()
+                        } else {
+                            Vec::default()
+                        };
                     let ctx = instantiation_collect_context(
                         self.parent_ctx,
                         instantiation.iter().map(Deref::deref),
                     );
-
-                    if !self.nodes.contains_key(ident) {
-                        // It's an extern node that needs to be tracked, so create it
-                        let generics = instantiation_collect_dummy_generics(
-                            instantiation.iter().map(Deref::deref),
-                        );
-                        self.externs.insert(AExtern {
-                            ident,
-                            generics,
-                            ctx: generics_collect_context(generics),
-                        });
-                    }
-
                     self.tys.insert(AType {
                         ident,
                         instantiation,
                         ctx,
                     });
-
-                    if self.nodes.contains_key(ident) {
-                        // Don't explore into the type any more; we are at the deepest level we can
-                        // generate implementations for.
-                        return;
-                    }
                 }
             }
 
@@ -402,16 +263,14 @@ fn convert_field<'ast>(
         nodes,
         tys: HashSet::new(),
         parent_ctx: ctx,
-        externs: HashSet::new(),
     };
     visitor.visit_field(field);
 
     let tys = visitor.tys;
-    let externs = visitor.externs;
 
     let mut visitor = Collect {
         parent_ctx: ctx,
-        ctx: GenericContext::default(),
+        ctx: Default::default(),
     };
     visitor.visit_field(field);
 
@@ -422,15 +281,12 @@ fn convert_field<'ast>(
         Cow::Borrowed,
     );
 
-    WithExtern(
-        AField {
-            ident,
-            tys,
-            indirect_tys: Default::default(),
-            ctx,
-        },
-        externs,
-    )
+    AField {
+        ident,
+        tys,
+        indirect_tys: Default::default(),
+        ctx,
+    }
 }
 
 /// An "annotated variant", representing either a standalone struct or an enum variant
@@ -451,24 +307,21 @@ fn convert_variant<'nodes, 'ast>(
     ident: &'ast Ident,
     ctx: &GenericContext<'ast>,
     fields: &'ast Fields,
-) -> WithExtern<'ast, AVariant<'ast>> {
+) -> AVariant<'ast> {
     let named = matches!(fields, syn::Fields::Named(_));
     let unit = matches!(fields, syn::Fields::Unit);
-    let WithExtern(fields, externs) = fields
+    let fields = fields
         .iter()
         .enumerate()
         .map(|(index, field)| convert_field(nodes, ctx, field, index))
         .collect();
 
-    WithExtern(
-        AVariant {
-            ident,
-            named,
-            unit,
-            fields,
-        },
-        externs,
-    )
+    AVariant {
+        ident,
+        named,
+        unit,
+        fields,
+    }
 }
 
 /// An "annotated struct", which we model as consisting of a single variant
@@ -498,14 +351,14 @@ pub struct AEnum<'ast> {
 pub enum ANode<'ast> {
     Struct(AStruct<'ast>),
     Enum(AEnum<'ast>),
-    Extern(AExtern<'ast>),
+    Extra(&'ast ExtraNode, GenericContext<'ast>),
 }
 
 impl<'ast> ANode<'ast> {
     pub fn emittable(&self) -> bool {
         match self {
             ANode::Struct(_) | ANode::Enum(_) => true,
-            ANode::Extern(_) => false,
+            ANode::Extra(_, _) => false,
         }
     }
 
@@ -513,15 +366,15 @@ impl<'ast> ANode<'ast> {
         match self {
             ANode::Struct(s) => s.data.ident,
             ANode::Enum(e) => e.ident,
-            ANode::Extern(x) => &x.ident,
+            ANode::Extra(x, _) => &x.ident,
         }
     }
 
-    pub fn generics(&self) -> &Generics {
+    pub fn generics(&self) -> &'ast Generics {
         match self {
             ANode::Struct(s) => s.generics,
             ANode::Enum(e) => e.generics,
-            ANode::Extern(x) => &x.generics,
+            ANode::Extra(x, _) => &x.generics,
         }
     }
 
@@ -529,7 +382,7 @@ impl<'ast> ANode<'ast> {
         match self {
             ANode::Struct(s) => &s.ctx,
             ANode::Enum(e) => &e.ctx,
-            ANode::Extern(x) => &x.ctx,
+            ANode::Extra(_, ctx) => &ctx,
         }
     }
 
@@ -542,7 +395,7 @@ impl<'ast> ANode<'ast> {
                     .map(|variant| variant.fields.iter())
                     .flatten(),
             ),
-            ANode::Extern(_) => Box::new(core::iter::empty()),
+            ANode::Extra(_, _) => Box::new(core::iter::empty()),
         }
     }
 
@@ -563,7 +416,7 @@ impl<'ast> ANode<'ast> {
                     .map(|variant| variant.fields.iter_mut())
                     .flatten(),
             ),
-            ANode::Extern(_) => Box::new(core::iter::empty()),
+            ANode::Extra(_, _) => Box::new(core::iter::empty()),
         }
     }
 }
@@ -571,42 +424,32 @@ impl<'ast> ANode<'ast> {
 fn convert_struct<'nodes, 'ast>(
     nodes: &'nodes BaseNodes<'ast>,
     item_struct: &'ast ItemStruct,
-) -> WithExtern<'ast, AStruct<'ast>> {
+) -> AStruct<'ast> {
     let ctx = generics_collect_context(&item_struct.generics);
-    let WithExtern(data, externs) =
-        convert_variant(nodes, &item_struct.ident, &ctx, &item_struct.fields);
+    let data = convert_variant(nodes, &item_struct.ident, &ctx, &item_struct.fields);
 
-    WithExtern(
-        AStruct {
-            data,
-            ctx,
-            generics: &item_struct.generics,
-        },
-        externs,
-    )
+    AStruct {
+        data,
+        ctx,
+        generics: &item_struct.generics,
+    }
 }
 
-fn convert_enum<'ast>(
-    nodes: &BaseNodes<'ast>,
-    item_enum: &'ast ItemEnum,
-) -> WithExtern<'ast, AEnum<'ast>> {
+fn convert_enum<'ast>(nodes: &BaseNodes<'ast>, item_enum: &'ast ItemEnum) -> AEnum<'ast> {
     let ident = &item_enum.ident;
     let ctx = generics_collect_context(&item_enum.generics);
-    let WithExtern(variants, externs) = item_enum
+    let variants = item_enum
         .variants
         .iter()
         .map(|variant| convert_variant(nodes, &variant.ident, &ctx, &variant.fields))
         .collect();
 
-    WithExtern(
-        AEnum {
-            ident,
-            variants,
-            ctx,
-            generics: &item_enum.generics,
-        },
-        externs,
-    )
+    AEnum {
+        ident,
+        variants,
+        ctx,
+        generics: &item_enum.generics,
+    }
 }
 
 /// INVARIANT: \forall i. nodes[i].ident() == i
@@ -621,38 +464,36 @@ impl<'ast> Deref for ANodes<'ast> {
     }
 }
 
-pub fn make_nodes<'ast>(m: &'ast syn::ItemMod) -> ANodes<'ast> {
-    // Pass 1: Read in most basic data by visiting all structs/enums
+pub fn make_nodes<'ast>(m: &'ast syn::ItemMod, extra_nodes: &'ast Vec<ExtraNode>) -> ANodes<'ast> {
+    // Pass 0: Popuplate from the extra nodes
     let mut base = BaseNodes::default();
+    for node in extra_nodes {
+        base.0.insert(&node.ident, BaseNode::Extra(node));
+    }
+
+    // Pass 1: Read in most basic data by visiting all structs/enums
     base.visit_item_mod(m);
 
     // Pass 2: Annotate nodes with generic context data for their direct children.
-    let WithExtern(mut nodes, externs) = base
-        .iter()
-        .map(|(key, node)| {
-            let (node, externs) = match node {
-                BaseNode::Struct(s) => {
-                    let WithExtern(s, externs) = convert_struct(&base, s);
-                    (ANode::Struct(s), externs)
-                }
-                BaseNode::Enum(e) => {
-                    let WithExtern(e, externs) = convert_enum(&base, e);
-                    (ANode::Enum(e), externs)
-                }
-            };
-            WithExtern((*key, node), externs)
-        })
-        .collect::<WithExtern<'ast, BTreeMap<_, _>>>();
-
-    // Pass 3: Add all extern nodes to the map
-    nodes.extend(
-        externs
-            .into_iter()
-            .map(|node| (node.ident, ANode::Extern(node))),
+    let nodes = ANodes(
+        base.iter()
+            .map(|(key, node)| {
+                (
+                    *key,
+                    match node {
+                        BaseNode::Struct(s) => ANode::Struct(convert_struct(&base, s)),
+                        BaseNode::Enum(e) => ANode::Enum(convert_enum(&base, e)),
+                        BaseNode::Extra(x) => {
+                            ANode::Extra(x, generics_collect_context(&x.generics))
+                        }
+                    },
+                )
+            })
+            .collect(),
     );
 
     // For more complicated passes, see the `lattice` and `scc` modules.
-    ANodes(nodes)
+    nodes
 }
 
 #[cfg(test)]
@@ -742,7 +583,6 @@ mod test {
                                 .into_iter()
                                 .collect(),
                                 indirect_tys: Default::default(),
-                                ctx: self.ctx(),
                             }
                         })
                         .collect(),

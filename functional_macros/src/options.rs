@@ -2,11 +2,13 @@ use std::collections::HashSet;
 
 use syn::parse::Parse;
 use syn::punctuated::Punctuated;
+use syn::Generics;
 use syn::Ident;
 use syn::Token;
 
 #[derive(Default)]
 pub struct Options {
+    pub extra_nodes: Vec<ExtraNode>,
     enabled: Option<EnabledTypeclasses>,
 }
 
@@ -63,6 +65,22 @@ impl Parse for EnabledTypeclasses {
     }
 }
 
+/// An extra node we should add to the module that is considered part of the tree.
+#[derive(Debug)]
+pub struct ExtraNode {
+    pub ident: Ident,
+    pub generics: Generics,
+}
+
+impl Parse for ExtraNode {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        Ok(Self {
+            ident: input.parse()?,
+            generics: input.parse()?,
+        })
+    }
+}
+
 impl Parse for Options {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
         let all_options =
@@ -74,17 +92,34 @@ impl Parse for Options {
                         let enabled;
                         let _ = syn::bracketed!(enabled in input);
                         Ok(Options {
+                            extra_nodes: Vec::new(),
                             enabled: Some(enabled.parse()?),
                         })
                     }
-                    // TODO: is there a better syn::Result return for this?
-                    otherwise => panic!("unknown option {otherwise}"),
+                    "extra_nodes" => {
+                        let _ = <Token![=]>::parse(input)?;
+                        let extra_nodes;
+                        let _ = syn::bracketed!(extra_nodes in input);
+                        Ok(Options {
+                            extra_nodes: Punctuated::<ExtraNode, Token![,]>::parse_terminated(
+                                &extra_nodes,
+                            )?
+                            .into_iter()
+                            .collect(),
+                            enabled: None,
+                        })
+                    }
+                    _ => todo!(),
                 }
             })?;
 
         let out = all_options
             .into_iter()
-            .fold(Options::default(), |left, right| Options {
+            .fold(Options::default(), |mut left, right| Options {
+                extra_nodes: {
+                    left.extra_nodes.extend(right.extra_nodes);
+                    left.extra_nodes
+                },
                 enabled: match (left.enabled, right.enabled) {
                     (Some(mut left), Some(right)) => {
                         left.0.extend(right.0);

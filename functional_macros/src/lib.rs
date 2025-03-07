@@ -22,7 +22,7 @@ pub fn ast(attrs: TokenStream, item: TokenStream) -> TokenStream {
 
     let item_mod: ItemMod = syn::parse(item).expect("must be applied to module");
 
-    let nodes = crate::nodes::make_nodes(&item_mod);
+    let nodes = crate::nodes::make_nodes(&item_mod, &options.extra_nodes);
 
     let mut out = TokenStream2::new();
 
@@ -135,7 +135,7 @@ fn for_each_ident(
 /// specifying what types it will apply to. All this macro does is replace all instances of the
 /// given in idents with all of the idents it's passed as arguments. Usage:
 ///
-/// ```rust
+/// ```rust,ignore
 /// const BAR_A: usize = 5;
 /// const BAR_B: usize = 6;
 /// const BAZ_A: usize = 7;

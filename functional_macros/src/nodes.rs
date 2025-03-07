@@ -206,21 +206,24 @@ pub fn instantiation_collect_context<'vec, 'ast>(
 pub struct AField<'ast> {
     /// Corresponds to the declared ident if in a named struct/enum variant, otherwise corresponds to an anonymous ident if in an unnamed struct/enum variant.
     pub ident: Cow<'ast, Ident>,
-    /// The direct descendants this field, as they appear in the definition.
+    /// The direct descendants of this field, as they appear in the definition.
     pub tys: HashSet<AType<'ast>>,
-    /// All the other types that appear in this field. We need this to be a collection instead of just one because it may track _all_ types that are at or below the one defined for the field.
+    /// Indirect descendants of this field. That is, types that don't appear in the field
+    /// definition, but the field must still be accounted for when looking at said types.
     pub indirect_tys: HashSet<AType<'ast>>,
+    /// Descendants of this field, direct or indirect, that are OK to be transformed, so long as
+    /// the generic context doesn't also transform
+    pub restricted_tys: HashSet<AType<'ast>>,
     /// The context used by this field. Is a superset of anything in tys
     pub ctx: GenericContext<'ast>,
 }
 
 impl<'ast> AField<'ast> {
-    pub fn all_tys(&self) -> impl Iterator<Item = &'_ AType<'ast>> + '_ {
+    pub fn unrestricted_tys(&self) -> impl Iterator<Item = &'_ AType<'ast>> + '_ {
         self.tys.iter().chain(self.indirect_tys.iter())
     }
-    /// Needed since all_tys cannot be an ExactSizeIterator, due to using .chain() internally.
-    pub fn num_all_tys(&self) -> usize {
-        self.tys.len() + self.indirect_tys.len()
+    pub fn all_tys(&self) -> impl Iterator<Item = &'_ AType<'ast>> + '_ {
+        self.unrestricted_tys().chain(self.restricted_tys.iter())
     }
 }
 
@@ -317,6 +320,7 @@ fn convert_field<'ast>(
         ident,
         tys,
         indirect_tys: Default::default(),
+        restricted_tys: Default::default(),
         ctx,
     }
 }
@@ -433,6 +437,18 @@ impl<'ast> ANode<'ast> {
 
     pub fn all_tys(&self) -> impl Iterator<Item = &'_ AType<'ast>> + '_ {
         self.fields().map(|field| field.all_tys()).flatten()
+    }
+
+    pub fn unrestricted_tys(&self) -> impl Iterator<Item = &'_ AType<'ast>> + '_ {
+        self.fields()
+            .map(|field| field.unrestricted_tys())
+            .flatten()
+    }
+
+    pub fn restricted_tys(&self) -> impl Iterator<Item = &'_ AType<'ast>> + '_ {
+        self.fields()
+            .map(|field| field.restricted_tys.iter())
+            .flatten()
     }
 
     pub fn direct_tys(&self) -> impl Iterator<Item = &'_ AType<'ast>> + '_ {
@@ -615,6 +631,7 @@ mod test {
                                 .into_iter()
                                 .collect(),
                                 indirect_tys: Default::default(),
+                                restricted_tys: Default::default(),
                                 ctx: self.ctx(),
                             }
                         })

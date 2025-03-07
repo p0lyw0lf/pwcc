@@ -254,9 +254,9 @@ pub(crate) fn make_lattice<'ast>(mut nodes: ANodes<'ast>) -> Lattice<'ast> {
             .flatten()
             .zip(new_types.drain(..))
         {
-            let old_num_types = field.num_all_tys();
+            let old_num_types = field.all_tys().count();
             field.indirect_tys.extend(new_field_types);
-            let new_num_types = field.num_all_tys();
+            let new_num_types = field.all_tys().count();
             if old_num_types != new_num_types {
                 changed = true;
             }

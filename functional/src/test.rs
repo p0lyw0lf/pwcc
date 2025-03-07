@@ -80,14 +80,53 @@ mod variants {
 mod coherence_indirect {
     use super::*;
 
+    #[derive(Debug, PartialEq)]
     struct A<T> {
         b: B<T>,
         c: C<T>,
     }
+    #[derive(Debug, PartialEq)]
     struct B<T> {
         c: C<T>,
     }
+    #[derive(Debug, PartialEq)]
     struct C<T>(T);
+
+    /// There shouldn't be a TInput -> TOutput implementation, but there should still be a T -> T
+    /// implementation over B
+    #[test]
+    fn test_b() {
+        let x = A {
+            b: B { c: C(6i32) },
+            c: C(9),
+        };
+        let x_expected = A {
+            b: B { c: C(12i32) },
+            c: C(9),
+        };
+        let x_actual = x.fmap(&mut |mut b: B<i32>| {
+            b.c.0 *= 2;
+            b
+        });
+        assert_eq!(x_expected, x_actual);
+    }
+
+    /// There should still be a TInput -> TOutput implementation over C
+    #[test]
+    fn test_c() {
+        let x = A {
+            b: B { c: C(6i32) },
+            c: C(9),
+        };
+        let x_expected = A {
+            b: B {
+                c: C("6".to_string()),
+            },
+            c: C("9".to_string()),
+        };
+        let x_actual = x.fmap(&mut |C(i)| C(format!("{i}")));
+        assert_eq!(x_expected, x_actual);
+    }
 }
 
 #[ast(typeclasses = [Functor])]

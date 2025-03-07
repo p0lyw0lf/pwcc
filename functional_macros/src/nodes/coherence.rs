@@ -173,7 +173,7 @@ pub fn filter_coherent<'ast>(lattice: Lattice<'ast>) -> ANodes<'ast> {
         // 2. Remove all outgoing edges where there's other edges w/ overlapping generic contexts
         //    that cannot be transformed.
         let node = nodes.0.get(ident).unwrap();
-        let tys = node.all_tys().collect::<HashSet<_>>();
+        let tys = node.unrestricted_tys().collect::<HashSet<_>>();
         let direct_tys = node.direct_tys().collect::<HashSet<_>>();
         // Then, we'll look for pairs of edges where the contexts intersect, and the latter edge is
         // a direct edge.
@@ -185,7 +185,7 @@ pub fn filter_coherent<'ast>(lattice: Lattice<'ast>) -> ANodes<'ast> {
                 let node_c = &nodes[edge_c.ident];
                 // Look for an edge c -> b. If we can't find it, then a -> b is a bad edge.
                 if !node_c
-                    .all_tys()
+                    .unrestricted_tys()
                     .map(|ty| collapse_ty_edge(node.ctx(), &edge_c, node_c, ty))
                     .any(|ty| &&ty == edge_b)
                 {
@@ -199,8 +199,15 @@ pub fn filter_coherent<'ast>(lattice: Lattice<'ast>) -> ANodes<'ast> {
 
         let node = nodes.0.get_mut(ident).unwrap();
         for field in node.fields_mut() {
-            field.tys.retain(|ty| !bad_edges.contains(&ty));
-            field.indirect_tys.retain(|ty| !bad_edges.contains(&ty));
+            let mut restrict_ty = |ty: &AType<'ast>| {
+                let bad = bad_edges.contains(&ty);
+                if bad {
+                    field.restricted_tys.insert(ty.clone());
+                }
+                !bad
+            };
+            field.tys.retain(&mut restrict_ty);
+            field.indirect_tys.retain(&mut restrict_ty);
         }
     }
 
@@ -228,7 +235,7 @@ mod test {
                 .map(|label| {
                     let node = &nodes[label];
                     let edges = node
-                        .all_tys()
+                        .unrestricted_tys()
                         .collect::<HashSet<_>>()
                         .into_iter()
                         .map(|ty| labels.iter().position(|label| label == ty.ident).unwrap())

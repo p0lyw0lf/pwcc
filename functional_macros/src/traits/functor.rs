@@ -49,21 +49,31 @@ fn emit_base_case<'ast>(
         return;
     }
 
-    let input_generics = generics_add_suffix(generics, "Input", &ctx, Behavior::KeepAll);
-    let output_generics = generics_add_suffix(generics, "Output", &ctx, Behavior::KeepAll);
+    let out_toks = if node.restricted_tys().any(|ty| ty.ident == ident) {
+        let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+        emitter.base_case(
+            impl_generics,
+            where_clause,
+            quote! { #ident #ty_generics },
+            quote! { #ident #ty_generics },
+        )
+    } else {
+        let input_generics = generics_add_suffix(generics, "Input", &ctx, Behavior::KeepAll);
+        let output_generics = generics_add_suffix(generics, "Output", &ctx, Behavior::KeepAll);
 
-    let all_generics = generics_merge(&input_generics, &output_generics);
+        let all_generics = generics_merge(&input_generics, &output_generics);
 
-    let (impl_generics, _, where_clause) = all_generics.split_for_impl();
-    let (_, input_ty_generics, _) = input_generics.split_for_impl();
-    let (_, output_ty_generics, _) = output_generics.split_for_impl();
+        let (impl_generics, _, where_clause) = all_generics.split_for_impl();
+        let (_, input_ty_generics, _) = input_generics.split_for_impl();
+        let (_, output_ty_generics, _) = output_generics.split_for_impl();
 
-    let out_toks = emitter.base_case(
-        impl_generics,
-        where_clause,
-        quote! { #ident #input_ty_generics },
-        quote! { #ident #output_ty_generics },
-    );
+        emitter.base_case(
+            impl_generics,
+            where_clause,
+            quote! { #ident #input_ty_generics },
+            quote! { #ident #output_ty_generics },
+        )
+    };
 
     // eprintln!("{out_toks}");
     out.append_all(out_toks);
@@ -121,41 +131,61 @@ fn emit_inductive_case<'ast>(
 
     let container_generics = container.generics();
 
-    let container_input_generics_partial =
-        generics_add_suffix(container_generics, "Input", &inner_ctx, Behavior::OnlyCtx);
-    let container_input_generics_full =
-        generics_add_suffix(container_generics, "Input", &inner_ctx, Behavior::KeepAll);
-    let container_output_generics =
-        generics_add_suffix(container_generics, "Output", &inner_ctx, Behavior::KeepAll);
-
-    let all_generics = generics_merge(
-        &container_input_generics_partial,
-        &container_output_generics,
-    );
-
-    let (impl_generics, _, where_clause) = all_generics.split_for_impl();
-    let (_, input_ty_generics, _) = container_input_generics_full.split_for_impl();
-    let (_, output_ty_generics, _) = container_output_generics.split_for_impl();
-
-    let inner_instantiation = inner.instantiation.iter().map(Deref::deref);
-    let input_inner_instantiation =
-        instantiation_add_suffix(inner_instantiation.clone(), "Input", &inner_ctx)
+    let out_toks = if container.restricted_tys().any(|ty| ty.ident == inner_ident) {
+        let (impl_generics, ty_generics, where_clause) = container_generics.split_for_impl();
+        let inner_instantiation = inner
+            .instantiation
+            .iter()
+            .map(Deref::deref)
             .collect::<Punctuated<_, Token![,]>>();
 
-    let output_inner_instantiation =
-        instantiation_add_suffix(inner_instantiation, "Output", &inner_ctx)
-            .collect::<Punctuated<_, Token![,]>>();
+        emitter.inductive_case(
+            container,
+            inner,
+            impl_generics,
+            where_clause,
+            quote! { #ident #ty_generics },
+            quote! { #inner_ident < #inner_instantiation > },
+            quote! { #ident #ty_generics },
+            quote! { #inner_ident < #inner_instantiation > },
+        )
+    } else {
+        let container_input_generics_partial =
+            generics_add_suffix(container_generics, "Input", &inner_ctx, Behavior::OnlyCtx);
+        let container_input_generics_full =
+            generics_add_suffix(container_generics, "Input", &inner_ctx, Behavior::KeepAll);
+        let container_output_generics =
+            generics_add_suffix(container_generics, "Output", &inner_ctx, Behavior::KeepAll);
 
-    let out_toks = emitter.inductive_case(
-        container,
-        inner,
-        impl_generics,
-        where_clause,
-        quote! { #ident #input_ty_generics },
-        quote! { #inner_ident < #input_inner_instantiation > },
-        quote! { #ident #output_ty_generics },
-        quote! { #inner_ident < #output_inner_instantiation > },
-    );
+        let all_generics = generics_merge(
+            &container_input_generics_partial,
+            &container_output_generics,
+        );
+
+        let (impl_generics, _, where_clause) = all_generics.split_for_impl();
+        let (_, input_ty_generics, _) = container_input_generics_full.split_for_impl();
+        let (_, output_ty_generics, _) = container_output_generics.split_for_impl();
+
+        let inner_instantiation = inner.instantiation.iter().map(Deref::deref);
+        let input_inner_instantiation =
+            instantiation_add_suffix(inner_instantiation.clone(), "Input", &inner_ctx)
+                .collect::<Punctuated<_, Token![,]>>();
+
+        let output_inner_instantiation =
+            instantiation_add_suffix(inner_instantiation, "Output", &inner_ctx)
+                .collect::<Punctuated<_, Token![,]>>();
+
+        emitter.inductive_case(
+            container,
+            inner,
+            impl_generics,
+            where_clause,
+            quote! { #ident #input_ty_generics },
+            quote! { #inner_ident < #input_inner_instantiation > },
+            quote! { #ident #output_ty_generics },
+            quote! { #inner_ident < #output_inner_instantiation > },
+        )
+    };
 
     // eprintln!("{out_toks}");
     out.append_all(out_toks);

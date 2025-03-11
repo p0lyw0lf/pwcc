@@ -54,6 +54,7 @@ macro_rules! nodes {
                 $(<$m_sname:ident : $m_subnode:ty>)?
                 $({$m_cname:ident : $m_ctoken:ident ($m_pat:pat = $m_ty:ty) })?
             )* )
+            $([$m_include:ident])?
         )?
         $(
             // Addition: choose between nodes
@@ -63,14 +64,17 @@ macro_rules! nodes {
                 $(<$a_subnode:ident>)?
                 $({$a_ctoken:ident ($a_pat:pat = $a_ty:ty) })?
             )* )
+            $([$a_include:ident])?
         )?
         $(
             // Other enum: just emit normally
             enum $oe_tt:tt
+            $([$oe_include:ident])?
         )?
         $(
             // Other struct: just emit normally
             struct $os_tt:tt
+            $([$os_include:ident])?
         )?
     ; )*) => {
         #[functional_macros::ast]
@@ -88,6 +92,7 @@ macro_rules! nodes {
         // Multiplication
         #[derive(Debug)]
         #[cfg_attr(test, derive(PartialEq))]
+        $(#[$m_include()])?
         pub struct $node {$(
             $(pub $m_sname: Span<$m_subnode>,)?
             $(pub $m_cname: Span<$m_ty>,)?
@@ -142,6 +147,7 @@ macro_rules! nodes {
         // Addition
         #[derive(Debug)]
         #[cfg_attr(test, derive(PartialEq))]
+        $(#[$a_include()])?
         pub enum $node {$(
             $($a_token,)?
             $($a_subnode($a_subnode),)?
@@ -199,12 +205,14 @@ macro_rules! nodes {
         // Other enum
         #[derive(Debug)]
         #[cfg_attr(test, derive(PartialEq))]
+        $(#[$oe_include()])?
         pub enum $node $oe_tt
         )?
         $(
         // Other struct
         #[derive(Debug)]
         #[cfg_attr(test, derive(PartialEq))]
+        $(#[$os_include()])?
         pub struct $node $os_tt;
         )?
         )*

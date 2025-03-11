@@ -21,6 +21,7 @@ mod ast {
 
     /// Newtype needed to avoid "unconstrained type" errors
     #[derive(Debug)]
+    #[include()]
     pub struct Location<S: State>(pub S::Location);
 
     #[derive(Debug)]
@@ -37,9 +38,11 @@ mod ast {
     /// We separate this out into a newtype struct so that we can map over it as well as individual
     /// instructions.
     #[derive(Debug)]
+    #[include()]
     pub struct Instructions<S: State>(pub Vec<Instruction<S>>);
 
     #[derive(Debug)]
+    #[include()]
     pub enum Instruction<S: State> {
         Mov {
             src: Operand<S>,

@@ -195,6 +195,7 @@ mod ast {
     }
 
     #[derive(Debug, PartialEq)]
+    #[include()]
     pub enum Exp {
         Lit(isize),
         Add { lhs: Box<Exp>, rhs: Box<Exp> },

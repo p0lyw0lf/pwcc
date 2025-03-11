@@ -26,9 +26,9 @@ nodes! {
     Function(
         *KeywordInt *{name: Ident(_ = String)} *OpenParen *KeywordVoid *CloseParen
             *<body: Block>
-    );
-    Block(*OpenBrace *<items: Vec<BlockItem>> *CloseBrace);
-    BlockItem(+<Statement> +<Declaration>);
+    ) [include];
+    Block(*OpenBrace *<items: Vec<BlockItem>> *CloseBrace) [include];
+    BlockItem(+<Statement> +<Declaration>) [include];
     Statement(
         +<ReturnStmt>
         +<ExpressionStmt>
@@ -42,7 +42,7 @@ nodes! {
         +<LabelStmt>
         +<GotoStmt>
         +<NullStmt>
-    );
+    ) [include];
     ReturnStmt(*KeywordReturn *<exp: Exp> *Semicolon);
     ExpressionStmt(*<exp: Exp> *Semicolon);
 
@@ -57,8 +57,8 @@ nodes! {
     ForInit(+<Declaration> +<ForInitExp>);
     ForInitExp(*<exp: Option<Exp>> *Semicolon);
 
-    LabelStmt(*{label: Ident(_ = String)} *Colon);
-    GotoStmt(*KeywordGoto *{label: Ident(_ = String)} *Semicolon);
+    LabelStmt(*{label: Ident(_ = String)} *Colon) [include];
+    GotoStmt(*KeywordGoto *{label: Ident(_ = String)} *Semicolon) [include];
 
     NullStmt(*Semicolon);
 
@@ -124,7 +124,7 @@ nodes! {
             op: Span<AssignmentOp>,
             rhs: Span<Box<Exp>>,
         },
-    };
+    } [include];
     // Similarly with LoopLabel; we never want to be able to parse it from tokens, but we do want
 // to be able to create one later and see it
     LoopLabel struct (pub String);

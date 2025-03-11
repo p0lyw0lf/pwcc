@@ -15,12 +15,12 @@ pub trait TryFunctor<Output>: Functor<Output> {
     #[inline(always)]
     fn try_fmap<E: Semigroup + ControlFlow>(
         self,
-        f: impl FnMut(Self::Input) -> Result<Output, E>,
+        mut f: impl FnMut(Self::Input) -> Result<Output, E>,
     ) -> Result<Self::Mapped, E>
     where
         Self: Sized,
     {
-        self.try_fmap_impl(f, RecursiveCall::default())
+        self.try_fmap_impl(&mut f, RecursiveCall::default())
     }
 }
 

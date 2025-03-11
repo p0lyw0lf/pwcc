@@ -16,6 +16,8 @@ pub trait Functor<Output> {
     type Input;
     type Mapped;
 
+    /// NOTE: `f` needs to be `&mut` so that we don't run into infinite type errors, for some
+    /// reason.
     fn fmap_impl(
         self,
         f: &mut impl FnMut(Self::Input) -> Output,
@@ -23,11 +25,11 @@ pub trait Functor<Output> {
     ) -> Self::Mapped;
 
     #[inline(always)]
-    fn fmap(self, f: impl FnMut(Self::Input) -> Output) -> Self::Mapped
+    fn fmap(self, mut f: impl FnMut(Self::Input) -> Output) -> Self::Mapped
     where
         Self: Sized,
     {
-        self.fmap_impl(f, RecursiveCall::default())
+        self.fmap_impl(&mut f, RecursiveCall::default())
     }
 }
 
@@ -105,9 +107,7 @@ where
         f: &mut impl FnMut(Self::Input) -> Output,
         how: RecursiveCall,
     ) -> Self::Mapped {
-        self.into_iter()
-            .map(&mut |x: T| x.fmap_impl(f, how))
-            .collect()
+        self.into_iter().map(|x: T| x.fmap_impl(f, how)).collect()
     }
 }
 
@@ -122,7 +122,7 @@ where
         f: &mut impl FnMut(T::Input) -> Output,
         how: RecursiveCall,
     ) -> Option<T::Mapped> {
-        Option::map(self, &mut |x: T| x.fmap_impl(f, how))
+        Option::map(self, |x: T| x.fmap_impl(f, how))
     }
 }
 

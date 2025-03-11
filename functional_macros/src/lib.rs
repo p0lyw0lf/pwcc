@@ -1,7 +1,6 @@
 use proc_macro::TokenStream;
 use proc_macro::TokenTree;
 
-use proc_macro2::Span as Span2;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use quote::ToTokens;

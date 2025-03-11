@@ -113,11 +113,19 @@ pub fn emit<'ast>(out: &mut TokenStream2, nodes: &Lattice<'ast>) {
             continue;
         }
 
-        emit_base_case(out, container);
+        if container.is_included() {
+            emit_base_case(out, container);
+        }
 
         let types = container.all_tys().collect::<HashSet<_>>();
         for inner in types.into_iter() {
-            emit_inductive_case(out, container, inner);
+            if nodes
+                .0
+                .get(&inner.ident)
+                .is_some_and(|node| node.is_included())
+            {
+                emit_inductive_case(out, container, inner);
+            }
         }
     }
 }

@@ -4,7 +4,6 @@ use std::collections::HashSet;
 use std::hash::Hash;
 use std::ops::Deref;
 
-use proc_macro2::Span;
 use syn::spanned::Spanned;
 use syn::visit;
 use syn::visit::Visit;

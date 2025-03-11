@@ -147,7 +147,7 @@ where
 {
     type Mapped = T::Mapped;
     fn identity(self) -> Self::Mapped {
-        self.fmap(&mut |x| wrap(x.inner()))
+        self.fmap(|x| wrap(x.inner()))
     }
 }
 

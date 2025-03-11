@@ -4,9 +4,11 @@ use std::collections::HashSet;
 use std::hash::Hash;
 use std::ops::Deref;
 
+use proc_macro2::Span;
 use syn::spanned::Spanned;
 use syn::visit;
 use syn::visit::Visit;
+use syn::Attribute;
 use syn::Field;
 use syn::Fields;
 use syn::GenericArgument;
@@ -166,8 +168,8 @@ impl<'ast, 'vec, 'outer> Visit<'vec> for Collect<'ast, 'outer> {
 
     fn visit_type_path(&mut self, t: &'vec syn::TypePath) {
         if t.qself.is_none() {
-            if let Some(first) = t.path.segments.first() {
-                if let Some(ident) = self.parent_ctx.get_type(&first.ident) {
+            if let Some(ident) = t.path.get_ident() {
+                if let Some(ident) = self.parent_ctx.get_type(&ident) {
                     self.ctx.types.insert(ident);
                 }
             }
@@ -267,7 +269,7 @@ fn convert_field<'ast>(
             // If it's just a single name in the path, it's highly likely it's part of the AST
             // we're building. Check for this.
             if ty.qself.is_none() && ty.path.segments.len() == 1 {
-                let segment = ty.path.segments.first().unwrap();
+                let segment = &ty.path.segments[0];
                 let ident = &segment.ident;
                 if self.nodes.contains_key(ident) && !self.parent_ctx.has_type(ident) {
                     let instantiation =
@@ -364,6 +366,8 @@ fn convert_variant<'nodes, 'ast>(
 #[derive(Debug)]
 pub struct AStruct<'ast> {
     pub data: AVariant<'ast>,
+    /// Whether this node is marked with "include"
+    pub is_included: bool,
     /// The generic context defined by this struct
     pub ctx: GenericContext<'ast>,
     /// The exact order of generic arguments
@@ -377,6 +381,8 @@ pub struct AEnum<'ast> {
     pub ident: &'ast Ident,
     /// All of the variants in the enum
     pub variants: Vec<AVariant<'ast>>,
+    /// Whether this node is marked with "include"
+    pub is_included: bool,
     /// The generic context defined by this enum
     pub ctx: GenericContext<'ast>,
     /// The exact order of generic arguments
@@ -403,6 +409,14 @@ impl<'ast> ANode<'ast> {
             ANode::Struct(s) => s.data.ident,
             ANode::Enum(e) => e.ident,
             ANode::Extra(x, _) => &x.ident,
+        }
+    }
+
+    pub fn is_included(&self) -> bool {
+        match self {
+            ANode::Struct(s) => s.is_included,
+            ANode::Enum(e) => e.is_included,
+            ANode::Extra(_, _) => true,
         }
     }
 
@@ -469,6 +483,21 @@ impl<'ast> ANode<'ast> {
     }
 }
 
+/// Returns if there is an attribute `#[include()]` in the list of attrs, and strips it if present
+/// TODO: add support for different typeclasses
+fn parse_is_included<'ast>(attrs: impl IntoIterator<Item = &'ast Attribute>) -> bool {
+    attrs.into_iter().any(is_special_attr)
+}
+
+/// Returns if the attribute is `#[include()]`
+pub(crate) fn is_special_attr(attr: &Attribute) -> bool {
+    if let syn::Meta::List(l) = &attr.meta {
+        l.path.get_ident().is_some_and(|i| i == "include")
+    } else {
+        false
+    }
+}
+
 fn convert_struct<'nodes, 'ast>(
     nodes: &'nodes BaseNodes<'ast>,
     item_struct: &'ast ItemStruct,
@@ -478,6 +507,7 @@ fn convert_struct<'nodes, 'ast>(
 
     AStruct {
         data,
+        is_included: parse_is_included(item_struct.attrs.iter()),
         ctx,
         generics: &item_struct.generics,
     }
@@ -495,6 +525,7 @@ fn convert_enum<'ast>(nodes: &BaseNodes<'ast>, item_enum: &'ast ItemEnum) -> AEn
     AEnum {
         ident,
         variants,
+        is_included: parse_is_included(item_enum.attrs.iter()),
         ctx,
         generics: &item_enum.generics,
     }
@@ -637,6 +668,7 @@ mod test {
                         })
                         .collect(),
                 },
+                is_included: true,
                 ctx: self.ctx(),
                 generics: &self.t_generics,
             });

@@ -23,7 +23,7 @@ pub trait Functor<Output> {
     ) -> Self::Mapped;
 
     #[inline(always)]
-    fn fmap(self, f: &mut impl FnMut(Self::Input) -> Output) -> Self::Mapped
+    fn fmap(self, f: impl FnMut(Self::Input) -> Output) -> Self::Mapped
     where
         Self: Sized,
     {

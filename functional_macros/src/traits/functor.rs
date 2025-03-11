@@ -306,11 +306,19 @@ pub fn emit<'ast>(
             continue;
         }
 
-        emit_base_case(out, container, emitter);
+        if container.is_included() {
+            emit_base_case(out, container, emitter);
+        }
 
         let types = container.all_tys().collect::<HashSet<_>>();
         for inner in types.into_iter() {
-            emit_inductive_case(out, nodes, container, inner, emitter)
+            if nodes
+                .0
+                .get(&inner.ident)
+                .is_some_and(|node| node.is_included())
+            {
+                emit_inductive_case(out, nodes, container, inner, emitter);
+            }
         }
     }
 }

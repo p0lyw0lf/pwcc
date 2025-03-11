@@ -6,6 +6,7 @@ mod coherence_direct {
     #![allow(dead_code)]
     use super::*;
 
+    #[include()]
     struct B<T>(T);
 
     struct AFiltered1<T, U> {
@@ -17,6 +18,7 @@ mod coherence_direct {
         bi: B<i32>,
     }
 
+    #[include()]
     struct C<T, U>(T, U);
 
     struct DFiltered1<T> {
@@ -38,6 +40,7 @@ mod variants {
         word: Inner<i16>,
     }
     #[derive(Debug, PartialEq)]
+    #[include()]
     struct Inner<T>(T);
 
     #[test]
@@ -51,7 +54,7 @@ mod variants {
                 byte: Inner(2),
                 word: Inner(3),
             },
-            x.fmap(&mut |mut i: Inner<i8>| {
+            x.fmap(|mut i: Inner<i8>| {
                 i.0 *= 2;
                 i
             })
@@ -66,7 +69,7 @@ mod variants {
                 byte: Inner(1),
                 word: Inner(9),
             },
-            x.fmap(&mut |mut i: Inner<i16>| {
+            x.fmap(|mut i: Inner<i16>| {
                 i.0 *= 3;
                 i
             })
@@ -86,10 +89,12 @@ mod coherence_indirect {
         c: C<T>,
     }
     #[derive(Debug, PartialEq)]
+    #[include()]
     struct B<T> {
         c: C<T>,
     }
     #[derive(Debug, PartialEq)]
+    #[include()]
     struct C<T>(T);
 
     /// There shouldn't be a TInput -> TOutput implementation, but there should still be a T -> T
@@ -104,7 +109,7 @@ mod coherence_indirect {
             b: B { c: C(12i32) },
             c: C(9),
         };
-        let x_actual = x.fmap(&mut |mut b: B<i32>| {
+        let x_actual = x.fmap(|mut b: B<i32>| {
             b.c.0 *= 2;
             b
         });
@@ -124,12 +129,12 @@ mod coherence_indirect {
             },
             c: C("9".to_string()),
         };
-        let x_actual = x.fmap(&mut |C(i)| C(format!("{i}")));
+        let x_actual = x.fmap(|C(i)| C(format!("{i}")));
         assert_eq!(x_expected, x_actual);
     }
 }
 
-#[ast(typeclasses = [Functor])]
+#[ast(typeclasses = [Functor], extra_nodes = [i32])]
 mod extra_nodes {
     use super::*;
 
@@ -155,7 +160,7 @@ mod extra_nodes {
                 next: Some(Box::new(IntList { val: 4, next: None })),
             })),
         };
-        let x_actual = x.fmap(&mut |IntList { val: i, next }| IntList { val: i * 2, next });
+        let x_actual = x.fmap(|i: i32| i * 2);
         assert_eq!(x_expected, x_actual);
     }
     // We don't support raw generics

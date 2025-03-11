@@ -2,7 +2,6 @@ use std::collections::HashSet;
 
 use syn::parse::Parse;
 use syn::punctuated::Punctuated;
-use syn::Generics;
 use syn::Ident;
 use syn::Token;
 

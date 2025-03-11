@@ -1,6 +1,7 @@
 use proc_macro::TokenStream;
 use proc_macro::TokenTree;
 
+use proc_macro2::Span as Span2;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use quote::ToTokens;
@@ -47,9 +48,52 @@ pub fn ast(attrs: TokenStream, item: TokenStream) -> TokenStream {
         .as_ref()
         .expect("Must be applied to module with braces");
 
-    brace.surround(&mut out, |mut out| {
+    brace.surround(&mut out, |out| {
         out.append_all(item_mod.attrs.iter().filter(is_inner));
-        out.append_all(items);
+        items.iter().for_each(|item| match item {
+            syn::Item::Struct(s) => {
+                out.append_all(
+                    s.attrs
+                        .iter()
+                        .filter(|attr| !nodes::is_special_attr(attr) && is_outer(attr)),
+                );
+                s.vis.to_tokens(out);
+                s.struct_token.to_tokens(out);
+                s.ident.to_tokens(out);
+                s.generics.to_tokens(out);
+                match &s.fields {
+                    syn::Fields::Named(fields) => {
+                        s.generics.where_clause.to_tokens(out);
+                        fields.to_tokens(out);
+                    }
+                    syn::Fields::Unnamed(fields) => {
+                        fields.to_tokens(out);
+                        s.generics.where_clause.to_tokens(out);
+                        s.semi_token.to_tokens(out);
+                    }
+                    syn::Fields::Unit => {
+                        s.generics.where_clause.to_tokens(out);
+                        s.semi_token.to_tokens(out);
+                    }
+                }
+            }
+            syn::Item::Enum(e) => {
+                out.append_all(
+                    e.attrs
+                        .iter()
+                        .filter(|attr| !nodes::is_special_attr(attr) && is_outer(attr)),
+                );
+                e.vis.to_tokens(out);
+                e.enum_token.to_tokens(out);
+                e.ident.to_tokens(out);
+                e.generics.to_tokens(out);
+                e.generics.where_clause.to_tokens(out);
+                e.brace_token.surround(out, |out| {
+                    e.variants.to_tokens(out);
+                });
+            }
+            otherwise => otherwise.to_tokens(out),
+        });
 
         // First: all traits that do not care about coherence
         let nodes = crate::nodes::lattice::make_lattice(nodes);
@@ -59,7 +103,7 @@ pub fn ast(attrs: TokenStream, item: TokenStream) -> TokenStream {
             out.append_all(quote! {
                 use #crate_name::Foldable;
             });
-            traits::foldable::emit(&mut out, &nodes);
+            traits::foldable::emit(out, &nodes);
         }
 
         // Next: all traits that _do_ care about coherence
@@ -73,7 +117,7 @@ pub fn ast(attrs: TokenStream, item: TokenStream) -> TokenStream {
                 use #crate_name::Functor;
                 use #crate_name::RecursiveCall;
             });
-            traits::functor::emit(&mut out, &nodes, &traits::functor::Emitter);
+            traits::functor::emit(out, &nodes, &traits::functor::Emitter);
         }
 
         #[cfg(feature = "try_functor")]
@@ -83,7 +127,7 @@ pub fn ast(attrs: TokenStream, item: TokenStream) -> TokenStream {
                 use #crate_name::Semigroup;
                 use #crate_name::TryFunctor;
             });
-            traits::functor::emit(&mut out, &nodes, &traits::try_functor::Emitter);
+            traits::functor::emit(out, &nodes, &traits::try_functor::Emitter);
         }
     });
 

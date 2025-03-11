@@ -15,7 +15,7 @@ pub trait TryFunctor<Output>: Functor<Output> {
     #[inline(always)]
     fn try_fmap<E: Semigroup + ControlFlow>(
         self,
-        f: &mut impl FnMut(Self::Input) -> Result<Output, E>,
+        f: impl FnMut(Self::Input) -> Result<Output, E>,
     ) -> Result<Self::Mapped, E>
     where
         Self: Sized,

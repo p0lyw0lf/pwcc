@@ -11,7 +11,7 @@ default = ["foldable", "functor", "try-functor", "visit", "visit-mut"]
 foldable = []
 functor = []
 try-functor = ["functor"]
-visit = []
+visit = ["foldable"]
 visit-mut = ["visit"]
 
 [dependencies]

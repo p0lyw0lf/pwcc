@@ -1,8 +1,9 @@
+use proc_macro2::Span as Span2;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use quote::TokenStreamExt;
+use syn::Ident;
 
-use crate::emitter::make_fn_body;
 use crate::emitter::BodyEmitter;
 use crate::nodes::ANodes;
 use crate::nodes::AVariant;
@@ -11,12 +12,13 @@ use crate::nodes::AVariant;
 /// (Visit)
 pub(super) struct Emitter<'a> {
     prefix: &'a str,
-    trait_name: &'a str,
+    trait_name: Ident,
 }
 
 impl<'a> Emitter<'a> {
     /// Converts a type name like "TypeName" into something like "visit_type_name"
-    fn to_method(&self, type_name: &str) -> String {
+    fn to_method(&self, ty: &Ident) -> Ident {
+        let type_name = ty.to_string();
         let mut out = String::with_capacity(self.prefix.len() + 1 + type_name.len());
         out.push_str(self.prefix);
         let mut last_end = 0;
@@ -26,7 +28,7 @@ impl<'a> Emitter<'a> {
             out.push_str(&c.to_ascii_lowercase());
             last_end = start + c.len();
         }
-        out
+        Ident::new(&out, Span2::call_site())
     }
 
     /// Given the set of nodes, emits a definition for the Visit trait.
@@ -34,7 +36,7 @@ impl<'a> Emitter<'a> {
         let mut inner = TokenStream2::new();
 
         for node in nodes.values() {
-            let ident = &node.ident().to_string();
+            let ident = &node.ident();
             let method = self.to_method(ident);
 
             inner.append_all(quote! {
@@ -44,7 +46,7 @@ impl<'a> Emitter<'a> {
             });
         }
 
-        let trait_name = self.trait_name;
+        let trait_name = &self.trait_name;
         quote! {
             pub trait #trait_name<'ast> {
                 #inner
@@ -57,10 +59,10 @@ impl<'a> Emitter<'a> {
         let mut out = TokenStream2::new();
 
         for node in nodes.values() {
-            let ident = &node.ident().to_string();
+            let ident = &node.ident();
             let method = self.to_method(ident);
 
-            let body = make_fn_body(self, node, &());
+            let body = self.emit_body(quote! { node }, node, &());
 
             out.append_all(quote! {
                 pub fn #method<'ast, V>(v: &mut V, node: &'ast #ident)
@@ -81,6 +83,7 @@ impl<'a> Emitter<'a> {
 
         quote! {
             pub mod visit {
+                use super::*;
                 #def_trait
                 #def_methods
             }
@@ -90,19 +93,17 @@ impl<'a> Emitter<'a> {
 
 impl<'ast> BodyEmitter<'ast> for Emitter<'_> {
     type Context = ();
-    fn body(&self, variant: &AVariant<'ast>, _: &(), _in_enum: bool) -> TokenStream2 {
+    fn emit_variant_body(&self, variant: &AVariant<'ast>, _: &(), _in_enum: bool) -> TokenStream2 {
         let mut out = TokenStream2::new();
 
         for field in variant.fields.iter() {
             let field_ident = &field.ident;
             for ty in field.tys.iter() {
-                let method = self.to_method(&ty.ident.to_string());
-                // TODO: this will not work because it doesn't consider fields with multiple types,
-                // or fields with wrapper types like Option or Box. To solve that, I kinda need
-                // something like Functor, but I can't have that, since that's what Visit is for in
-                // the first place? Going to have to puzzle on this to figure out how to solve it.
+                let method = self.to_method(&ty.ident);
+                // It's a little strange, but it works! We do need something to go into wrapper
+                // types like Box and Option, so this is that.
                 out.append_all(quote! {
-                    #method(v, #field_ident);
+                    #field_ident.foldl_impl(&mut |(), n| v.#method(n), (), RecursiveCall::None);
                 });
             }
         }
@@ -114,7 +115,7 @@ impl<'ast> BodyEmitter<'ast> for Emitter<'_> {
 pub fn emit<'ast>(nodes: &ANodes<'ast>) -> TokenStream2 {
     Emitter {
         prefix: "visit",
-        trait_name: "Visit",
+        trait_name: Ident::new("Visit", Span2::call_site()),
     }
     .emit(nodes)
 }

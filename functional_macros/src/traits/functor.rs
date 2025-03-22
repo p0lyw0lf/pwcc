@@ -8,7 +8,6 @@ use quote::TokenStreamExt;
 use syn::punctuated::Punctuated;
 use syn::Token;
 
-use crate::emitter::make_fn_body;
 use crate::emitter::make_variant_constructor;
 use crate::emitter::BodyEmitter;
 use crate::emitter::FieldEmitter;
@@ -45,7 +44,7 @@ fn emit_base_case<'ast>(
 
     // If this is a recursive type, we should _not_ generate a base case, and instead let the
     // inductive case take care of that.
-    if node.all_tys().any(|ty| ty.ident == ident) {
+    if node.is_included() && node.all_tys().any(|ty| ty.ident == ident) {
         return;
     }
 
@@ -203,7 +202,11 @@ impl InductiveCaseEmitter for Emitter {
         output_outer: impl ToTokens,
         output_inner: impl ToTokens,
     ) -> TokenStream2 {
-        let mut fn_body = make_fn_body(self, container, &(inner, output_inner.to_token_stream()));
+        let mut fn_body = self.emit_body(
+            quote! { self },
+            container,
+            &(inner, output_inner.to_token_stream()),
+        );
         if container.ident() == inner.ident {
             fn_body = quote! {
                 if how == RecursiveCall::None {
@@ -260,7 +263,7 @@ impl FieldEmitter for Emitter {
 
 impl<'ast> BodyEmitter<'ast> for Emitter {
     type Context = (&'ast AType<'ast>, TokenStream2);
-    fn body(
+    fn emit_variant_body(
         &self,
         variant: &AVariant<'ast>,
         (inner, output_inner): &Self::Context,
@@ -306,15 +309,15 @@ pub fn emit<'ast>(
             continue;
         }
 
-        if container.is_included() {
-            emit_base_case(out, container, emitter);
-        }
+        // Always emit base cases
+        emit_base_case(out, container, emitter);
 
         let types = container.all_tys().collect::<HashSet<_>>();
         for inner in types.into_iter() {
             if nodes
                 .0
                 .get(&inner.ident)
+                // Only emit inductive cases for included nodes
                 .is_some_and(|node| node.is_included())
             {
                 emit_inductive_case(out, nodes, container, inner, emitter);

@@ -97,8 +97,20 @@ pub fn ast(attrs: TokenStream, item: TokenStream) -> TokenStream {
         // First: all traits that do not care about coherence
         let nodes = crate::nodes::lattice::make_lattice(nodes);
 
+        if options.has_any_typeclass(&[
+            options::Typeclass::Foldable,
+            options::Typeclass::Functor,
+            options::Typeclass::TryFunctor,
+            options::Typeclass::Visit,
+            options::Typeclass::VisitMut,
+        ]) {
+            out.append_all(quote! {
+                use #crate_name::RecursiveCall;
+            });
+        }
+
         #[cfg(feature = "foldable")]
-        if options.has_typeclass(&options::Typeclass::Foldable) {
+        if options.has_any_typeclass(&[options::Typeclass::Foldable, options::Typeclass::Visit]) {
             out.append_all(quote! {
                 use #crate_name::Foldable;
             });
@@ -109,12 +121,10 @@ pub fn ast(attrs: TokenStream, item: TokenStream) -> TokenStream {
         let nodes = crate::nodes::coherence::filter_coherent(nodes);
 
         #[cfg(feature = "functor")]
-        if options.has_typeclass(&options::Typeclass::Functor)
-            || options.has_typeclass(&options::Typeclass::TryFunctor)
+        if options.has_any_typeclass(&[options::Typeclass::Functor, options::Typeclass::TryFunctor])
         {
             out.append_all(quote! {
                 use #crate_name::Functor;
-                use #crate_name::RecursiveCall;
             });
             traits::functor::emit(out, &nodes, &traits::functor::Emitter);
         }

@@ -91,43 +91,52 @@ fn make_variant_destructor<'ast>(ident: TokenStream2, variant: &AVariant<'ast>) 
 
 pub trait BodyEmitter<'ast> {
     type Context;
-    fn body(&self, variant: &AVariant<'ast>, ctx: &Self::Context, in_enum: bool) -> TokenStream2;
-}
+    fn emit_variant_body(
+        &self,
+        variant: &AVariant<'ast>,
+        ctx: &Self::Context,
+        in_enum: bool,
+    ) -> TokenStream2;
 
-/// Writes the body of the trait implementation. Automatically destructures the fields and puts
-/// their idents in scope for when the emitter runs.
-pub fn make_fn_body<'ast, E: BodyEmitter<'ast>>(
-    emitter: &E,
-    container: &ANode<'ast>,
-    ctx: &E::Context,
-) -> TokenStream2 {
-    match container {
-        ANode::Struct(s) => {
-            let destructor = make_variant_destructor(quote! { Self }, &s.data);
-            let body = emitter.body(&s.data, ctx, false);
-
-            quote! {
-                let #destructor = self;
-                #body
-            }
-        }
-        ANode::Enum(e) => {
-            let variants = e.variants.iter().map(|variant| {
-                let ident = &variant.ident;
-                let destructor = make_variant_destructor(quote! { Self::#ident }, variant);
-                let body = emitter.body(variant, ctx, true);
+    /// Writes the body of the trait implementation. Automatically destructures the fields and puts
+    /// their idents in scope for when the emitter runs.
+    fn emit_body(
+        &self,
+        val: TokenStream2,
+        container: &ANode<'ast>,
+        ctx: &Self::Context,
+    ) -> TokenStream2 {
+        match container {
+            ANode::Struct(s) => {
+                let destructor =
+                    make_variant_destructor(container.ident().to_token_stream(), &s.data);
+                let body = self.emit_variant_body(&s.data, ctx, false);
 
                 quote! {
-                    #destructor => { #body }
-                }
-            });
-
-            quote! {
-                match self {
-                    #(#variants),*
+                    let #destructor = #val;
+                    #body
                 }
             }
+            ANode::Enum(e) => {
+                let container = container.ident().to_token_stream();
+                let variants = e.variants.iter().map(|variant| {
+                    let ident = &variant.ident;
+                    let destructor =
+                        make_variant_destructor(quote! { #container::#ident }, variant);
+                    let body = self.emit_variant_body(variant, ctx, true);
+
+                    quote! {
+                        #destructor => { #body }
+                    }
+                });
+
+                quote! {
+                    match #val {
+                        #(#variants),*
+                    }
+                }
+            }
+            ANode::Extra(x, _) => panic!("Should not be emitter extra node {}", x.ident),
         }
-        ANode::Extra(x, _) => panic!("Should not be emitter extra node {}", x.ident),
     }
 }

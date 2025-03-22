@@ -5,7 +5,6 @@ use quote::quote;
 use quote::ToTokens;
 use quote::TokenStreamExt;
 
-use crate::emitter::make_fn_body;
 use crate::emitter::BodyEmitter;
 use crate::nodes::lattice::Lattice;
 use crate::nodes::ANode;
@@ -16,7 +15,7 @@ fn emit_base_case<'ast>(out: &mut TokenStream2, node: &ANode<'ast>) {
     let ident = node.ident();
     // If this is a recursive type, we should _not_ generate a base case, and instead let the
     // inductive case take care of that.
-    if node.all_tys().any(|ty| ty.ident == ident) {
+    if node.is_included() && node.all_tys().any(|ty| ty.ident == ident) {
         return;
     }
 
@@ -29,7 +28,7 @@ fn emit_base_case<'ast>(out: &mut TokenStream2, node: &ANode<'ast>) {
         impl #impl_generics Foldable<#container> for #container #where_clause {
             // Use long names for the generics so that we have a low chance of overlap with
             // anything used inside container
-            fn foldl<'functional_macros, FunctionalMacros>(&'functional_macros self, f: fn(FunctionalMacros, &'functional_macros #container) -> FunctionalMacros, acc: FunctionalMacros) -> FunctionalMacros
+            fn foldl_impl<'functional_macros, FunctionalMacros>(&'functional_macros self, f: &mut impl FnMut(FunctionalMacros, &'functional_macros #container) -> FunctionalMacros, acc: FunctionalMacros, _how: RecursiveCall) -> FunctionalMacros
             where
                 #container: 'functional_macros
             {
@@ -45,7 +44,7 @@ struct Emitter;
 
 impl<'ast> BodyEmitter<'ast> for Emitter {
     type Context = (&'ast AType<'ast>, &'ast TokenStream2);
-    fn body(
+    fn emit_variant_body(
         &self,
         variant: &AVariant<'ast>,
         (inner, output_inner): &Self::Context,
@@ -59,7 +58,7 @@ impl<'ast> BodyEmitter<'ast> for Emitter {
             }
             let ident = &field.ident;
             Some(quote! {
-                let acc = Foldable::<#output_inner>::foldl(#ident, f, acc);
+                let acc = Foldable::<#output_inner>::foldl_impl(#ident, f, acc, how);
             })
         });
 
@@ -83,10 +82,15 @@ fn emit_inductive_case<'ast>(out: &mut TokenStream2, container: &ANode<'ast>, in
     let inner_ident = &inner.ident;
     let output_inner = quote! { #inner_ident #inner_ty_generics };
 
-    let mut fn_body = make_fn_body(&Emitter, container, &(inner, &output_inner));
+    let mut fn_body = Emitter.emit_body(quote! { self }, container, &(inner, &output_inner));
     if ident == inner.ident {
         fn_body = quote! {
-            f({ #fn_body }, self)
+            let body = |acc: FunctionalMacros| -> FunctionalMacros { #fn_body };
+            match how {
+                RecursiveCall::Begin => body(f(acc, self)),
+                RecursiveCall::End => f(body(acc), self),
+                RecursiveCall::None => f(acc, self),
+            }
         };
     }
 
@@ -95,7 +99,7 @@ fn emit_inductive_case<'ast>(out: &mut TokenStream2, container: &ANode<'ast>, in
             // Use long names for the generics so that we have a low chance of overlap with
             // anything used inside output_inner
             #[allow(unused_variables)]
-            fn foldl<'functional_macros, FunctionalMacros>(&'functional_macros self, f: fn(FunctionalMacros, &'functional_macros #output_inner) -> FunctionalMacros, acc: FunctionalMacros) -> FunctionalMacros
+            fn foldl_impl<'functional_macros, FunctionalMacros>(&'functional_macros self, f: &mut impl FnMut(FunctionalMacros, &'functional_macros #output_inner) -> FunctionalMacros, acc: FunctionalMacros, how: RecursiveCall) -> FunctionalMacros
             where
                 #output_inner: 'functional_macros
             {
@@ -113,15 +117,15 @@ pub fn emit<'ast>(out: &mut TokenStream2, nodes: &Lattice<'ast>) {
             continue;
         }
 
-        if container.is_included() {
-            emit_base_case(out, container);
-        }
+        // Always emit base cases
+        emit_base_case(out, container);
 
         let types = container.all_tys().collect::<HashSet<_>>();
         for inner in types.into_iter() {
             if nodes
                 .0
                 .get(&inner.ident)
+                // Only emit inductive cases for included nodes
                 .is_some_and(|node| node.is_included())
             {
                 emit_inductive_case(out, container, inner);

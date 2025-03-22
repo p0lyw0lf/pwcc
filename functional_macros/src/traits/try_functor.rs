@@ -2,7 +2,6 @@ use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use quote::ToTokens;
 
-use crate::emitter::make_fn_body;
 use crate::emitter::make_variant_constructor;
 use crate::emitter::BodyEmitter;
 use crate::emitter::FieldEmitter;
@@ -44,7 +43,11 @@ impl InductiveCaseEmitter for Emitter {
         _output_outer: impl ToTokens,
         output_inner: impl ToTokens,
     ) -> TokenStream2 {
-        let mut fn_body = make_fn_body(self, container, &(inner, output_inner.to_token_stream()));
+        let mut fn_body = self.emit_body(
+            quote! { self },
+            container,
+            &(inner, output_inner.to_token_stream()),
+        );
         if container.ident() == inner.ident {
             fn_body = quote! {
                 if how == RecursiveCall::None {
@@ -74,7 +77,7 @@ impl InductiveCaseEmitter for Emitter {
 
 impl<'ast> BodyEmitter<'ast> for Emitter {
     type Context = (&'ast AType<'ast>, TokenStream2);
-    fn body(
+    fn emit_variant_body(
         &self,
         variant: &AVariant<'ast>,
         (inner, output_inner): &Self::Context,

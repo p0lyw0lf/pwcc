@@ -20,20 +20,21 @@ impl Options {
             None => true,
         }
     }
+    pub fn has_any_typeclass(&self, ts: &[Typeclass]) -> bool {
+        match self.enabled.as_ref() {
+            Some(e) => ts.iter().any(|t| e.0.contains(t)),
+            None => true,
+        }
+    }
 }
 
 /// All the typeclasses we support
 #[derive(PartialEq, Eq, Hash)]
 pub enum Typeclass {
-    #[cfg(feature = "foldable")]
     Foldable,
-    #[cfg(feature = "functor")]
     Functor,
-    #[cfg(feature = "try-functor")]
     TryFunctor,
-    #[cfg(feature = "visit")]
     Visit,
-    #[cfg(feature = "visit-mut")]
     VisitMut,
 }
 

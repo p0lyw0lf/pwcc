@@ -181,10 +181,15 @@ where
     T: Foldable<A>,
 {
     #[inline(always)]
-    fn foldl<'s, B>(&'s self, f: fn(B, &'s A) -> B, acc: B) -> B
+    fn foldl_impl<'s, B>(
+        &'s self,
+        f: &mut impl FnMut(B, &'s A) -> B,
+        acc: B,
+        how: RecursiveCall,
+    ) -> B
     where
         A: 's,
     {
-        self.inner.foldl(f, acc)
+        self.inner.foldl_impl(f, acc, how)
     }
 }

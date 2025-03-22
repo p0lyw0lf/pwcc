@@ -77,7 +77,7 @@ macro_rules! nodes {
             $([$os_include:ident])?
         )?
     ; )*) => {
-        #[functional_macros::ast(typeclasses = [Functor, TryFunctor])]
+        #[functional_macros::ast(typeclasses = [Functor, TryFunctor, VisitMut])]
         mod ast {
         use crate::span::Span;
         use crate::span::SourceSpan;

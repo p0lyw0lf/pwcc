@@ -4,6 +4,7 @@ use std::ops::DerefMut;
 
 use functional::ControlFlow;
 use functional::Foldable;
+use functional::FoldableMut;
 use functional::Functor;
 use functional::RecursiveCall;
 use functional::Semigroup;
@@ -191,5 +192,20 @@ where
         A: 's,
     {
         self.inner.foldl_impl(f, acc, how)
+    }
+}
+
+impl<T, A> FoldableMut<A> for Span<T>
+where
+    T: FoldableMut<A>,
+{
+    #[inline(always)]
+    fn foldl_mut_impl<B>(
+        &mut self,
+        f: &mut impl FnMut(B, &mut A) -> B,
+        acc: B,
+        how: RecursiveCall,
+    ) -> B {
+        self.inner.foldl_mut_impl(f, acc, how)
     }
 }

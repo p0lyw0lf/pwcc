@@ -61,7 +61,7 @@ pub fn analysis(f: Function) -> Result<Function, SemanticErrors> {
         }
     })?;
 
-    // TODO: make this configurable somehow
+    // TODO: make this configurable somehow, later C standards allow this
     // Check that all labels are followed by a statement, *not* a declaration.
     let f = f.try_fmap(&mut |block: Block| -> Result<_, SemanticErrors> {
         let mut prev_label = None::<&LabelStmt>;

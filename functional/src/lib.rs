@@ -5,6 +5,8 @@ mod semigroup;
 mod try_functor;
 
 #[cfg(test)]
+mod test_foldable;
+#[cfg(test)]
 mod test_functor;
 #[cfg(test)]
 mod test_visit;

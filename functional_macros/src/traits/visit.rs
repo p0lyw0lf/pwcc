@@ -66,9 +66,10 @@ impl<'a> Emitter<'a> {
             let body = self.emit_body(quote! { node }, node, &());
 
             out.append_all(quote! {
-                pub fn #method<'ast, V>(v: &mut V, node: &'ast #ident)
+                #[allow(unused_variables)]
+                pub fn #method<'ast, FunctionalMacros>(mut v: &mut FunctionalMacros, node: &'ast #ident)
                 where
-                    V: Visit<'ast> + ?Sized,
+                    FunctionalMacros: Visit<'ast> + ?Sized,
                 {
                     #body
                 }
@@ -104,7 +105,7 @@ impl<'ast> BodyEmitter<'ast> for Emitter<'_> {
                 // It's a little strange, but it works! We do need something to go into wrapper
                 // types like Box and Option, so this is that.
                 out.append_all(quote! {
-                    #field_ident.foldl_impl(&mut |(), n| v.#method(n), (), RecursiveCall::None);
+                    v = #field_ident.foldl_impl(&mut |v: &mut FunctionalMacros, n| { v.#method(n); v }, v, RecursiveCall::None);
                 });
             }
         }

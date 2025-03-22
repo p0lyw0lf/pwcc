@@ -1,6 +1,7 @@
 use proc_macro2::Span as Span2;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
+use quote::ToTokens;
 use quote::TokenStreamExt;
 use syn::Ident;
 
@@ -16,6 +17,7 @@ pub(super) struct Emitter<'a> {
     pub trait_name: Ident,
     pub ref_ty: TokenStream2,
     pub associated_method: Ident,
+    pub has_lifetime: bool,
 }
 
 impl<'a> Emitter<'a> {
@@ -35,6 +37,22 @@ impl<'a> Emitter<'a> {
         Ident::new(&out, Span2::call_site())
     }
 
+    fn trait_def(&self) -> TokenStream2 {
+        let trait_name = &self.trait_name;
+        if self.has_lifetime {
+            quote! { #trait_name<'ast> }
+        } else {
+            trait_name.to_token_stream()
+        }
+    }
+    fn method_generics(&self) -> TokenStream2 {
+        if self.has_lifetime {
+            quote! { <'ast, FunctionalMacros> }
+        } else {
+            quote! { <FunctionalMacros> }
+        }
+    }
+
     /// Given the set of nodes, emits a definition for the Visit trait.
     fn emit_trait<'ast>(&self, nodes: &Lattice<'ast>) -> TokenStream2 {
         let mut inner = TokenStream2::new();
@@ -51,9 +69,9 @@ impl<'a> Emitter<'a> {
             });
         }
 
-        let trait_name = &self.trait_name;
+        let trait_name = self.trait_def();
         quote! {
-            pub trait #trait_name<'ast> {
+            pub trait #trait_name {
                 #inner
             }
         }
@@ -62,7 +80,8 @@ impl<'a> Emitter<'a> {
     /// Given the set of nodes, emits all the `visit_*` functions needed to implement the Visit trait.
     fn emit_methods<'ast>(&self, nodes: &Lattice<'ast>) -> TokenStream2 {
         let mut out = TokenStream2::new();
-        let trait_name = &self.trait_name;
+        let trait_name = self.trait_def();
+        let method_generics = self.method_generics();
         let ref_ty = &self.ref_ty;
 
         for node in nodes.values() {
@@ -73,9 +92,9 @@ impl<'a> Emitter<'a> {
 
             out.append_all(quote! {
                 #[allow(unused_variables)]
-                pub fn #method<'ast, FunctionalMacros>(mut v: &mut FunctionalMacros, node: #ref_ty #ident)
+                pub fn #method #method_generics(mut v: &mut FunctionalMacros, node: #ref_ty #ident)
                 where
-                    FunctionalMacros: #trait_name<'ast> + ?Sized,
+                    FunctionalMacros: #trait_name + ?Sized
                 {
                     #body
                 }
@@ -86,11 +105,12 @@ impl<'a> Emitter<'a> {
     }
 
     pub fn emit<'ast>(&self, nodes: &Lattice<'ast>) -> TokenStream2 {
+        let prefix = Ident::new(self.prefix, Span2::call_site());
         let def_trait = self.emit_trait(nodes);
         let def_methods = self.emit_methods(nodes);
 
         quote! {
-            pub mod visit {
+            pub mod #prefix {
                 use super::*;
                 #def_trait
                 #def_methods
@@ -127,6 +147,7 @@ pub fn emit<'ast>(nodes: &Lattice<'ast>) -> TokenStream2 {
         trait_name: Ident::new("Visit", Span2::call_site()),
         ref_ty: quote! { &'ast },
         associated_method: Ident::new("foldl_impl", Span2::call_site()),
+        has_lifetime: true,
     }
     .emit(nodes)
 }

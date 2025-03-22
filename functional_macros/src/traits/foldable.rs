@@ -18,14 +18,34 @@ pub(super) struct Emitter {
     pub trait_name: Ident,
     pub method_name: Ident,
     pub ref_ty: TokenStream2,
+    pub has_lifetime: bool,
 }
 
 impl Emitter {
+    fn method_generics(&self) -> TokenStream2 {
+        if self.has_lifetime {
+            quote! { <'functional_macros, FunctionalMacros> }
+        } else {
+            quote! { < FunctionalMacros > }
+        }
+    }
+    fn method_where(&self, container: &TokenStream2) -> TokenStream2 {
+        if self.has_lifetime {
+            quote! {
+                where
+                    #container: 'functional_macros
+            }
+        } else {
+            quote! {}
+        }
+    }
+
     fn emit_base_case<'ast>(&self, out: &mut TokenStream2, node: &ANode<'ast>) {
         let Emitter {
             trait_name,
             method_name,
             ref_ty,
+            ..
         } = self;
 
         let ident = node.ident();
@@ -39,14 +59,15 @@ impl Emitter {
         let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
         let container = quote! { #ident #ty_generics };
+        let method_generics = self.method_generics();
+        let method_where = self.method_where(&container);
 
         let out_toks = quote! {
             impl #impl_generics #trait_name<#container> for #container #where_clause {
                 // Use long names for the generics so that we have a low chance of overlap with
                 // anything used inside container
-                fn #method_name<'functional_macros, FunctionalMacros>(#ref_ty self, f: &mut impl FnMut(FunctionalMacros, #ref_ty #container) -> FunctionalMacros, acc: FunctionalMacros, _how: RecursiveCall) -> FunctionalMacros
-                where
-                    #container: 'functional_macros
+                fn #method_name #method_generics(#ref_ty self, f: &mut impl FnMut(FunctionalMacros, #ref_ty #container) -> FunctionalMacros, acc: FunctionalMacros, _how: RecursiveCall) -> FunctionalMacros
+                #method_where
                 {
                     f(acc, self)
                 }
@@ -100,6 +121,7 @@ impl Emitter {
             trait_name,
             method_name,
             ref_ty,
+            ..
         } = self;
 
         let ident = container.ident();
@@ -131,14 +153,15 @@ impl Emitter {
             };
         }
 
+        let method_generics = self.method_generics();
+        let method_where = self.method_where(&output_inner);
         let out_toks = quote! {
             impl #impl_generics #trait_name<#output_inner> for #output_container #where_clause {
                 // Use long names for the generics so that we have a low chance of overlap with
                 // anything used inside output_inner
                 #[allow(unused_variables)]
-                fn #method_name<'functional_macros, FunctionalMacros>(#ref_ty self, mut f: &mut impl FnMut(FunctionalMacros, #ref_ty #output_inner) -> FunctionalMacros, mut acc: FunctionalMacros, how: RecursiveCall) -> FunctionalMacros
-                where
-                    #output_inner: 'functional_macros
+                fn #method_name #method_generics(#ref_ty self, mut f: &mut impl FnMut(FunctionalMacros, #ref_ty #output_inner) -> FunctionalMacros, mut acc: FunctionalMacros, how: RecursiveCall) -> FunctionalMacros
+                #method_where
                 {
                     #fn_body
                 }
@@ -177,6 +200,7 @@ pub fn emit<'ast>(out: &mut TokenStream2, nodes: &Lattice<'ast>) {
         trait_name: Ident::new("Foldable", Span2::call_site()),
         method_name: Ident::new("foldl_impl", Span2::call_site()),
         ref_ty: quote! { &'functional_macros },
+        has_lifetime: true,
     }
     .emit(out, nodes);
 }

@@ -10,8 +10,9 @@ pub fn emit<'ast>(nodes: &Lattice<'ast>) -> TokenStream2 {
     Emitter {
         prefix: "visit_mut",
         trait_name: Ident::new("VisitMut", Span2::call_site()),
-        ref_ty: quote! { &'ast mut },
+        ref_ty: quote! { &mut },
         associated_method: Ident::new("foldl_mut_impl", Span2::call_site()),
+        has_lifetime: false,
     }
     .emit(nodes)
 }

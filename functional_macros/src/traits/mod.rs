@@ -2,10 +2,13 @@
 //! contains code that will, given the graph of nodes, output all the trait implementations as
 //! items.
 
-#[cfg(feature = "foldable")]
+#[cfg(any(feature = "foldable", feature = "foldable-mut"))]
 pub mod foldable;
 
-#[cfg(any(feature = "functor", feature = "try-functor"))]
+#[cfg(feature = "foldable-mut")]
+pub mod foldable_mut;
+
+#[cfg(feature = "functor")]
 pub mod functor;
 
 #[cfg(feature = "try-functor")]

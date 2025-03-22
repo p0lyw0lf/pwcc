@@ -1,5 +1,6 @@
 mod control_flow;
 mod foldable;
+mod foldable_mut;
 mod functor;
 mod semigroup;
 mod try_functor;
@@ -14,6 +15,7 @@ mod test_visit;
 pub use control_flow::ControlFlow;
 pub use control_flow::RecursiveCall;
 pub use foldable::Foldable;
+pub use foldable_mut::FoldableMut;
 pub use functor::Functor;
 pub use semigroup::Semigroup;
 pub use try_functor::TryFunctor;

@@ -7,12 +7,13 @@ edition = "2021"
 proc-macro = true
 
 [features]
-default = ["foldable", "functor", "try-functor", "visit", "visit-mut"]
+default = ["foldable", "foldable-mut", "functor", "try-functor", "visit", "visit-mut"]
 foldable = []
+foldable-mut = []
 functor = []
 try-functor = ["functor"]
 visit = ["foldable"]
-visit-mut = ["visit"]
+visit-mut = ["foldable-mut"]
 
 [dependencies]
 quote = "1.0"

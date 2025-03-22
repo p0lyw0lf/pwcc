@@ -32,6 +32,7 @@ impl Options {
 #[derive(PartialEq, Eq, Hash)]
 pub enum Typeclass {
     Foldable,
+    FoldableMut,
     Functor,
     TryFunctor,
     Visit,
@@ -44,6 +45,8 @@ impl TryFrom<Ident> for Typeclass {
         match value.to_string().as_str() {
             #[cfg(feature = "foldable")]
             "Foldable" => Ok(Typeclass::Foldable),
+            #[cfg(feature = "foldable-mut")]
+            "FoldableMut" => Ok(Typeclass::FoldableMut),
             #[cfg(feature = "functor")]
             "Functor" => Ok(Typeclass::Functor),
             #[cfg(feature = "try-functor")]

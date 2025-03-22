@@ -5,14 +5,17 @@ use quote::TokenStreamExt;
 use syn::Ident;
 
 use crate::emitter::BodyEmitter;
-use crate::nodes::ANodes;
+use crate::nodes::lattice::Lattice;
 use crate::nodes::AVariant;
 
 /// Emits a module `prefix` (visit), with functions `prefix_*` (visit_*) for a trait `trait_name`
-/// (Visit)
+/// (Visit), for reference types `ref_ty` (&'ast), using `associated_method` (foldl_impl) to map
+/// inside fields.
 pub(super) struct Emitter<'a> {
-    prefix: &'a str,
-    trait_name: Ident,
+    pub prefix: &'a str,
+    pub trait_name: Ident,
+    pub ref_ty: TokenStream2,
+    pub associated_method: Ident,
 }
 
 impl<'a> Emitter<'a> {
@@ -33,15 +36,16 @@ impl<'a> Emitter<'a> {
     }
 
     /// Given the set of nodes, emits a definition for the Visit trait.
-    fn emit_trait<'ast>(&self, nodes: &ANodes<'ast>) -> TokenStream2 {
+    fn emit_trait<'ast>(&self, nodes: &Lattice<'ast>) -> TokenStream2 {
         let mut inner = TokenStream2::new();
+        let ref_ty = &self.ref_ty;
 
         for node in nodes.values() {
             let ident = &node.ident();
             let method = self.to_method(ident);
 
             inner.append_all(quote! {
-                fn #method(&mut self, node: &'ast #ident) {
+                fn #method(&mut self, node: #ref_ty #ident) {
                     #method(self, node)
                 }
             });
@@ -56,8 +60,10 @@ impl<'a> Emitter<'a> {
     }
 
     /// Given the set of nodes, emits all the `visit_*` functions needed to implement the Visit trait.
-    fn emit_methods<'ast>(&self, nodes: &ANodes<'ast>) -> TokenStream2 {
+    fn emit_methods<'ast>(&self, nodes: &Lattice<'ast>) -> TokenStream2 {
         let mut out = TokenStream2::new();
+        let trait_name = &self.trait_name;
+        let ref_ty = &self.ref_ty;
 
         for node in nodes.values() {
             let ident = &node.ident();
@@ -67,9 +73,9 @@ impl<'a> Emitter<'a> {
 
             out.append_all(quote! {
                 #[allow(unused_variables)]
-                pub fn #method<'ast, FunctionalMacros>(mut v: &mut FunctionalMacros, node: &'ast #ident)
+                pub fn #method<'ast, FunctionalMacros>(mut v: &mut FunctionalMacros, node: #ref_ty #ident)
                 where
-                    FunctionalMacros: Visit<'ast> + ?Sized,
+                    FunctionalMacros: #trait_name<'ast> + ?Sized,
                 {
                     #body
                 }
@@ -79,7 +85,7 @@ impl<'a> Emitter<'a> {
         out
     }
 
-    pub fn emit<'ast>(&self, nodes: &ANodes<'ast>) -> TokenStream2 {
+    pub fn emit<'ast>(&self, nodes: &Lattice<'ast>) -> TokenStream2 {
         let def_trait = self.emit_trait(nodes);
         let def_methods = self.emit_methods(nodes);
 
@@ -97,6 +103,7 @@ impl<'ast> BodyEmitter<'ast> for Emitter<'_> {
     type Context = ();
     fn emit_variant_body(&self, variant: &AVariant<'ast>, _: &(), _in_enum: bool) -> TokenStream2 {
         let mut out = TokenStream2::new();
+        let associated_method = &self.associated_method;
 
         for field in variant.fields.iter() {
             let field_ident = &field.ident;
@@ -105,7 +112,7 @@ impl<'ast> BodyEmitter<'ast> for Emitter<'_> {
                 // It's a little strange, but it works! We do need something to go into wrapper
                 // types like Box and Option, so this is that.
                 out.append_all(quote! {
-                    v = #field_ident.foldl_impl(&mut |v: &mut FunctionalMacros, n| { v.#method(n); v }, v, RecursiveCall::None);
+                    v = #field_ident.#associated_method(&mut |v: &mut FunctionalMacros, n| { v.#method(n); v }, v, RecursiveCall::None);
                 });
             }
         }
@@ -114,10 +121,12 @@ impl<'ast> BodyEmitter<'ast> for Emitter<'_> {
     }
 }
 
-pub fn emit<'ast>(nodes: &ANodes<'ast>) -> TokenStream2 {
+pub fn emit<'ast>(nodes: &Lattice<'ast>) -> TokenStream2 {
     Emitter {
         prefix: "visit",
         trait_name: Ident::new("Visit", Span2::call_site()),
+        ref_ty: quote! { &'ast },
+        associated_method: Ident::new("foldl_impl", Span2::call_site()),
     }
     .emit(nodes)
 }

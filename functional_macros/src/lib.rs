@@ -99,6 +99,7 @@ pub fn ast(attrs: TokenStream, item: TokenStream) -> TokenStream {
 
         if options.has_any_typeclass(&[
             options::Typeclass::Foldable,
+            options::Typeclass::FoldableMut,
             options::Typeclass::Functor,
             options::Typeclass::TryFunctor,
             options::Typeclass::Visit,
@@ -115,6 +116,27 @@ pub fn ast(attrs: TokenStream, item: TokenStream) -> TokenStream {
                 use #crate_name::Foldable;
             });
             traits::foldable::emit(out, &nodes);
+        }
+
+        #[cfg(feature = "foldable-mut")]
+        if options.has_any_typeclass(&[
+            options::Typeclass::FoldableMut,
+            options::Typeclass::VisitMut,
+        ]) {
+            out.append_all(quote! {
+                use #crate_name::FoldableMut;
+            });
+            traits::foldable_mut::emit(out, &nodes);
+        }
+
+        #[cfg(feature = "visit")]
+        if options.has_typeclass(&options::Typeclass::Visit) {
+            out.append_all(traits::visit::emit(&nodes));
+        }
+
+        #[cfg(feature = "visit-mut")]
+        if options.has_typeclass(&options::Typeclass::VisitMut) {
+            out.append_all(traits::visit_mut::emit(&nodes));
         }
 
         // Next: all traits that _do_ care about coherence
@@ -137,16 +159,6 @@ pub fn ast(attrs: TokenStream, item: TokenStream) -> TokenStream {
                 use #crate_name::TryFunctor;
             });
             traits::functor::emit(out, &nodes, &traits::try_functor::Emitter);
-        }
-
-        #[cfg(feature = "visit")]
-        if options.has_typeclass(&options::Typeclass::Visit) {
-            out.append_all(traits::visit::emit(&nodes));
-        }
-
-        #[cfg(feature = "visit-mut")]
-        if options.has_typeclass(&options::Typeclass::VisitMut) {
-            // panic!("VisitMut not implemented");
         }
     });
 

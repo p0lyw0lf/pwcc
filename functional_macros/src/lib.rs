@@ -119,7 +119,7 @@ pub fn ast(attrs: TokenStream, item: TokenStream) -> TokenStream {
             traits::functor::emit(out, &nodes, &traits::functor::Emitter);
         }
 
-        #[cfg(feature = "try_functor")]
+        #[cfg(feature = "try-functor")]
         if options.has_typeclass(&options::Typeclass::TryFunctor) {
             out.append_all(quote! {
                 use #crate_name::ControlFlow;
@@ -127,6 +127,16 @@ pub fn ast(attrs: TokenStream, item: TokenStream) -> TokenStream {
                 use #crate_name::TryFunctor;
             });
             traits::functor::emit(out, &nodes, &traits::try_functor::Emitter);
+        }
+
+        #[cfg(feature = "visit")]
+        if options.has_typeclass(&options::Typeclass::Visit) {
+            out.append_all(traits::visit::emit(&nodes));
+        }
+
+        #[cfg(feature = "visit-mut")]
+        if options.has_typeclass(&options::Typeclass::VisitMut) {
+            // panic!("VisitMut not implemented");
         }
     });
 

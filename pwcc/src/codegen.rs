@@ -15,7 +15,7 @@ pub trait State: Debug + Sized {
     type Location: Debug + Sized;
 }
 
-#[functional_macros::ast]
+#[functional_macros::ast(typeclasses = [Functor, TryFunctor, Foldable])]
 mod ast {
     use super::*;
 

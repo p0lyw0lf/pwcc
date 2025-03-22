@@ -44,7 +44,7 @@ impl InductiveCaseEmitter for Emitter {
         _output_outer: impl ToTokens,
         output_inner: impl ToTokens,
     ) -> TokenStream2 {
-        let mut fn_body = make_fn_body(container, inner, output_inner.to_token_stream(), self);
+        let mut fn_body = make_fn_body(self, container, &(inner, output_inner.to_token_stream()));
         if container.ident() == inner.ident {
             fn_body = quote! {
                 if how == RecursiveCall::None {
@@ -72,17 +72,17 @@ impl InductiveCaseEmitter for Emitter {
     }
 }
 
-impl BodyEmitter for Emitter {
-    fn body<'ast>(
+impl<'ast> BodyEmitter<'ast> for Emitter {
+    type Context = (&'ast AType<'ast>, TokenStream2);
+    fn body(
         &self,
         variant: &AVariant<'ast>,
-        inner: &AType<'ast>,
-        output_inner: impl ToTokens,
+        (inner, output_inner): &Self::Context,
         in_enum: bool,
     ) -> TokenStream2 {
         let output_inner = output_inner.to_token_stream();
         let transforms = variant.fields.iter().filter_map(|field| {
-            let has_inner = field.all_tys().any(|ty| ty == inner);
+            let has_inner = field.all_tys().any(|ty| ty == *inner);
             if !has_inner {
                 return None;
             }

@@ -89,28 +89,22 @@ fn make_variant_destructor<'ast>(ident: TokenStream2, variant: &AVariant<'ast>) 
     }
 }
 
-pub trait BodyEmitter {
-    fn body<'ast>(
-        &self,
-        variant: &AVariant<'ast>,
-        inner: &AType<'ast>,
-        output_inner: impl ToTokens,
-        in_enum: bool,
-    ) -> TokenStream2;
+pub trait BodyEmitter<'ast> {
+    type Context;
+    fn body(&self, variant: &AVariant<'ast>, ctx: &Self::Context, in_enum: bool) -> TokenStream2;
 }
 
 /// Writes the body of the trait implementation. Automatically destructures the fields and puts
 /// their idents in scope for when the emitter runs.
-pub fn make_fn_body<'ast>(
+pub fn make_fn_body<'ast, E: BodyEmitter<'ast>>(
+    emitter: &E,
     container: &ANode<'ast>,
-    inner: &AType<'ast>,
-    output_inner: impl ToTokens,
-    emitter: &impl BodyEmitter,
+    ctx: &E::Context,
 ) -> TokenStream2 {
     match container {
         ANode::Struct(s) => {
             let destructor = make_variant_destructor(quote! { Self }, &s.data);
-            let body = emitter.body(&s.data, inner, &output_inner, false);
+            let body = emitter.body(&s.data, ctx, false);
 
             quote! {
                 let #destructor = self;
@@ -118,11 +112,10 @@ pub fn make_fn_body<'ast>(
             }
         }
         ANode::Enum(e) => {
-            let output_inner = output_inner.into_token_stream();
             let variants = e.variants.iter().map(|variant| {
                 let ident = &variant.ident;
                 let destructor = make_variant_destructor(quote! { Self::#ident }, variant);
-                let body = emitter.body(variant, inner, &output_inner, true);
+                let body = emitter.body(variant, ctx, true);
 
                 quote! {
                     #destructor => { #body }

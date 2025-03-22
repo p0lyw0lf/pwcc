@@ -29,8 +29,12 @@ pub enum Typeclass {
     Foldable,
     #[cfg(feature = "functor")]
     Functor,
-    #[cfg(feature = "try_functor")]
+    #[cfg(feature = "try-functor")]
     TryFunctor,
+    #[cfg(feature = "visit")]
+    Visit,
+    #[cfg(feature = "visit-mut")]
+    VisitMut,
 }
 
 impl TryFrom<Ident> for Typeclass {
@@ -41,8 +45,12 @@ impl TryFrom<Ident> for Typeclass {
             "Foldable" => Ok(Typeclass::Foldable),
             #[cfg(feature = "functor")]
             "Functor" => Ok(Typeclass::Functor),
-            #[cfg(feature = "try_functor")]
+            #[cfg(feature = "try-functor")]
             "TryFunctor" => Ok(Typeclass::TryFunctor),
+            #[cfg(feature = "visit")]
+            "Visit" => Ok(Typeclass::Visit),
+            #[cfg(feature = "visit-mut")]
+            "VisitMut" => Ok(Typeclass::VisitMut),
             other => Err(syn::parse::Error::new(
                 value.span(),
                 format!("unexpected typeclass \"{}\"", other),

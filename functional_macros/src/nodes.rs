@@ -125,6 +125,7 @@ impl<'ast> GenericContext<'ast> {
             || !self.lifetimes.is_disjoint(&other.lifetimes)
             || !self.consts.is_disjoint(&other.consts)
     }
+    #[allow(dead_code)]
     pub fn is_subset(&self, other: &GenericContext<'ast>) -> bool {
         self.types.is_subset(&other.types)
             && self.lifetimes.is_subset(&other.lifetimes)
@@ -208,7 +209,7 @@ pub struct AField<'ast> {
     /// Corresponds to the declared ident if in a named struct/enum variant, otherwise corresponds to an anonymous ident if in an unnamed struct/enum variant.
     pub ident: Cow<'ast, Ident>,
     /// The direct descendants of this field, as they appear in the definition.
-    pub tys: HashSet<AType<'ast>>,
+    pub tys: Vec<AType<'ast>>,
     /// Indirect descendants of this field. That is, types that don't appear in the field
     /// definition, but the field must still be accounted for when looking at said types.
     pub indirect_tys: HashSet<AType<'ast>>,
@@ -216,6 +217,7 @@ pub struct AField<'ast> {
     /// the generic context doesn't also transform
     pub restricted_tys: HashSet<AType<'ast>>,
     /// The context used by this field. Is a superset of anything in tys
+    #[allow(dead_code)]
     pub ctx: GenericContext<'ast>,
 }
 
@@ -259,7 +261,7 @@ fn convert_field<'ast>(
         /// The types we're looking for
         nodes: &'a BaseNodes<'ast>,
         /// All the collected types we've seen so far
-        tys: HashSet<AType<'ast>>,
+        tys: Vec<AType<'ast>>,
         /// The generic context of the node we're currently at
         parent_ctx: &'a GenericContext<'ast>,
     }
@@ -281,11 +283,15 @@ fn convert_field<'ast>(
                         self.parent_ctx,
                         instantiation.iter().map(Deref::deref),
                     );
-                    self.tys.insert(AType {
+                    let ty = AType {
                         ident,
                         instantiation,
                         ctx,
-                    });
+                    };
+                    // O(n**2), but it's fine these lists aren't very long
+                    if !self.tys.contains(&ty) {
+                        self.tys.push(ty);
+                    }
                     // We don't recur into types that are part of our tree
                     return;
                 }
@@ -297,7 +303,7 @@ fn convert_field<'ast>(
 
     let mut visitor = TypeVisitor {
         nodes,
-        tys: HashSet::new(),
+        tys: Default::default(),
         parent_ctx: ctx,
     };
     visitor.visit_field(field);

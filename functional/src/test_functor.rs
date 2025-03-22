@@ -172,7 +172,7 @@ mod extra_nodes {
     */
 }
 
-#[ast]
+#[ast(typeclasses = [Functor, TryFunctor])]
 mod ast {
     use super::*;
 

@@ -5,7 +5,9 @@ mod semigroup;
 mod try_functor;
 
 #[cfg(test)]
-mod test;
+mod test_functor;
+#[cfg(test)]
+mod test_visit;
 
 pub use control_flow::ControlFlow;
 pub use foldable::Foldable;

@@ -5,8 +5,14 @@
 #[cfg(feature = "foldable")]
 pub mod foldable;
 
-#[cfg(any(feature = "functor", feature = "try_functor"))]
+#[cfg(any(feature = "functor", feature = "try-functor"))]
 pub mod functor;
 
-#[cfg(feature = "try_functor")]
+#[cfg(feature = "try-functor")]
 pub mod try_functor;
+
+#[cfg(any(feature = "visit", feature = "visit-mut"))]
+pub mod visit;
+
+#[cfg(feature = "visit-mut")]
+pub mod visit_mut;

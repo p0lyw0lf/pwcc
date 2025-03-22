@@ -43,17 +43,17 @@ fn emit_base_case<'ast>(out: &mut TokenStream2, node: &ANode<'ast>) {
 
 struct Emitter;
 
-impl BodyEmitter for Emitter {
-    fn body<'ast>(
+impl<'ast> BodyEmitter<'ast> for Emitter {
+    type Context = (&'ast AType<'ast>, &'ast TokenStream2);
+    fn body(
         &self,
         variant: &AVariant<'ast>,
-        inner: &AType<'ast>,
-        output_inner: impl ToTokens,
+        (inner, output_inner): &Self::Context,
         _in_enum: bool,
     ) -> TokenStream2 {
         let output_inner = output_inner.into_token_stream();
         let folds = variant.fields.iter().filter_map(|field| {
-            let has_inner = field.all_tys().any(|ty| ty == inner);
+            let has_inner = field.all_tys().any(|ty| ty == *inner);
             if !has_inner {
                 return None;
             }
@@ -83,7 +83,7 @@ fn emit_inductive_case<'ast>(out: &mut TokenStream2, container: &ANode<'ast>, in
     let inner_ident = &inner.ident;
     let output_inner = quote! { #inner_ident #inner_ty_generics };
 
-    let mut fn_body = make_fn_body(container, inner, &output_inner, &Emitter);
+    let mut fn_body = make_fn_body(&Emitter, container, &(inner, &output_inner));
     if ident == inner.ident {
         fn_body = quote! {
             f({ #fn_body }, self)

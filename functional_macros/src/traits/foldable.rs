@@ -58,7 +58,7 @@ impl<'ast> BodyEmitter<'ast> for Emitter {
             }
             let ident = &field.ident;
             Some(quote! {
-                let acc = Foldable::<#output_inner>::foldl_impl(#ident, f, acc, how);
+                let acc = Foldable::<#output_inner>::foldl_impl(#ident, &mut f, acc, how);
             })
         });
 
@@ -85,10 +85,18 @@ fn emit_inductive_case<'ast>(out: &mut TokenStream2, container: &ANode<'ast>, in
     let mut fn_body = Emitter.emit_body(quote! { self }, container, &(inner, &output_inner));
     if ident == inner.ident {
         fn_body = quote! {
-            let body = |acc: FunctionalMacros| -> FunctionalMacros { #fn_body };
+            let body = |mut f, acc| -> FunctionalMacros { #fn_body };
             match how {
-                RecursiveCall::Begin => body(f(acc, self)),
-                RecursiveCall::End => f(body(acc), self),
+                RecursiveCall::Begin => {
+                    let acc = f(acc, self);
+                    let acc = body(f, acc);
+                    acc
+                }
+                RecursiveCall::End => {
+                    let acc = body(&mut f, acc);
+                    let acc = f(acc, self);
+                    acc
+                }
                 RecursiveCall::None => f(acc, self),
             }
         };
@@ -99,7 +107,7 @@ fn emit_inductive_case<'ast>(out: &mut TokenStream2, container: &ANode<'ast>, in
             // Use long names for the generics so that we have a low chance of overlap with
             // anything used inside output_inner
             #[allow(unused_variables)]
-            fn foldl_impl<'functional_macros, FunctionalMacros>(&'functional_macros self, f: &mut impl FnMut(FunctionalMacros, &'functional_macros #output_inner) -> FunctionalMacros, acc: FunctionalMacros, how: RecursiveCall) -> FunctionalMacros
+            fn foldl_impl<'functional_macros, FunctionalMacros>(&'functional_macros self, mut f: &mut impl FnMut(FunctionalMacros, &'functional_macros #output_inner) -> FunctionalMacros, acc: FunctionalMacros, how: RecursiveCall) -> FunctionalMacros
             where
                 #output_inner: 'functional_macros
             {

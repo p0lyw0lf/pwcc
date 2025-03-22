@@ -35,7 +35,6 @@ mod concrete {
     }
 }
 
-/*
 #[ast(typeclasses = [Visit])]
 mod recursive {
     use super::*;
@@ -63,7 +62,6 @@ mod recursive {
             })),
         };
 
-        struct Collect(Vec<i32>);
         impl<'ast> visit::Visit<'ast> for Collect {
             fn visit_tree(&mut self, node: &'ast Tree) {
                 self.0.push(node.val);
@@ -71,11 +69,8 @@ mod recursive {
             }
         }
 
-        let collect = |how: RecursiveCall| {
-            let mut is = Collect(vec![]);
-            visit::visit_tree(&mut is, &x);
-            is.0
-        };
+        let mut is = Collect(vec![]);
+        visit::visit_tree(&mut is, &x);
+        assert_eq!(is.0, &[2, 1, 3]);
     }
 }
-*/

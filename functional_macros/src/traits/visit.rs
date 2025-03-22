@@ -28,6 +28,7 @@ impl<'a> Emitter<'a> {
             out.push_str(&c.to_ascii_lowercase());
             last_end = start + c.len();
         }
+        out.push_str(unsafe { type_name.get_unchecked(last_end..type_name.len()) });
         Ident::new(&out, Span2::call_site())
     }
 

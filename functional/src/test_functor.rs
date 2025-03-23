@@ -183,6 +183,7 @@ mod ast {
         pub output: Option<Exp>,
     }
 
+    #[allow(dead_code)]
     #[derive(Debug, PartialEq)]
     pub enum Statement<A, B> {
         Null,
@@ -213,17 +214,17 @@ mod ast {
             rhs: Box::new(Exp::Lit(4)),
         };
 
-        let mut transform = |e: Exp| match e {
+        let transform = |e: Exp| match e {
             Exp::Lit(i) => Exp::Lit(i + 2),
             otherwise => otherwise,
         };
 
-        let x_actual = x.fmap(&mut transform);
+        let x_actual = x.fmap(transform);
         assert_eq!(x_expected, x_actual);
 
         let y = Exp::Lit(1);
         let y_expected = Exp::Lit(3);
-        let y_actual = y.fmap(&mut transform);
+        let y_actual = y.fmap(transform);
         assert_eq!(y_expected, y_actual);
     }
 

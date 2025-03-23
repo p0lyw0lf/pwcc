@@ -253,9 +253,13 @@ impl Chompable for parser::Statement {
             ExpressionStmt(expression_stmt) => {
                 let _ = expression_stmt.exp.chomp(ctx);
             }
-            LabelStmt(parser::LabelStmt { label }) => {
-                ctx.push(Instruction::Label(ctx.goto_label(&label)));
-            }
+            LabelStmt(parser::LabelStmt { label }) => match label.inner {
+                parser::Label::RawLabel(parser::RawLabel { label }) => {
+                    ctx.push(Instruction::Label(ctx.goto_label(&label)));
+                }
+                parser::Label::CaseLabel(_case_label) => todo!(),
+                parser::Label::DefaultLabel(_default_label) => todo!(),
+            },
             GotoStmt(parser::GotoStmt { label }) => {
                 ctx.push(Instruction::Jump {
                     target: ctx.goto_label(&label),
@@ -299,6 +303,7 @@ impl Chompable for parser::Statement {
                 let _ = else_stmt.body.chomp(ctx);
                 ctx.push(Instruction::Label(end));
             }
+            SwitchStmt(_switch_stmt) => todo!(),
             BreakStmt(break_stmt) => {
                 ctx.push(Instruction::Jump {
                     target: ctx.break_label(

@@ -120,12 +120,12 @@ fn main() -> Result<()> {
         println!("{pass0:?}");
     }
 
-    let pass1 = pass0.fmap(&mut codegen::stack::pass);
+    let pass1 = pass0.fmap(codegen::stack::pass);
     if stage == Codegen {
         println!("{pass1:?}");
     }
 
-    let pass2 = pass1.fmap(&mut codegen::hardware::pass);
+    let pass2 = pass1.fmap(codegen::hardware::pass);
 
     if stage == Codegen {
         println!("{pass2:?}");

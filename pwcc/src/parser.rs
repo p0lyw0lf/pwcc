@@ -38,6 +38,7 @@ nodes! {
         +<WhileStmt>
         +<DoWhileStmt>
         +<ForStmt>
+        +<SwitchStmt>
         +<Block>
         +<LabelStmt>
         +<GotoStmt>
@@ -48,6 +49,7 @@ nodes! {
 
     IfStmt(*KeywordIf *OpenParen *<guard: Exp> *CloseParen *<body: Box<Statement>> *<else_stmt: Option<ElseStmt>>);
     ElseStmt(*KeywordElse *<body: Box<Statement>>);
+    SwitchStmt(*KeywordSwitch *OpenParen *<exp: Exp> *CloseParen *<body: Box<Statement>>);
 
     BreakStmt(*KeywordBreak *<label: Option<LoopLabel>> *Semicolon);
     ContinueStmt(*KeywordContinue *<label: Option<LoopLabel>> *Semicolon);
@@ -57,7 +59,16 @@ nodes! {
     ForInit(+<Declaration> +<ForInitExp>);
     ForInitExp(*<exp: Option<Exp>> *Semicolon);
 
-    LabelStmt(*{label: Ident(_ = String)} *Colon) [include];
+    LabelStmt(*<label: Label> *Colon);
+    Label(
+        +<RawLabel>
+        +<CaseLabel>
+        +<DefaultLabel>
+    );
+    RawLabel(*{label: Ident(_ = String)}) [include];
+    CaseLabel(*KeywordCase *<exp: Exp>);
+    DefaultLabel(*KeywordDefault);
+
     GotoStmt(*KeywordGoto *{label: Ident(_ = String)} *Semicolon) [include];
 
     NullStmt(*Semicolon);

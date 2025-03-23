@@ -9,23 +9,26 @@ use crate::parser::DoWhileStmt;
 use crate::parser::ForStmt;
 use crate::parser::Function;
 use crate::parser::LoopLabel;
+use crate::parser::SwitchStmt;
 use crate::parser::WhileStmt;
-use crate::semantic::SemanticError;
 use crate::semantic::SemanticErrors;
 use crate::semantic::UniqueLabelFactory;
 
 #[derive(Error, Diagnostic, Debug)]
 pub enum Error {
-    // TODO: I need extra nodes to get this to map over Span<Statement> somehow. I have no idea how
-    // to do this lol
-    #[error("{0} is outside of any enclosing loop body")]
-    OutsideLoop(String),
+    // TODO: I need to get spans on these somehow...
+    #[error("\"break\" is outside of any enclosing loop or switch body")]
+    BreakOutsideLoop,
+
+    #[error("\"continue\" is outside of any enclosing loop body")]
+    ContinueOutsideLoop,
 }
 
 pub(super) fn labeling(mut function: Function) -> Result<Function, SemanticErrors> {
     let mut labeler = Labeler {
         function: function.name.inner.clone(),
-        label_stack: Vec::new(),
+        break_stack: Default::default(),
+        continue_stack: Default::default(),
         factory: UniqueLabelFactory::default(),
         errs: Default::default(),
     };
@@ -33,7 +36,9 @@ pub(super) fn labeling(mut function: Function) -> Result<Function, SemanticError
     labeler.visit_mut_function(&mut function);
 
     if labeler.errs.len() > 0 {
-        Err(SemanticErrors(labeler.errs))
+        Err(SemanticErrors(
+            labeler.errs.into_iter().map(Into::into).collect(),
+        ))
     } else {
         Ok(function)
     }
@@ -41,11 +46,14 @@ pub(super) fn labeling(mut function: Function) -> Result<Function, SemanticError
 
 struct Labeler {
     function: String,
-    /// The end of the Vec is the top of the stack
-    label_stack: Vec<String>,
+    /// The end of the Vec is the top of the stack. `break`s and `continue`s are treated differently,
+    /// because `break` can be used to exit a `switch` while `continue` cannot, and would exit the
+    /// nearest loop otherwise.
+    break_stack: Vec<String>,
+    continue_stack: Vec<String>,
     factory: UniqueLabelFactory,
 
-    errs: Vec<SemanticError>,
+    errs: Vec<Error>,
 }
 
 impl Labeler {
@@ -54,47 +62,60 @@ impl Labeler {
     }
 }
 
-macro_rules! label {
+macro_rules! label_loop {
     ($self:expr, $v:expr, $f:ident) => {
         let new_label = $self.make_label();
-        $self.label_stack.push(new_label.0.clone());
+        $self.break_stack.push(new_label.0.clone());
+        $self.continue_stack.push(new_label.0.clone());
         $v.label.inner = Some(new_label);
         visit_mut::$f($self, $v);
         $self
-            .label_stack
+            .break_stack
             .pop()
-            .expect("unexpected empty loop label stack");
+            .expect("unexpected empty break label stack");
+        $self
+            .continue_stack
+            .pop()
+            .expect("unexpected empty break label stack");
     };
 }
 
 impl visit_mut::VisitMut for Labeler {
     fn visit_mut_for_stmt(&mut self, for_stmt: &mut ForStmt) {
-        label!(self, for_stmt, visit_mut_for_stmt);
+        label_loop!(self, for_stmt, visit_mut_for_stmt);
     }
     fn visit_mut_while_stmt(&mut self, while_stmt: &mut WhileStmt) {
-        label!(self, while_stmt, visit_mut_while_stmt);
+        label_loop!(self, while_stmt, visit_mut_while_stmt);
     }
     fn visit_mut_do_while_stmt(&mut self, do_while_stmt: &mut DoWhileStmt) {
-        label!(self, do_while_stmt, visit_mut_do_while_stmt);
+        label_loop!(self, do_while_stmt, visit_mut_do_while_stmt);
+    }
+
+    fn visit_mut_switch_stmt(&mut self, switch_stmt: &mut SwitchStmt) {
+        let new_label = self.make_label();
+        self.break_stack.push(new_label.0.clone());
+        switch_stmt.label.inner = Some(new_label);
+        visit_mut::visit_mut_switch_stmt(self, switch_stmt);
+        self.break_stack
+            .pop()
+            .expect("unexpected empty break label stack");
     }
 
     fn visit_mut_break_stmt(&mut self, break_stmt: &mut BreakStmt) {
-        if let Some(label) = self.label_stack.last() {
+        if let Some(label) = self.break_stack.last() {
             break_stmt.label.inner = Some(LoopLabel(label.clone()));
         } else {
-            self.errs
-                .push(Error::OutsideLoop("break".to_string()).into());
+            self.errs.push(Error::BreakOutsideLoop);
         }
 
         visit_mut::visit_mut_break_stmt(self, break_stmt);
     }
 
     fn visit_mut_continue_stmt(&mut self, continue_stmt: &mut ContinueStmt) {
-        if let Some(label) = self.label_stack.last() {
+        if let Some(label) = self.continue_stack.last() {
             continue_stmt.label.inner = Some(LoopLabel(label.clone()));
         } else {
-            self.errs
-                .push(Error::OutsideLoop("continue".to_string()).into());
+            self.errs.push(Error::ContinueOutsideLoop);
         }
 
         visit_mut::visit_mut_continue_stmt(self, continue_stmt);

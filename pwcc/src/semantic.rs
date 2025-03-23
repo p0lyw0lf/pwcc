@@ -12,6 +12,7 @@ use crate::parser::Program;
 mod goto;
 mod loop_labeling;
 mod operator_types;
+mod switch_case_collection;
 mod variable_resolution;
 
 pub fn validate(p: Program) -> Result<Program, SemanticErrors> {
@@ -19,6 +20,7 @@ pub fn validate(p: Program) -> Result<Program, SemanticErrors> {
     let p = p.try_fmap(goto::analysis)?;
     let p = p.try_fmap(variable_resolution::resolve_variables)?;
     let p = p.try_fmap(loop_labeling::labeling)?;
+    let p = p.try_fmap(switch_case_collection::collect)?;
     Ok(p)
 }
 
@@ -49,6 +51,9 @@ pub enum SemanticError {
     #[error(transparent)]
     #[diagnostic(transparent)]
     LoopLabelingError(#[from] loop_labeling::Error),
+    #[error(transparent)]
+    #[diagnostic(transparent)]
+    SwitchCaseError(#[from] switch_case_collection::Error),
 }
 
 #[derive(Error, Diagnostic, Debug)]

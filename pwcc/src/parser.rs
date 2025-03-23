@@ -49,7 +49,7 @@ nodes! {
 
     IfStmt(*KeywordIf *OpenParen *<guard: Exp> *CloseParen *<body: Box<Statement>> *<else_stmt: Option<ElseStmt>>);
     ElseStmt(*KeywordElse *<body: Box<Statement>>);
-    SwitchStmt(*KeywordSwitch *OpenParen *<exp: Exp> *CloseParen *<body: Box<Statement>>);
+    SwitchStmt(*KeywordSwitch *<ctx: Option<SwitchContext>> *<label: Option<LoopLabel>> *OpenParen *<exp: Exp> *CloseParen *<body: Box<Statement>>);
 
     BreakStmt(*KeywordBreak *<label: Option<LoopLabel>> *Semicolon);
     ContinueStmt(*KeywordContinue *<label: Option<LoopLabel>> *Semicolon);
@@ -63,11 +63,8 @@ nodes! {
     Label(
         +<RawLabel>
         +<CaseLabel>
-        +<DefaultLabel>
     );
     RawLabel(*{label: Ident(_ = String)}) [include];
-    CaseLabel(*KeywordCase *<exp: Exp>);
-    DefaultLabel(*KeywordDefault);
 
     GotoStmt(*KeywordGoto *{label: Ident(_ = String)} *Semicolon) [include];
 
@@ -136,9 +133,18 @@ nodes! {
             rhs: Span<Box<Exp>>,
         },
     } [include];
-    // Similarly with LoopLabel; we never want to be able to parse it from tokens, but we do want
-// to be able to create one later and see it
+
+    // Similarly for LoopLabel; we don't want to be able to parse them, but we do want to be able
+// to represent them.
     LoopLabel struct (pub String);
+
+    CaseLabel enum {
+        Case(Exp),
+        Default,
+        Labeled(String),
+    };
+    SwitchLabel struct (pub String, pub Option<Exp>);
+    SwitchContext struct (pub Vec<SwitchLabel>);
 }
 
 impl FromTokens for LoopLabel {
@@ -152,6 +158,58 @@ impl FromTokens for LoopLabel {
 impl ToTokens for LoopLabel {
     fn to_tokens(self) -> impl Iterator<Item = Token> {
         core::iter::once(Token::Ident(self.0))
+    }
+}
+
+impl FromTokens for CaseLabel {
+    fn from_tokens(
+        ts: &mut (impl Iterator<Item = Span<Token>> + Clone),
+    ) -> Result<Span<Self>, ParseError> {
+        try_parse!(
+            ts,
+            Err(ParseError::NoMatches),
+            |iter| {
+                let mut span1 = SourceSpan::empty();
+                expect_token!(iter, span1, KeywordCase);
+                let Span {
+                    inner: exp,
+                    span: span2,
+                } = Exp::from_tokens(&mut iter)?;
+                Ok(CaseLabel::Case(exp).span(span1.sconcat(span2)))
+            },
+            |iter| {
+                let mut span = SourceSpan::empty();
+                expect_token!(iter, span, KeywordDefault);
+                Ok(CaseLabel::Default.span(span))
+            },
+        )
+    }
+}
+
+impl ToTokens for CaseLabel {
+    fn to_tokens(self) -> impl Iterator<Item = Token> {
+        let out: Box<dyn Iterator<Item = Token>> = match self {
+            CaseLabel::Case(exp) => {
+                Box::new(core::iter::once(Token::KeywordCase).chain(exp.to_tokens()))
+            }
+            CaseLabel::Default => Box::new(core::iter::once(Token::KeywordDefault)),
+            CaseLabel::Labeled(label) => Box::new(core::iter::once(Token::Ident(label))),
+        };
+        out
+    }
+}
+
+impl FromTokens for SwitchContext {
+    fn from_tokens(
+        _ts: &mut (impl Iterator<Item = Span<Token>> + Clone),
+    ) -> Result<Span<Self>, ParseError> {
+        Err(ParseError::NoMatches)
+    }
+}
+
+impl ToTokens for SwitchContext {
+    fn to_tokens(self) -> impl Iterator<Item = Token> {
+        core::iter::empty()
     }
 }
 

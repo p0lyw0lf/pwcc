@@ -120,17 +120,20 @@ impl<'a> ChompContext<'a> {
         self.instructions.push(i)
     }
 
-    // Used for fixed goto labels
     fn goto_label(&self, label: &str) -> Identifier {
         Identifier(format!("__{}.goto.{}", self.tf.parent, label))
     }
 
     fn break_label(&self, loop_label: &parser::LoopLabel) -> Identifier {
-        Identifier(format!("__{}.break", loop_label.0))
+        Identifier(format!("__break.{}", loop_label.0))
     }
 
     fn continue_label(&self, loop_label: &parser::LoopLabel) -> Identifier {
-        Identifier(format!("__{}.continue", loop_label.0))
+        Identifier(format!("__continue.{}", loop_label.0))
+    }
+
+    fn case_label(&self, case_label: &str) -> Identifier {
+        Identifier(format!("__case.{}", case_label))
     }
 }
 
@@ -257,8 +260,12 @@ impl Chompable for parser::Statement {
                 parser::Label::RawLabel(parser::RawLabel { label }) => {
                     ctx.push(Instruction::Label(ctx.goto_label(&label)));
                 }
-                parser::Label::CaseLabel(_case_label) => todo!(),
-                parser::Label::DefaultLabel(_default_label) => todo!(),
+                parser::Label::CaseLabel(case_label) => match case_label {
+                    parser::CaseLabel::Labeled(label) => {
+                        ctx.push(Instruction::Label(ctx.case_label(&label)));
+                    }
+                    otherwise => panic!("encountered unprocessed case label {otherwise:?}"),
+                },
             },
             GotoStmt(parser::GotoStmt { label }) => {
                 ctx.push(Instruction::Jump {
@@ -303,7 +310,52 @@ impl Chompable for parser::Statement {
                 let _ = else_stmt.body.chomp(ctx);
                 ctx.push(Instruction::Label(end));
             }
-            SwitchStmt(_switch_stmt) => todo!(),
+            SwitchStmt(switch_stmt) => {
+                let lhs = switch_stmt.exp.chomp(ctx).chomp(ctx);
+                // Check all the cases, in order
+                for parser::SwitchLabel(label, check) in switch_stmt
+                    .ctx
+                    .inner
+                    .expect("switch satement without context")
+                    .0
+                {
+                    match check {
+                        Some(check) => {
+                            let rhs = check.chomp(ctx);
+                            let condition = ctx.tf.next();
+                            ctx.push(Instruction::Binary {
+                                src1: Val::Var(lhs),
+                                op: BinaryOp::Equal,
+                                src2: rhs,
+                                dst: condition,
+                            });
+                            ctx.push(Instruction::JumpIfNotZero {
+                                condition,
+                                target: ctx.case_label(&label),
+                            });
+                        }
+                        None => {
+                            ctx.push(Instruction::Jump {
+                                target: ctx.case_label(&label),
+                            });
+                        }
+                    }
+                }
+                // Then, by default, jump to the end.
+                let break_label = ctx.break_label(
+                    switch_stmt
+                        .label
+                        .as_ref()
+                        .expect("switch statement without loop label"),
+                );
+                ctx.push(Instruction::Jump {
+                    target: break_label.clone(),
+                });
+
+                switch_stmt.body.chomp(ctx);
+
+                ctx.push(Instruction::Label(break_label));
+            }
             BreakStmt(break_stmt) => {
                 ctx.push(Instruction::Jump {
                     target: ctx.break_label(

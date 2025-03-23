@@ -16,7 +16,9 @@ use macros::*;
 tokens! {
 Tokenizer for Token with TokenError:
     r"break\b": KeywordBreak,
+    r"case\b": KeywordCase,
     r"continue\b": KeywordContinue,
+    r"default\b": KeywordDefault,
     r"do\b": KeywordDo,
     r"else\b": KeywordElse,
     r"for\b": KeywordFor,
@@ -24,6 +26,7 @@ Tokenizer for Token with TokenError:
     r"if\b": KeywordIf,
     r"int\b": KeywordInt,
     r"return\b": KeywordReturn,
+    r"switch\b": KeywordSwitch,
     r"void\b": KeywordVoid,
     r"while\b": KeywordWhile,
     r"[a-zA-Z_]\w*\b": Ident(String),

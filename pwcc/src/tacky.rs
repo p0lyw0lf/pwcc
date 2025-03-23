@@ -124,6 +124,14 @@ impl<'a> ChompContext<'a> {
     fn goto_label(&self, label: &str) -> Identifier {
         Identifier(format!("__{}.goto.{}", self.tf.parent, label))
     }
+
+    fn break_label(&self, loop_label: &parser::LoopLabel) -> Identifier {
+        Identifier(format!("__{}.break", loop_label.0))
+    }
+
+    fn continue_label(&self, loop_label: &parser::LoopLabel) -> Identifier {
+        Identifier(format!("__{}.continue", loop_label.0))
+    }
 }
 
 /// Represents a type that can be used to emit instructions
@@ -291,11 +299,91 @@ impl Chompable for parser::Statement {
                 let _ = else_stmt.body.chomp(ctx);
                 ctx.push(Instruction::Label(end));
             }
-            BreakStmt(_break_stmt) => todo!(),
-            ContinueStmt(_continue_stmt) => todo!(),
-            WhileStmt(_while_stmt) => todo!(),
-            DoWhileStmt(_do_while_stmt) => todo!(),
-            ForStmt(_for_stmt) => todo!(),
+            BreakStmt(break_stmt) => {
+                ctx.push(Instruction::Jump {
+                    target: ctx.break_label(
+                        break_stmt
+                            .label
+                            .as_ref()
+                            .expect("break statement did not have loop label"),
+                    ),
+                });
+            }
+            ContinueStmt(continue_stmt) => {
+                ctx.push(Instruction::Jump {
+                    target: ctx.continue_label(
+                        continue_stmt
+                            .label
+                            .as_ref()
+                            .expect("continue statement did not have loop label"),
+                    ),
+                });
+            }
+            DoWhileStmt(do_while_stmt) => {
+                let loop_label = do_while_stmt
+                    .label
+                    .as_ref()
+                    .expect("do while statement did not have loop label");
+                let start = ctx.tf.next_label("start");
+                ctx.push(Instruction::Label(start.clone()));
+                do_while_stmt.body.chomp(ctx);
+                ctx.push(Instruction::Label(ctx.continue_label(loop_label)));
+                let condition = do_while_stmt.guard.chomp(ctx).chomp(ctx);
+                ctx.push(Instruction::JumpIfNotZero {
+                    condition,
+                    target: start,
+                });
+                ctx.push(Instruction::Label(ctx.break_label(loop_label)));
+            }
+            WhileStmt(while_stmt) => {
+                let loop_label = while_stmt
+                    .label
+                    .as_ref()
+                    .expect("while statement did not have loop label");
+                let continue_label = ctx.continue_label(loop_label);
+                let break_label = ctx.break_label(loop_label);
+                ctx.push(Instruction::Label(continue_label.clone()));
+                let condition = while_stmt.guard.chomp(ctx).chomp(ctx);
+                ctx.push(Instruction::JumpIfZero {
+                    condition,
+                    target: break_label.clone(),
+                });
+                while_stmt.body.chomp(ctx);
+                ctx.push(Instruction::Jump {
+                    target: continue_label,
+                });
+                ctx.push(Instruction::Label(break_label));
+            }
+            ForStmt(for_stmt) => {
+                match for_stmt.init.inner {
+                    parser::ForInit::Declaration(decl) => decl.chomp(ctx),
+                    parser::ForInit::ForInitExp(parser::ForInitExp { exp }) => {
+                        exp.inner.map(|exp| exp.chomp(ctx));
+                    }
+                };
+                let start = ctx.tf.next_label("start");
+                let loop_label = for_stmt
+                    .label
+                    .as_ref()
+                    .expect("for statement did not have loop label");
+                let continue_label = ctx.continue_label(loop_label);
+                let break_label = ctx.break_label(loop_label);
+                ctx.push(Instruction::Label(start.clone()));
+                if let Some(guard) = for_stmt.exp1.inner {
+                    let condition = guard.chomp(ctx).chomp(ctx);
+                    ctx.push(Instruction::JumpIfZero {
+                        condition,
+                        target: break_label.clone(),
+                    });
+                }
+                for_stmt.body.chomp(ctx);
+                ctx.push(Instruction::Label(continue_label));
+                if let Some(post) = for_stmt.exp2.inner {
+                    post.chomp(ctx);
+                }
+                ctx.push(Instruction::Jump { target: start });
+                ctx.push(Instruction::Label(break_label));
+            }
         }
     }
 }

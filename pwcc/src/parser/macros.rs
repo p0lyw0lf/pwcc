@@ -79,6 +79,7 @@ macro_rules! nodes {
     ; )*) => {
         #[functional_macros::ast(typeclasses = [Functor, TryFunctor, VisitMut])]
         mod ast {
+        use std::collections::BTreeMap;
         use crate::span::Span;
         use crate::span::SourceSpan;
         use crate::lexer::Token;

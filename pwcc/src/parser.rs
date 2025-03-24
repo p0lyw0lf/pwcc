@@ -59,7 +59,7 @@ nodes! {
     ForInit(+<Declaration> +<ForInitExp>);
     ForInitExp(*<exp: Option<Exp>> *Semicolon);
 
-    LabelStmt(*<label: Label> *Colon);
+    LabelStmt(*<label: Label> *Colon *<stmt: Box<Statement>>);
     Label(
         +<RawLabel>
         +<CaseLabel>
@@ -135,7 +135,7 @@ nodes! {
     } [include];
 
     // Similarly for LoopLabel; we don't want to be able to parse them, but we do want to be able
-// to represent them.
+    // to represent them.
     LoopLabel struct (pub String);
 
     CaseLabel enum {
@@ -143,8 +143,9 @@ nodes! {
         Default,
         Labeled(String),
     };
-    SwitchLabel struct (pub String, pub Option<Exp>);
-    SwitchContext struct (pub Vec<SwitchLabel>);
+    // Maps the constant-evaluated case value (if applicable) to the case it should jump to if the
+    // value matches.
+    SwitchContext struct (pub BTreeMap<Option<isize>, String>);
 }
 
 impl FromTokens for LoopLabel {

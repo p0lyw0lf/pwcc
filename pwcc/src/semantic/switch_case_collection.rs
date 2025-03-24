@@ -1,28 +1,38 @@
+use std::collections::btree_map;
+use std::collections::BTreeMap;
+
 use miette::Diagnostic;
 use thiserror::Error;
 
+use crate::evaluator;
+use crate::evaluator::evaluate;
 use crate::parser::visit_mut;
 use crate::parser::visit_mut::VisitMut;
 use crate::parser::CaseLabel;
 use crate::parser::Function;
 use crate::parser::SwitchContext;
-use crate::parser::SwitchLabel;
 use crate::parser::SwitchStmt;
 use crate::semantic::SemanticErrors;
 use crate::semantic::UniqueLabelFactory;
-use crate::span::Span;
 
+// TODO: I also need to get spans on these somehow...
 #[derive(Error, Diagnostic, Debug)]
 pub enum Error {
-    #[error("case {0} is outside of any enclosing switch body")]
-    CaseOutsideSwitch(#[label] Span<String>),
+    #[error("\"case\" is outside of any enclosing switch body")]
+    CaseOutsideSwitch,
 
-    // TODO: I need to get spans on these somehow...
     #[error("\"default\" is outside of any enclosing switch body")]
     DefaultOutsideSwitch,
 
     #[error("encountered more than one \"default\" inside switch")]
     MoreThanOneDefault,
+
+    #[error("\"case\" does not have constant value")]
+    #[diagnostic(transparent)]
+    NonConstantCase(#[source] evaluator::Error),
+
+    #[error("more than one \"case\" for value {0}")]
+    DuplicateCase(isize),
 }
 
 pub(super) fn collect(mut function: Function) -> Result<Function, SemanticErrors> {
@@ -30,7 +40,6 @@ pub(super) fn collect(mut function: Function) -> Result<Function, SemanticErrors
         function: function.name.inner.clone(),
         factory: UniqueLabelFactory::default(),
         labels: Default::default(),
-        has_default: false,
         errs: Default::default(),
     };
 
@@ -49,9 +58,7 @@ struct Collector {
     function: String,
     factory: UniqueLabelFactory,
     /// The current switch cases we've seen so far
-    labels: Vec<SwitchLabel>,
-    /// Whether we've already seen a `default` case
-    has_default: bool,
+    labels: Option<BTreeMap<Option<isize>, String>>,
 
     errs: Vec<Error>,
 }
@@ -65,20 +72,19 @@ impl Collector {
 impl visit_mut::VisitMut for Collector {
     fn visit_mut_switch_stmt(&mut self, switch_stmt: &mut SwitchStmt) {
         // Save context for outer switch on the stack
-        let mut labels = vec![];
-        let mut has_default = false;
+        let mut labels = Some(BTreeMap::new());
         core::mem::swap(&mut self.labels, &mut labels);
-        core::mem::swap(&mut self.has_default, &mut has_default);
 
         // Recur, collecting all the labels for case/default labels belonging to this switch
         visit_mut::visit_mut_switch_stmt(self, switch_stmt);
 
         // Restore context for outer switch
         core::mem::swap(&mut self.labels, &mut labels);
-        core::mem::swap(&mut self.has_default, &mut has_default);
 
         // Use the newly-collected labels to fill out the context
-        switch_stmt.ctx.inner = Some(SwitchContext(labels));
+        switch_stmt.ctx.inner = Some(SwitchContext(
+            labels.expect("labels became unset while visiting switch cases"),
+        ));
     }
 
     fn visit_mut_case_label(&mut self, existing_case_label: &mut CaseLabel) {
@@ -88,17 +94,27 @@ impl visit_mut::VisitMut for Collector {
         core::mem::swap(&mut case_label, existing_case_label);
 
         match case_label {
-            CaseLabel::Case(exp) => {
-                self.labels.push(SwitchLabel(label, Some(exp)));
-            }
-            CaseLabel::Default => {
-                if self.has_default {
-                    self.errs.push(Error::MoreThanOneDefault);
-                } else {
-                    self.labels.push(SwitchLabel(label, None));
-                    self.has_default = true;
-                }
-            }
+            CaseLabel::Case(exp) => match self.labels.as_mut() {
+                Some(labels) => match evaluate(exp) {
+                    Ok(v) => match labels.entry(Some(v)) {
+                        btree_map::Entry::Vacant(e) => {
+                            e.insert(label);
+                        }
+                        btree_map::Entry::Occupied(_) => self.errs.push(Error::DuplicateCase(v)),
+                    },
+                    Err(e) => self.errs.push(Error::NonConstantCase(e)),
+                },
+                None => self.errs.push(Error::CaseOutsideSwitch),
+            },
+            CaseLabel::Default => match self.labels.as_mut() {
+                Some(labels) => match labels.entry(None) {
+                    btree_map::Entry::Vacant(e) => {
+                        e.insert(label);
+                    }
+                    btree_map::Entry::Occupied(_) => self.errs.push(Error::MoreThanOneDefault),
+                },
+                None => self.errs.push(Error::DefaultOutsideSwitch),
+            },
             CaseLabel::Labeled(existing) => panic!("case label had existing label {existing}"),
         }
     }

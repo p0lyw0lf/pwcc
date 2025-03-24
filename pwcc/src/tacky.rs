@@ -256,17 +256,20 @@ impl Chompable for parser::Statement {
             ExpressionStmt(expression_stmt) => {
                 let _ = expression_stmt.exp.chomp(ctx);
             }
-            LabelStmt(parser::LabelStmt { label }) => match label.inner {
-                parser::Label::RawLabel(parser::RawLabel { label }) => {
-                    ctx.push(Instruction::Label(ctx.goto_label(&label)));
-                }
-                parser::Label::CaseLabel(case_label) => match case_label {
-                    parser::CaseLabel::Labeled(label) => {
-                        ctx.push(Instruction::Label(ctx.case_label(&label)));
+            LabelStmt(parser::LabelStmt { label, stmt }) => {
+                match label.inner {
+                    parser::Label::RawLabel(parser::RawLabel { label }) => {
+                        ctx.push(Instruction::Label(ctx.goto_label(&label)));
                     }
-                    otherwise => panic!("encountered unprocessed case label {otherwise:?}"),
-                },
-            },
+                    parser::Label::CaseLabel(case_label) => match case_label {
+                        parser::CaseLabel::Labeled(label) => {
+                            ctx.push(Instruction::Label(ctx.case_label(&label)));
+                        }
+                        otherwise => panic!("encountered unprocessed case label {otherwise:?}"),
+                    },
+                };
+                stmt.chomp(ctx);
+            }
             GotoStmt(parser::GotoStmt { label }) => {
                 ctx.push(Instruction::Jump {
                     target: ctx.goto_label(&label),
@@ -313,20 +316,19 @@ impl Chompable for parser::Statement {
             SwitchStmt(switch_stmt) => {
                 let lhs = switch_stmt.exp.chomp(ctx).chomp(ctx);
                 // Check all the cases, in order
-                for parser::SwitchLabel(label, check) in switch_stmt
+                for (check, label) in switch_stmt
                     .ctx
                     .inner
                     .expect("switch satement without context")
                     .0
                 {
                     match check {
-                        Some(check) => {
-                            let rhs = check.chomp(ctx);
+                        Some(rhs) => {
                             let condition = ctx.tf.next();
                             ctx.push(Instruction::Binary {
                                 src1: Val::Var(lhs),
                                 op: BinaryOp::Equal,
-                                src2: rhs,
+                                src2: Val::Constant(rhs),
                                 dst: condition,
                             });
                             ctx.push(Instruction::JumpIfNotZero {

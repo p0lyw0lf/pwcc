@@ -314,45 +314,48 @@ impl Chompable for parser::Statement {
                 ctx.push(Instruction::Label(end));
             }
             SwitchStmt(switch_stmt) => {
-                let lhs = switch_stmt.exp.chomp(ctx).chomp(ctx);
-                // Check all the cases, in order
-                for (check, label) in switch_stmt
-                    .ctx
-                    .inner
-                    .expect("switch satement without context")
-                    .0
-                {
-                    match check {
-                        Some(rhs) => {
-                            let condition = ctx.tf.next();
-                            ctx.push(Instruction::Binary {
-                                src1: Val::Var(lhs),
-                                op: BinaryOp::Equal,
-                                src2: Val::Constant(rhs),
-                                dst: condition,
-                            });
-                            ctx.push(Instruction::JumpIfNotZero {
-                                condition,
-                                target: ctx.case_label(&label),
-                            });
-                        }
-                        None => {
-                            ctx.push(Instruction::Jump {
-                                target: ctx.case_label(&label),
-                            });
-                        }
-                    }
-                }
-                // Then, by default, jump to the end.
                 let break_label = ctx.break_label(
                     switch_stmt
                         .label
                         .as_ref()
                         .expect("switch statement without loop label"),
                 );
-                ctx.push(Instruction::Jump {
-                    target: break_label.clone(),
-                });
+                let lhs = switch_stmt.exp.chomp(ctx).chomp(ctx);
+
+                let mut labels = switch_stmt
+                    .ctx
+                    .inner
+                    .expect("switch satement without context")
+                    .0;
+                let default_case = labels.remove(&None);
+
+                // Check all the present cases, in order
+                for (check, label) in labels {
+                    if let Some(rhs) = check {
+                        let condition = ctx.tf.next();
+                        ctx.push(Instruction::Binary {
+                            src1: Val::Var(lhs),
+                            op: BinaryOp::Equal,
+                            src2: Val::Constant(rhs),
+                            dst: condition,
+                        });
+                        ctx.push(Instruction::JumpIfNotZero {
+                            condition,
+                            target: ctx.case_label(&label),
+                        });
+                    }
+                }
+
+                // Then, emit the default case, if present
+                match default_case {
+                    Some(label) => ctx.push(Instruction::Jump {
+                        target: ctx.case_label(&label),
+                    }),
+                    // Otherwise, jump immediately to the end.
+                    None => ctx.push(Instruction::Jump {
+                        target: break_label.clone(),
+                    }),
+                };
 
                 switch_stmt.body.chomp(ctx);
 

@@ -6,6 +6,7 @@ DIR="$(dirname "$0")"
 
 FILES=()
 OPTIONS=()
+GCC_OPTIONS=()
 INFO=0
 
 while [[ $# -gt 0 ]]; do
@@ -13,6 +14,10 @@ while [[ $# -gt 0 ]]; do
     -h|--help|-v|--version)
       OPTIONS+=("$1")
       INFO=1
+      shift
+      ;;
+    -c)
+      GCC_OPTIONS+=("$1")
       shift
       ;;
     -*)
@@ -41,6 +46,7 @@ if [[ "${#FILES[@]}" -eq "0" ]]; then
   exit 1
 fi
 
+ASSEMBLIES=()
 process_file () {
   file="$1"
   output="${file%.*}"
@@ -67,9 +73,17 @@ process_file () {
     exit 1
   fi
 
-  gcc "${assembly}" -o "${output}"
+  ASSEMBLIES+=("${assembly}")
 }
 
 for file in "${FILES[@]}"; do
   process_file "${file}"
 done
+
+
+EXT=""
+if [[ "${#GCC_OPTIONS[@]}" -gt "0" ]]; then
+  EXT=".o"
+fi
+
+gcc "${GCC_OPTIONS[@]}" "${ASSEMBLIES[@]}" -o "${FILES[0]%.*}${EXT}"

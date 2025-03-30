@@ -7,7 +7,7 @@ use crate::parser::BreakStmt;
 use crate::parser::ContinueStmt;
 use crate::parser::DoWhileStmt;
 use crate::parser::ForStmt;
-use crate::parser::Function;
+use crate::parser::FunctionDecl;
 use crate::parser::LoopLabel;
 use crate::parser::SwitchStmt;
 use crate::parser::WhileStmt;
@@ -25,7 +25,7 @@ pub enum Error {
     ContinueOutsideLoop(#[label("here")] Span),
 }
 
-pub(super) fn labeling(mut function: Function) -> Result<Function, SemanticErrors> {
+pub(super) fn labeling(mut function: FunctionDecl) -> Result<FunctionDecl, SemanticErrors> {
     let mut labeler = Labeler {
         function: function.name.0.clone(),
         break_stack: Default::default(),
@@ -34,7 +34,7 @@ pub(super) fn labeling(mut function: Function) -> Result<Function, SemanticError
         errs: Default::default(),
     };
 
-    labeler.visit_mut_function(&mut function);
+    labeler.visit_mut_function_decl(&mut function);
 
     if labeler.errs.len() > 0 {
         Err(SemanticErrors(
@@ -95,7 +95,7 @@ impl visit_mut::VisitMut for Labeler {
     fn visit_mut_switch_stmt(&mut self, switch_stmt: &mut SwitchStmt) {
         let new_label = self.make_label();
         self.break_stack.push(new_label.0.clone());
-        switch_stmt.label= Some(new_label);
+        switch_stmt.label = Some(new_label);
         visit_mut::visit_mut_switch_stmt(self, switch_stmt);
         self.break_stack
             .pop()
@@ -104,7 +104,7 @@ impl visit_mut::VisitMut for Labeler {
 
     fn visit_mut_break_stmt(&mut self, break_stmt: &mut BreakStmt) {
         if let Some(label) = self.break_stack.last() {
-            break_stmt.label= Some(LoopLabel(label.clone()));
+            break_stmt.label = Some(LoopLabel(label.clone()));
         } else {
             self.errs.push(Error::BreakOutsideLoop(break_stmt.span()));
         }
@@ -114,9 +114,10 @@ impl visit_mut::VisitMut for Labeler {
 
     fn visit_mut_continue_stmt(&mut self, continue_stmt: &mut ContinueStmt) {
         if let Some(label) = self.continue_stack.last() {
-            continue_stmt.label= Some(LoopLabel(label.clone()));
+            continue_stmt.label = Some(LoopLabel(label.clone()));
         } else {
-            self.errs.push(Error::ContinueOutsideLoop(continue_stmt.span()));
+            self.errs
+                .push(Error::ContinueOutsideLoop(continue_stmt.span()));
         }
 
         visit_mut::visit_mut_continue_stmt(self, continue_stmt);

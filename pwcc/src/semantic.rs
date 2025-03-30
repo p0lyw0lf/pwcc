@@ -7,6 +7,8 @@ use functional::ControlFlow;
 use functional::Semigroup;
 use functional::TryFunctor;
 
+use crate::parser::FunctionBody;
+use crate::parser::FunctionDecl;
 use crate::parser::Program;
 
 mod goto;
@@ -16,11 +18,17 @@ mod switch_case_collection;
 mod variable_resolution;
 
 pub fn validate(p: Program) -> Result<Program, SemanticErrors> {
-    let p = p.try_fmap(operator_types::check_operator_types)?;
-    let p = p.try_fmap(goto::analysis)?;
     let p = p.try_fmap(variable_resolution::resolve_variables)?;
-    let p = p.try_fmap(loop_labeling::labeling)?;
-    let p = p.try_fmap(switch_case_collection::collect)?;
+    let p = p.try_fmap(|f: FunctionDecl| -> Result<_, SemanticErrors> {
+        if matches!(f.body, FunctionBody::Semicolon(_)) {
+            return Ok(f);
+        }
+        let f = f.try_fmap(operator_types::check_operator_types)?;
+        let f = f.try_fmap(goto::analysis)?;
+        let f = f.try_fmap(loop_labeling::labeling)?;
+        let f = f.try_fmap(switch_case_collection::collect)?;
+        Ok(f)
+    })?;
     Ok(p)
 }
 

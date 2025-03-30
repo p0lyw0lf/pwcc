@@ -9,7 +9,7 @@ use crate::evaluator::evaluate;
 use crate::parser::visit_mut;
 use crate::parser::visit_mut::VisitMut;
 use crate::parser::CaseLabel;
-use crate::parser::Function;
+use crate::parser::FunctionDecl;
 use crate::parser::SwitchContext;
 use crate::parser::SwitchStmt;
 use crate::semantic::SemanticErrors;
@@ -47,7 +47,7 @@ pub enum Error {
     },
 }
 
-pub(super) fn collect(mut function: Function) -> Result<Function, SemanticErrors> {
+pub(super) fn collect(mut function: FunctionDecl) -> Result<FunctionDecl, SemanticErrors> {
     let mut collector = Collector {
         function: function.name.0.clone(),
         factory: UniqueLabelFactory::default(),
@@ -55,7 +55,7 @@ pub(super) fn collect(mut function: Function) -> Result<Function, SemanticErrors
         errs: Default::default(),
     };
 
-    collector.visit_mut_function(&mut function);
+    collector.visit_mut_function_decl(&mut function);
 
     if collector.errs.len() > 0 {
         Err(SemanticErrors(
@@ -94,7 +94,7 @@ impl visit_mut::VisitMut for Collector {
         core::mem::swap(&mut self.labels, &mut labels);
 
         // Use the newly-collected labels to fill out the context
-        switch_stmt.ctx= Some(SwitchContext(
+        switch_stmt.ctx = Some(SwitchContext(
             labels.expect("labels became unset while visiting switch cases"),
         ));
     }
@@ -110,22 +110,22 @@ impl visit_mut::VisitMut for Collector {
                 Some(labels) => {
                     let span = exp.span();
                     match evaluate(exp) {
-                    Ok(v) => match labels.entry(Some(v)) {
-                        btree_map::Entry::Vacant(e) => {
-                            e.insert((label, span));
-                        }
-                        btree_map::Entry::Occupied(e) => {
-                            let (_, existing_span) = e.get();
-                            self.errs.push(Error::DuplicateCase {
-                                value: v,
-                                first: *existing_span,
-                                second: span,
-                            })
-                        }
-                    },
-                    Err(e) => self.errs.push(Error::NonConstantCase(e)),
+                        Ok(v) => match labels.entry(Some(v)) {
+                            btree_map::Entry::Vacant(e) => {
+                                e.insert((label, span));
+                            }
+                            btree_map::Entry::Occupied(e) => {
+                                let (_, existing_span) = e.get();
+                                self.errs.push(Error::DuplicateCase {
+                                    value: v,
+                                    first: *existing_span,
+                                    second: span,
+                                })
+                            }
+                        },
+                        Err(e) => self.errs.push(Error::NonConstantCase(e)),
                     }
-                },
+                }
                 None => self.errs.push(Error::CaseOutsideSwitch(exp.span())),
             },
             CaseLabel::Default(span) => match self.labels.as_mut() {

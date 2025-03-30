@@ -6,7 +6,9 @@ use crate::tacky::Identifier;
 
 impl Display for Program<hardware::Pass> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.function)?;
+        for function in &self.functions {
+            write!(f, "{}", function)?;
+        }
         #[cfg(target_os = "linux")]
         {
             writeln!(f, "\t.section .note.GNU-stack,\"\",@progbits")?;

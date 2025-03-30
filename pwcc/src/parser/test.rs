@@ -74,25 +74,26 @@ int main(void) {
     int x = 1;
     return 2;
 }",
-        Function {
+        FunctionDecl {
             name: ("main".to_string(), span),
-            body: Block {
+            args: FunctionDeclArgs::KeywordVoid(span),
+            body: FunctionBody::Block(Block {
                 items: vec![
-                    BlockItem::Declaration(Declaration {
+                    BlockItem::Declaration(Declaration::VarDecl(VarDecl {
                         name: ("x".to_string(), span),
                         init: Initializer::ExpressionInit(ExpressionInit {
                             exp: Exp::Constant { constant: 1, span },
                             span,
                         }),
                         span,
-                    }),
+                    })),
                     BlockItem::Statement(Statement::ReturnStmt(ReturnStmt {
                         exp: Exp::Constant { constant: 2, span },
                         span,
                     })),
                 ],
                 span,
-            },
+            }),
             span,
         },
     );
@@ -227,11 +228,11 @@ fn assign_precedence() {
 fn decl_no_init() {
     assert_convertible(
         "int x;",
-        Declaration {
+        Declaration::VarDecl(VarDecl {
             name: ("x".to_string(), span),
             init: Initializer::NoInit(NoInit { span }),
             span,
-        },
+        }),
     );
 }
 
@@ -239,14 +240,14 @@ fn decl_no_init() {
 fn decl_init() {
     assert_convertible(
         "int x = 5;",
-        Declaration {
+        Declaration::VarDecl(VarDecl {
             name: ("x".to_string(), span),
             init: Initializer::ExpressionInit(ExpressionInit {
                 exp: Exp::Constant { constant: 5, span },
                 span,
             }),
             span,
-        },
+        }),
     );
 }
 
@@ -274,14 +275,14 @@ fn assign_statement() {
 fn block_item() {
     assert_convertible(
         "int x = 5;",
-        BlockItem::Declaration(Declaration {
+        BlockItem::Declaration(Declaration::VarDecl(VarDecl {
             name: ("x".to_string(), span),
             init: Initializer::ExpressionInit(ExpressionInit {
                 exp: Exp::Constant { constant: 5, span },
                 span,
             }),
             span,
-        }),
+        })),
     );
 
     assert_convertible(
@@ -438,9 +439,10 @@ fn if_statement_naked() {
     let tokens = lex("int main(void) { if (0) return a; }");
     assert_forwards(
         &tokens,
-        &Function {
+        &FunctionDecl {
             name: ("main".to_string(), span),
-            body: Block {
+            args: FunctionDeclArgs::KeywordVoid(span),
+            body: FunctionBody::Block(Block {
                 items: vec![BlockItem::Statement(Statement::IfStmt(IfStmt {
                     guard: Exp::Constant { constant: 0, span },
                     body: Statement::ReturnStmt(ReturnStmt {
@@ -455,7 +457,57 @@ fn if_statement_naked() {
                     span,
                 }))],
                 span,
-            },
+            }),
+            span,
+        },
+    );
+}
+
+#[test]
+fn function_decl_args() {
+    assert_convertible(
+        "int incr(int x);",
+        FunctionDecl {
+            name: ("incr".to_string(), span),
+            args: FunctionDeclArgs::DeclArgs(DeclArgs(vec![("x".to_string(), span)])),
+            body: FunctionBody::Semicolon(span),
+            span,
+        },
+    );
+
+    assert_convertible(
+        "int cmp(int a,int b);",
+        FunctionDecl {
+            name: ("cmp".to_string(), span),
+            args: FunctionDeclArgs::DeclArgs(DeclArgs(vec![
+                ("a".to_string(), span),
+                ("b".to_string(), span),
+            ])),
+            body: FunctionBody::Semicolon(span),
+            span,
+        },
+    );
+}
+
+#[test]
+fn function_call_args() {
+    assert_convertible(
+        "incr(5)",
+        Exp::FunctionCall {
+            ident: ("incr".to_string(), span),
+            args: vec![Exp::Constant { constant: 5, span }],
+            span,
+        },
+    );
+
+    assert_convertible(
+        "cmp(4,10)",
+        Exp::FunctionCall {
+            ident: ("cmp".to_string(), span),
+            args: vec![
+                Exp::Constant { constant: 4, span },
+                Exp::Constant { constant: 10, span },
+            ],
             span,
         },
     );

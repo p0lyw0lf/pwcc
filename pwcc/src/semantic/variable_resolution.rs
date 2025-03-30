@@ -6,10 +6,10 @@ use thiserror::Error;
 use crate::parser::visit_mut;
 use crate::parser::visit_mut::VisitMut;
 use crate::parser::Block;
-use crate::parser::Declaration;
 use crate::parser::Exp;
 use crate::parser::ForStmt;
-use crate::parser::Function;
+use crate::parser::FunctionDecl;
+use crate::parser::VarDecl;
 use crate::semantic::SemanticError;
 use crate::semantic::SemanticErrors;
 use crate::semantic::UniqueLabelFactory;
@@ -116,7 +116,7 @@ struct VariableResolution {
 }
 
 impl visit_mut::VisitMut for VariableResolution {
-    fn visit_mut_declaration(&mut self, decl: &mut Declaration) {
+    fn visit_mut_var_decl(&mut self, decl: &mut VarDecl) {
         if let Some(existing) = self.variable_map.declared_in_block(&decl.name.0) {
             self.errs.push(
                 Error::DuplicateDeclaration {
@@ -132,7 +132,7 @@ impl visit_mut::VisitMut for VariableResolution {
         decl.name.0 = self
             .variable_map
             .new_mapping(&mut self.factory, decl.name.clone());
-        visit_mut::visit_mut_declaration(self, decl);
+        visit_mut::visit_mut_var_decl(self, decl);
     }
 
     fn visit_mut_exp(&mut self, exp: &mut Exp) {
@@ -148,11 +148,13 @@ impl visit_mut::VisitMut for VariableResolution {
             // declaration
             Exp::Var { ident, span } => match self.variable_map.resolve(&ident) {
                 None => {
-                    self.errs
-                        .push(Error::UnresolvedVariable {
+                    self.errs.push(
+                        Error::UnresolvedVariable {
                             variable: ident.clone(),
                             span: *span,
-                        }.into());
+                        }
+                        .into(),
+                    );
                 }
                 Some(new_ident) => {
                     *ident = new_ident;
@@ -177,10 +179,10 @@ impl visit_mut::VisitMut for VariableResolution {
     }
 }
 
-pub(super) fn resolve_variables(mut f: Function) -> Result<Function, SemanticErrors> {
+pub(super) fn resolve_variables(mut f: FunctionDecl) -> Result<FunctionDecl, SemanticErrors> {
     let mut ctx = VariableResolution::default();
 
-    ctx.visit_mut_block(&mut f.body);
+    ctx.visit_mut_function_decl(&mut f);
 
     if ctx.errs.len() > 0 {
         Err(SemanticErrors(ctx.errs))

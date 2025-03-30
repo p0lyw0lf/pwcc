@@ -15,6 +15,9 @@ pub enum Error {
 
     #[error("operator cannot be used in a constant expression")]
     InvalidOperator(#[label("here")] Span),
+
+    #[error("function call cannot be used in a constant expression")]
+    InvalidFunctionCall(#[label("here")] Span),
 }
 
 /// Evaluates a constant expression at compile-time. Returns an error describing why it cannot, if
@@ -25,7 +28,10 @@ pub fn evaluate(exp: Exp) -> Result<isize, Error> {
             constant,
             span: _span,
         } => Ok(constant),
-        Exp::Var { ident: _ident, span } => {
+        Exp::Var {
+            ident: _ident,
+            span,
+        } => {
             // Eventually, these might be able to be resolved at compile time, but for now they are
             // not.
             Err(Error::Variable(span))
@@ -85,5 +91,6 @@ pub fn evaluate(exp: Exp) -> Result<isize, Error> {
             Ok(if c != 0 { t } else { f })
         }
         Exp::Assignment { span, .. } => Err(Error::InvalidOperator(span)),
+        Exp::FunctionCall { span, .. } => Err(Error::InvalidFunctionCall(span)),
     }
 }

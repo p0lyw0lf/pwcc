@@ -19,7 +19,7 @@ pub enum Location {
 impl From<tacky::Program> for Program<State> {
     fn from(program: tacky::Program) -> Self {
         Self {
-            function: program.function.into(),
+            functions: program.functions.into_iter().map(Into::into).collect(),
         }
     }
 }

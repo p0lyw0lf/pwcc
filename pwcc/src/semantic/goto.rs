@@ -5,7 +5,7 @@ use thiserror::Error;
 
 use functional::TryFunctor;
 
-use crate::parser::Function;
+use crate::parser::FunctionDecl;
 use crate::parser::GotoStmt;
 use crate::parser::RawLabel;
 use crate::semantic::SemanticErrors;
@@ -30,7 +30,7 @@ pub enum Error {
     },
 }
 
-pub fn analysis(f: Function) -> Result<Function, SemanticErrors> {
+pub fn analysis(f: FunctionDecl) -> Result<FunctionDecl, SemanticErrors> {
     let mut labels = HashMap::<String, (String, Span)>::new();
 
     // First, check for duplicate labels
@@ -46,7 +46,10 @@ pub fn analysis(f: Function) -> Result<Function, SemanticErrors> {
             }
             None => {
                 labels.insert(label.clone(), (label.clone(), span));
-                Ok(RawLabel { label: (label, span), span })
+                Ok(RawLabel {
+                    label: (label, span),
+                    span,
+                })
             }
         }
     })?;

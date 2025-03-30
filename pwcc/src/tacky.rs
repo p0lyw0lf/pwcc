@@ -2,8 +2,6 @@ use core::convert::From;
 use std::collections::HashMap;
 
 use crate::parser;
-use crate::span::Span;
-use crate::span::Spanned;
 
 #[derive(Debug)]
 pub struct Program {
@@ -13,7 +11,7 @@ pub struct Program {
 impl From<parser::Program> for Program {
     fn from(program: parser::Program) -> Self {
         Self {
-            function: program.function.inner.into(),
+            function: program.function.into(),
         }
     }
 }
@@ -29,9 +27,9 @@ pub struct Function {
 
 impl From<parser::Function> for Function {
     fn from(function: parser::Function) -> Self {
-        let name = Identifier(function.name.inner);
+        let name = Identifier(function.name.0);
         Self {
-            body: Instructions::from_function(&name, function.body.inner),
+            body: Instructions::from_function(&name, function.body),
             name,
         }
     }
@@ -143,16 +141,6 @@ trait Chompable {
     fn chomp<'a>(self, ctx: &mut ChompContext<'a>) -> Self::Output;
 }
 
-impl<T> Chompable for Span<T>
-where
-    T: Chompable,
-{
-    type Output = T::Output;
-    fn chomp<'a>(self, ctx: &mut ChompContext<'a>) -> Self::Output {
-        self.inner.chomp(ctx)
-    }
-}
-
 /// Makes a new temporary from the value
 impl Chompable for Val {
     type Output = Temporary;
@@ -178,7 +166,7 @@ impl Instructions {
 
         let mut ctx = ChompContext { instructions, tf };
 
-        for block_item in block.items.inner {
+        for block_item in block.items {
             block_item.chomp(&mut ctx);
         }
 
@@ -194,6 +182,26 @@ impl Instructions {
     }
 }
 
+impl<T> Chompable for Box<T>
+where
+    T: Chompable,
+{
+    type Output = T::Output;
+    fn chomp<'a>(self, ctx: &mut ChompContext<'a>) -> Self::Output {
+        (*self).chomp(ctx)
+    }
+}
+
+impl<T> Chompable for Option<T>
+where
+    T: Chompable<Output = ()>,
+{
+    type Output = ();
+    fn chomp<'a>(self, ctx: &mut ChompContext<'a>) -> Self::Output {
+        self.map(|v| v.chomp(ctx)).unwrap_or_default()
+    }
+}
+
 impl<T> Chompable for Vec<T>
 where
     T: Chompable<Output = ()>,
@@ -203,16 +211,6 @@ where
         for t in self {
             t.chomp(ctx);
         }
-    }
-}
-
-impl<T> Chompable for Box<T>
-where
-    T: Chompable,
-{
-    type Output = T::Output;
-    fn chomp<'a>(self, ctx: &mut ChompContext<'a>) -> Self::Output {
-        (*self).chomp(ctx)
     }
 }
 
@@ -231,11 +229,11 @@ impl Chompable for parser::Declaration {
     type Output = ();
     fn chomp<'a>(self, ctx: &mut ChompContext<'a>) -> Self::Output {
         use parser::Initializer::*;
-        match self.init.inner {
+        match self.init {
             NoInit(_) => {}
             ExpressionInit(expression_init) => {
                 let src = expression_init.exp.chomp(ctx);
-                let dst = ctx.tf.var(&self.name);
+                let dst = ctx.tf.var(&self.name.0);
                 ctx.push(Instruction::Copy { src, dst });
             }
         }
@@ -256,13 +254,13 @@ impl Chompable for parser::Statement {
             ExpressionStmt(expression_stmt) => {
                 let _ = expression_stmt.exp.chomp(ctx);
             }
-            LabelStmt(parser::LabelStmt { label, stmt }) => {
-                match label.inner {
-                    parser::Label::RawLabel(parser::RawLabel { label }) => {
-                        ctx.push(Instruction::Label(ctx.goto_label(&label)));
+            LabelStmt(parser::LabelStmt { label, stmt, span: _span }) => {
+                match label {
+                    parser::Label::RawLabel(parser::RawLabel { label, span: _span }) => {
+                        ctx.push(Instruction::Label(ctx.goto_label(&label.0)));
                     }
                     parser::Label::CaseLabel(case_label) => match case_label {
-                        parser::CaseLabel::Labeled(label) => {
+                        parser::CaseLabel::Labeled(label, _) => {
                             ctx.push(Instruction::Label(ctx.case_label(&label)));
                         }
                         otherwise => panic!("encountered unprocessed case label {otherwise:?}"),
@@ -270,15 +268,15 @@ impl Chompable for parser::Statement {
                 };
                 stmt.chomp(ctx);
             }
-            GotoStmt(parser::GotoStmt { label }) => {
+            GotoStmt(parser::GotoStmt { label, span: _span }) => {
                 ctx.push(Instruction::Jump {
-                    target: ctx.goto_label(&label),
+                    target: ctx.goto_label(&label.0),
                 });
             }
             IfStmt(parser::IfStmt {
                 guard,
                 body,
-                else_stmt: Span { inner: None, .. },
+                else_stmt: None, span: _span
             }) => {
                 let condition = guard.chomp(ctx).chomp(ctx);
                 let end = ctx.tf.next_label("end");
@@ -292,11 +290,8 @@ impl Chompable for parser::Statement {
             IfStmt(parser::IfStmt {
                 guard,
                 body,
-                else_stmt:
-                    Span {
-                        inner: Some(else_stmt),
-                        ..
-                    },
+                else_stmt: Some(else_stmt),
+                span: _span,
             }) => {
                 let condition = guard.chomp(ctx).chomp(ctx);
                 let else_label = ctx.tf.next_label("else");
@@ -324,7 +319,6 @@ impl Chompable for parser::Statement {
 
                 let mut labels = switch_stmt
                     .ctx
-                    .inner
                     .expect("switch satement without context")
                     .0;
                 let default_case = labels.remove(&None);
@@ -341,7 +335,7 @@ impl Chompable for parser::Statement {
                         });
                         ctx.push(Instruction::JumpIfNotZero {
                             condition,
-                            target: ctx.case_label(&label),
+                            target: ctx.case_label(&label.0),
                         });
                     }
                 }
@@ -349,7 +343,7 @@ impl Chompable for parser::Statement {
                 // Then, emit the default case, if present
                 match default_case {
                     Some(label) => ctx.push(Instruction::Jump {
-                        target: ctx.case_label(&label),
+                        target: ctx.case_label(&label.0),
                     }),
                     // Otherwise, jump immediately to the end.
                     None => ctx.push(Instruction::Jump {
@@ -417,10 +411,10 @@ impl Chompable for parser::Statement {
                 ctx.push(Instruction::Label(break_label));
             }
             ForStmt(for_stmt) => {
-                match for_stmt.init.inner {
+                match for_stmt.init {
                     parser::ForInit::Declaration(decl) => decl.chomp(ctx),
-                    parser::ForInit::ForInitExp(parser::ForInitExp { exp }) => {
-                        exp.inner.map(|exp| exp.chomp(ctx));
+                    parser::ForInit::ForInitExp(parser::ForInitExp { exp, span: _span }) => {
+                        exp.map(|exp| exp.chomp(ctx));
                     }
                 };
                 let start = ctx.tf.next_label("start");
@@ -431,7 +425,7 @@ impl Chompable for parser::Statement {
                 let continue_label = ctx.continue_label(loop_label);
                 let break_label = ctx.break_label(loop_label);
                 ctx.push(Instruction::Label(start.clone()));
-                if let Some(guard) = for_stmt.exp1.inner {
+                if let Some(guard) = for_stmt.exp1 {
                     let condition = guard.chomp(ctx).chomp(ctx);
                     ctx.push(Instruction::JumpIfZero {
                         condition,
@@ -440,7 +434,7 @@ impl Chompable for parser::Statement {
                 }
                 for_stmt.body.chomp(ctx);
                 ctx.push(Instruction::Label(continue_label));
-                if let Some(post) = for_stmt.exp2.inner {
+                if let Some(post) = for_stmt.exp2 {
                     post.chomp(ctx);
                 }
                 ctx.push(Instruction::Jump { target: start });
@@ -457,27 +451,23 @@ impl Chompable for parser::Exp {
     fn chomp<'a>(self, ctx: &mut ChompContext<'a>) -> Val {
         use Instruction::*;
         match self {
-            parser::Exp::Constant { constant } => Val::Constant(constant),
+            parser::Exp::Constant { constant, span: _span } => Val::Constant(constant),
             parser::Exp::Unary {
                 op:
-                    Span {
-                        inner:
-                            parser::UnaryOp::PrefixOp(
-                                op @ (parser::PrefixOp::Minus
-                                | parser::PrefixOp::Tilde
-                                | parser::PrefixOp::Exclamation),
-                            ),
-                        ..
-                    },
-                exp,
+                    parser::UnaryOp::PrefixOp(
+                        op @ (parser::PrefixOp::Minus(_)
+                        | parser::PrefixOp::Tilde(_)
+                        | parser::PrefixOp::Exclamation(_)),
+                    ),
+                exp, span: _span,
             } => {
                 let src = exp.chomp(ctx);
                 let dst = ctx.tf.next();
                 use parser::PrefixOp::*;
                 let op = match op {
-                    Minus => UnaryOp::Negate,
-                    Tilde => UnaryOp::Complement,
-                    Exclamation => UnaryOp::Not,
+                    Minus(_) => UnaryOp::Negate,
+                    Tilde(_) => UnaryOp::Complement,
+                    Exclamation(_) => UnaryOp::Not,
                     _ => unreachable!(),
                 };
                 ctx.push(Unary { op, src, dst });
@@ -486,16 +476,12 @@ impl Chompable for parser::Exp {
             }
             parser::Exp::Unary {
                 op:
-                    Span {
-                        inner:
-                            parser::UnaryOp::PrefixOp(
-                                op @ (parser::PrefixOp::Increment | parser::PrefixOp::Decrement),
-                            ),
-                        ..
-                    },
-                exp,
-            } => match *exp.inner {
-                parser::Exp::Var { ident } => {
+                    parser::UnaryOp::PrefixOp(
+                        op @ (parser::PrefixOp::Increment(_) | parser::PrefixOp::Decrement(_)),
+                    ),
+                exp, span: _span,
+            } => match *exp {
+                parser::Exp::Var { ident, .. } => {
                     let dst = ctx.tf.var(&ident);
                     let src = Val::Var(dst);
 
@@ -503,8 +489,8 @@ impl Chompable for parser::Exp {
                     ctx.push(Binary {
                         src1: src,
                         op: match op {
-                            Increment => BinaryOp::Add,
-                            Decrement => BinaryOp::Subtract,
+                            Increment(_) => BinaryOp::Add,
+                            Decrement(_) => BinaryOp::Subtract,
                             _ => unreachable!(),
                         },
                         src2: Val::Constant(1),
@@ -517,14 +503,10 @@ impl Chompable for parser::Exp {
                 }
             },
             parser::Exp::Unary {
-                op:
-                    Span {
-                        inner: parser::UnaryOp::PostfixOp(op),
-                        ..
-                    },
-                exp,
-            } => match *exp.inner {
-                parser::Exp::Var { ident } => {
+                op: parser::UnaryOp::PostfixOp(op),
+                exp, span: _span,
+            } => match *exp {
+                parser::Exp::Var { ident, .. } => {
                     let dst = ctx.tf.var(&ident);
                     let src = Val::Var(dst);
                     let tmp = ctx.tf.next();
@@ -536,8 +518,8 @@ impl Chompable for parser::Exp {
                     ctx.push(Binary {
                         src1: src,
                         op: match op {
-                            Increment => BinaryOp::Add,
-                            Decrement => BinaryOp::Subtract,
+                            Increment(_) => BinaryOp::Add,
+                            Decrement(_) => BinaryOp::Subtract,
                         },
                         src2: Val::Constant(1),
                         dst,
@@ -550,15 +532,10 @@ impl Chompable for parser::Exp {
             },
             parser::Exp::Binary {
                 lhs,
-                op:
-                    Span {
-                        inner:
-                            op @ (parser::BinaryOp::DoubleAmpersand | parser::BinaryOp::DoublePipe),
-                        ..
-                    },
-                rhs,
+                op: op @ (parser::BinaryOp::DoubleAmpersand(_) | parser::BinaryOp::DoublePipe(_)),
+                rhs, span: _span,
             } => {
-                let is_and = matches!(op, parser::BinaryOp::DoubleAmpersand);
+                let is_and = matches!(op, parser::BinaryOp::DoubleAmpersand(_));
 
                 let shortcut_label = ctx.tf.next_label(if is_and { "false" } else { "true" });
 
@@ -611,30 +588,30 @@ impl Chompable for parser::Exp {
 
                 Val::Var(dst)
             }
-            parser::Exp::Binary { lhs, op, rhs } => {
+            parser::Exp::Binary { lhs, op, rhs, span: _span } => {
                 let src1 = lhs.chomp(ctx);
                 let src2 = rhs.chomp(ctx);
                 let dst = ctx.tf.next();
                 use parser::BinaryOp::*;
-                let op = match op.inner {
-                    Ampersand => BinaryOp::BitAnd,
-                    Caret => BinaryOp::BitXor,
-                    DoubleAmpersand => unreachable!(),
-                    DoubleEqual => BinaryOp::Equal,
-                    DoublePipe => unreachable!(),
-                    ForwardSlash => BinaryOp::Divide,
-                    GreaterThan => BinaryOp::GreaterThan,
-                    GreaterThanEqual => BinaryOp::GreaterThanEqual,
-                    LeftShift => BinaryOp::BitLeftShift,
-                    LessThan => BinaryOp::LessThan,
-                    LessThanEqual => BinaryOp::LessThanEqual,
-                    Minus => BinaryOp::Subtract,
-                    NotEqual => BinaryOp::NotEqual,
-                    Percent => BinaryOp::Remainder,
-                    Pipe => BinaryOp::BitOr,
-                    Plus => BinaryOp::Add,
-                    RightShift => BinaryOp::BitRightShift,
-                    Star => BinaryOp::Multiply,
+                let op = match op {
+                    Ampersand(_) => BinaryOp::BitAnd,
+                    Caret(_) => BinaryOp::BitXor,
+                    DoubleAmpersand(_) => unreachable!(),
+                    DoubleEqual(_) => BinaryOp::Equal,
+                    DoublePipe(_) => unreachable!(),
+                    ForwardSlash(_) => BinaryOp::Divide,
+                    GreaterThan(_) => BinaryOp::GreaterThan,
+                    GreaterThanEqual(_) => BinaryOp::GreaterThanEqual,
+                    LeftShift(_) => BinaryOp::BitLeftShift,
+                    LessThan(_) => BinaryOp::LessThan,
+                    LessThanEqual(_) => BinaryOp::LessThanEqual,
+                    Minus(_) => BinaryOp::Subtract,
+                    NotEqual(_) => BinaryOp::NotEqual,
+                    Percent(_) => BinaryOp::Remainder,
+                    Pipe(_) => BinaryOp::BitOr,
+                    Plus(_) => BinaryOp::Add,
+                    RightShift(_) => BinaryOp::BitRightShift,
+                    Star(_) => BinaryOp::Multiply,
                 };
                 ctx.push(Binary {
                     op,
@@ -645,19 +622,19 @@ impl Chompable for parser::Exp {
 
                 Val::Var(dst)
             }
-            parser::Exp::Var { ident } => Val::Var(ctx.tf.var(&ident)),
-            parser::Exp::Assignment { lhs, op, rhs } => match *lhs.inner {
-                parser::Exp::Var { ref ident } => {
+            parser::Exp::Var { ident, span: _span } => Val::Var(ctx.tf.var(&ident)),
+            parser::Exp::Assignment { lhs, op, rhs, span } => match *lhs {
+                parser::Exp::Var { ref ident, .. } => {
                     let dst = ctx.tf.var(ident);
-                    let rhs = match op.inner {
-                        parser::AssignmentOp::Equal => *rhs.inner,
+                    let rhs = match op {
+                        parser::AssignmentOp::Equal(_) => *rhs,
                         otherwise => parser::Exp::Binary {
                             lhs,
                             op: otherwise
                                 .to_binary_op()
-                                .expect("to convert AssignmentOp to BinaryOp")
-                                .span(op.span),
+                                .expect("to convert AssignmentOp to BinaryOp"),
                             rhs,
+                            span,
                         },
                     };
                     let src = rhs.chomp(ctx);
@@ -669,7 +646,7 @@ impl Chompable for parser::Exp {
             parser::Exp::Ternary {
                 condition,
                 true_case,
-                false_case,
+                false_case, span: _span,
             } => {
                 let condition = condition.chomp(ctx).chomp(ctx);
                 let result = ctx.tf.next();

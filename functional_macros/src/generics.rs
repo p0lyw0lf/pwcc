@@ -71,10 +71,10 @@ impl Behavior {
         };
 
         match param {
-                GenericParam::Lifetime(l) => ctx.has_lifetime(&l.lifetime.ident),
-                GenericParam::Type(t) => ctx.has_type(&t.ident),
-                GenericParam::Const(c) => ctx.has_const(&c.ident),
-            }
+            GenericParam::Lifetime(l) => ctx.has_lifetime(&l.lifetime.ident),
+            GenericParam::Type(t) => ctx.has_type(&t.ident),
+            GenericParam::Const(c) => ctx.has_const(&c.ident),
+        }
     }
 }
 
@@ -93,8 +93,8 @@ pub fn generics_add_suffix<'ast>(
         .into_iter()
         .filter(|param| behavior.keep_param(ctx, param))
         .map(|mut param| {
-                v.visit_generic_param_mut(&mut param);
-                param
+            v.visit_generic_param_mut(&mut param);
+            param
         })
         .collect();
     generics

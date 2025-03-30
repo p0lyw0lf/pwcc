@@ -8,7 +8,6 @@ use regex::RegexSet;
 use thiserror::Error;
 
 use crate::span::Span;
-use crate::span::Spanned;
 
 mod macros;
 use macros::*;
@@ -88,7 +87,7 @@ pub enum LexError {
 }
 
 /// Lexes a source file into a list of tokens.
-pub fn lex(mut source: &str) -> Result<Vec<Span<Token>>, LexError> {
+pub fn lex(mut source: &str) -> Result<Vec<(Token, Span)>, LexError> {
     let tokenizer = Tokenizer::new();
     let mut out = Vec::new();
     let mut offset = 0;
@@ -103,7 +102,7 @@ pub fn lex(mut source: &str) -> Result<Vec<Span<Token>>, LexError> {
         offset += old_len - new_len;
 
         let (token, len) = tokenizer.consume_token(source, offset)?;
-        out.push(token.span((offset, len).into()));
+        out.push((token, (offset, len).into()));
         source = &source[len..];
         offset += len;
     }
@@ -118,14 +117,14 @@ mod test {
 
     fn lex(source: &str) -> Result<Vec<Token>, LexError> {
         let tokens = super_lex(source)?;
-        Ok(tokens.into_iter().map(|s| s.inner).collect())
+        Ok(tokens.into_iter().map(|s| s.0).collect())
     }
 
     #[test]
     fn extra_paren() {
         use Token::*;
         assert_eq!(
-            Ok(Vec::from([OpenParen, Constant(3), CloseParen, CloseParen])),
+            Ok(vec![OpenParen, Constant(3), CloseParen, CloseParen]),
             lex("(3))")
         );
     }
@@ -133,9 +132,6 @@ mod test {
     #[test]
     fn regex_special_chars() {
         use Token::*;
-        assert_eq!(
-            Ok(Vec::from([Plus, Star, Caret, DoublePipe, Pipe])),
-            lex("+*^|||")
-        );
+        assert_eq!(Ok(vec![Plus, Star, Caret, DoublePipe, Pipe]), lex("+*^|||"));
     }
 }

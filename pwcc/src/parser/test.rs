@@ -4,12 +4,27 @@
 use super::*;
 use std::fmt::Debug;
 
+/// Helper constant to fill out struct definitions
+#[allow(non_upper_case_globals)]
+const span: Span = Span::empty();
+
 fn lex(source: &str) -> Vec<Token> {
     crate::lexer::lex(source)
         .expect("lex failed")
         .into_iter()
-        .map(|s| s.inner)
+        .map(|s| s.0)
         .collect()
+}
+
+/// Helper trait to avoid so many layers of Box::new()
+trait Boxed {
+    fn boxed(self) -> Box<Self>;
+}
+
+impl<T> Boxed for T {
+    fn boxed(self) -> Box<Self> {
+        Box::new(self)
+    }
 }
 
 fn assert_forwards<T: FromTokens + Debug + PartialEq>(tokens: &[Token], expected: &T) {
@@ -37,7 +52,7 @@ fn assert_to_from(to: &str, tree: impl ToTokens + FromTokens + Debug + PartialEq
 
 #[test]
 fn constant() {
-    assert_convertible("2", Exp::Constant { constant: 2 });
+    assert_convertible("2", Exp::Constant { constant: 2, span });
 }
 
 #[test]
@@ -45,7 +60,8 @@ fn statement() {
     assert_convertible(
         "return 2;",
         Statement::ReturnStmt(ReturnStmt {
-            exp: Exp::Constant { constant: 2 }.span((0, 0).into()),
+            exp: Exp::Constant { constant: 2, span },
+            span,
         }),
     );
 }
@@ -59,23 +75,25 @@ int main(void) {
     return 2;
 }",
         Function {
-            name: "main".to_string().span((0, 0).into()),
+            name: ("main".to_string(), span),
             body: Block {
                 items: vec![
                     BlockItem::Declaration(Declaration {
-                        name: "x".to_string().span((0, 0).into()),
+                        name: ("x".to_string(), span),
                         init: Initializer::ExpressionInit(ExpressionInit {
-                            exp: Exp::Constant { constant: 1 }.span((0, 0).into()),
-                        })
-                        .span((0, 0).into()),
+                            exp: Exp::Constant { constant: 1, span },
+                            span,
+                        }),
+                        span,
                     }),
                     BlockItem::Statement(Statement::ReturnStmt(ReturnStmt {
-                        exp: Exp::Constant { constant: 2 }.span((0, 0).into()),
+                        exp: Exp::Constant { constant: 2, span },
+                        span,
                     })),
-                ]
-                .span((0, 0).into()),
-            }
-            .span((0, 0).into()),
+                ],
+                span,
+            },
+            span,
         },
     );
 }
@@ -85,18 +103,19 @@ fn unary() {
     assert_to_from(
         "- -~3",
         Exp::Unary {
-            op: UnaryOp::PrefixOp(PrefixOp::Minus).span((0, 0).into()),
+            op: UnaryOp::PrefixOp(PrefixOp::Minus(span)),
             exp: Exp::Unary {
-                op: UnaryOp::PrefixOp(PrefixOp::Minus).span((0, 0).into()),
+                op: UnaryOp::PrefixOp(PrefixOp::Minus(span)),
                 exp: Exp::Unary {
-                    op: UnaryOp::PrefixOp(PrefixOp::Tilde).span((0, 0).into()),
-                    exp: Exp::Constant { constant: 3 }.boxed().span((0, 0).into()),
+                    op: UnaryOp::PrefixOp(PrefixOp::Tilde(span)),
+                    exp: Exp::Constant { constant: 3, span }.boxed(),
+                    span,
                 }
-                .boxed()
-                .span((0, 0).into()),
+                .boxed(),
+                span,
             }
-            .boxed()
-            .span((0, 0).into()),
+            .boxed(),
+            span,
         },
         "-(-(~(3)))",
     )
@@ -108,14 +127,15 @@ fn binary() {
         "((1)+(2))*(3)",
         Exp::Binary {
             lhs: Exp::Binary {
-                lhs: Exp::Constant { constant: 1 }.boxed().span((0, 0).into()),
-                op: BinaryOp::Plus.span((0, 0).into()),
-                rhs: Exp::Constant { constant: 2 }.boxed().span((0, 0).into()),
+                lhs: Exp::Constant { constant: 1, span }.boxed(),
+                op: BinaryOp::Plus(span),
+                rhs: Exp::Constant { constant: 2, span }.boxed(),
+                span,
             }
-            .boxed()
-            .span((0, 0).into()),
-            op: BinaryOp::Star.span((0, 0).into()),
-            rhs: Exp::Constant { constant: 3 }.boxed().span((0, 0).into()),
+            .boxed(),
+            op: BinaryOp::Star(span),
+            rhs: Exp::Constant { constant: 3, span }.boxed(),
+            span,
         },
     );
 }
@@ -127,26 +147,27 @@ fn binary_precedence() {
         &tokens,
         &Exp::Binary {
             lhs: Exp::Binary {
-                lhs: Exp::Constant { constant: 1 }.boxed().span((0, 0).into()),
-                op: BinaryOp::Star.span((0, 0).into()),
-                rhs: Exp::Constant { constant: 2 }.boxed().span((0, 0).into()),
+                lhs: Exp::Constant { constant: 1, span }.boxed(),
+                op: BinaryOp::Star(span),
+                rhs: Exp::Constant { constant: 2, span }.boxed(),
+                span,
             }
-            .boxed()
-            .span((0, 0).into()),
-            op: BinaryOp::Minus.span((0, 0).into()),
+            .boxed(),
+            op: BinaryOp::Minus(span),
             rhs: Exp::Binary {
-                lhs: Exp::Constant { constant: 3 }.boxed().span((0, 0).into()),
-                op: BinaryOp::Star.span((0, 0).into()),
+                lhs: Exp::Constant { constant: 3, span }.boxed(),
+                op: BinaryOp::Star(span),
                 rhs: Exp::Binary {
-                    lhs: Exp::Constant { constant: 4 }.boxed().span((0, 0).into()),
-                    op: BinaryOp::Plus.span((0, 0).into()),
-                    rhs: Exp::Constant { constant: 5 }.boxed().span((0, 0).into()),
+                    lhs: Exp::Constant { constant: 4, span }.boxed(),
+                    op: BinaryOp::Plus(span),
+                    rhs: Exp::Constant { constant: 5, span }.boxed(),
+                    span,
                 }
-                .boxed()
-                .span((0, 0).into()),
+                .boxed(),
+                span,
             }
-            .boxed()
-            .span((0, 0).into()),
+            .boxed(),
+            span,
         },
     )
 }
@@ -157,14 +178,15 @@ fn binary_associativity() {
         "3/2/1",
         Exp::Binary {
             lhs: Exp::Binary {
-                lhs: Exp::Constant { constant: 3 }.boxed().span((0, 0).into()),
-                op: BinaryOp::ForwardSlash.span((0, 0).into()),
-                rhs: Exp::Constant { constant: 2 }.boxed().span((0, 0).into()),
+                lhs: Exp::Constant { constant: 3, span }.boxed(),
+                op: BinaryOp::ForwardSlash(span),
+                rhs: Exp::Constant { constant: 2, span }.boxed(),
+                span,
             }
-            .boxed()
-            .span((0, 0).into()),
-            op: BinaryOp::ForwardSlash.span((0, 0).into()),
-            rhs: Exp::Constant { constant: 1 }.boxed().span((0, 0).into()),
+            .boxed(),
+            op: BinaryOp::ForwardSlash(span),
+            rhs: Exp::Constant { constant: 1, span }.boxed(),
+            span,
         },
         "((3)/(2))/(1)",
     );
@@ -176,26 +198,27 @@ fn assign_precedence() {
         "a = b = c",
         Exp::Assignment {
             lhs: Exp::Var {
-                ident: "a".to_string().span((0, 0).into()),
+                ident: "a".to_string(),
+                span,
             }
-            .boxed()
-            .span((0, 0).into()),
-            op: AssignmentOp::Equal.span((0, 0).into()),
+            .boxed(),
+            op: AssignmentOp::Equal(span),
             rhs: Exp::Assignment {
                 lhs: Exp::Var {
-                    ident: "b".to_string().span((0, 0).into()),
+                    ident: "b".to_string(),
+                    span,
                 }
-                .boxed()
-                .span((0, 0).into()),
-                op: AssignmentOp::Equal.span((0, 0).into()),
+                .boxed(),
+                op: AssignmentOp::Equal(span),
                 rhs: Exp::Var {
-                    ident: "c".to_string().span((0, 0).into()),
+                    ident: "c".to_string(),
+                    span,
                 }
-                .boxed()
-                .span((0, 0).into()),
+                .boxed(),
+                span,
             }
-            .boxed()
-            .span((0, 0).into()),
+            .boxed(),
+            span,
         },
     )
 }
@@ -205,8 +228,9 @@ fn decl_no_init() {
     assert_convertible(
         "int x;",
         Declaration {
-            name: "x".to_string().span((0, 0).into()),
-            init: Initializer::NoInit(NoInit {}).span((0, 0).into()),
+            name: ("x".to_string(), span),
+            init: Initializer::NoInit(NoInit { span }),
+            span,
         },
     );
 }
@@ -216,11 +240,12 @@ fn decl_init() {
     assert_convertible(
         "int x = 5;",
         Declaration {
-            name: "x".to_string().span((0, 0).into()),
+            name: ("x".to_string(), span),
             init: Initializer::ExpressionInit(ExpressionInit {
-                exp: Exp::Constant { constant: 5 }.span((0, 0).into()),
-            })
-            .span((0, 0).into()),
+                exp: Exp::Constant { constant: 5, span },
+                span,
+            }),
+            span,
         },
     );
 }
@@ -232,14 +257,15 @@ fn assign_statement() {
         Statement::ExpressionStmt(ExpressionStmt {
             exp: Exp::Assignment {
                 lhs: Exp::Var {
-                    ident: "sex".to_string().span((0, 0).into()),
+                    ident: "sex".to_string(),
+                    span,
                 }
-                .boxed()
-                .span((0, 0).into()),
-                op: AssignmentOp::Equal.span((0, 0).into()),
-                rhs: Exp::Constant { constant: 69 }.boxed().span((0, 0).into()),
-            }
-            .span((0, 0).into()),
+                .boxed(),
+                op: AssignmentOp::Equal(span),
+                rhs: Exp::Constant { constant: 69, span }.boxed(),
+                span,
+            },
+            span,
         }),
     );
 }
@@ -249,11 +275,12 @@ fn block_item() {
     assert_convertible(
         "int x = 5;",
         BlockItem::Declaration(Declaration {
-            name: "x".to_string().span((0, 0).into()),
+            name: ("x".to_string(), span),
             init: Initializer::ExpressionInit(ExpressionInit {
-                exp: Exp::Constant { constant: 5 }.span((0, 0).into()),
-            })
-            .span((0, 0).into()),
+                exp: Exp::Constant { constant: 5, span },
+                span,
+            }),
+            span,
         }),
     );
 
@@ -262,14 +289,15 @@ fn block_item() {
         BlockItem::Statement(Statement::ExpressionStmt(ExpressionStmt {
             exp: Exp::Assignment {
                 lhs: Exp::Var {
-                    ident: "sex".to_string().span((0, 0).into()),
+                    ident: "sex".to_string(),
+                    span,
                 }
-                .boxed()
-                .span((0, 0).into()),
-                op: AssignmentOp::Equal.span((0, 0).into()),
-                rhs: Exp::Constant { constant: 69 }.boxed().span((0, 0).into()),
-            }
-            .span((0, 0).into()),
+                .boxed(),
+                op: AssignmentOp::Equal(span),
+                rhs: Exp::Constant { constant: 69, span }.boxed(),
+                span,
+            },
+            span,
         })),
     );
 }
@@ -279,17 +307,18 @@ fn postfix_precedence() {
     assert_to_from(
         "x--++",
         Exp::Unary {
-            op: UnaryOp::PostfixOp(PostfixOp::Increment).span((0, 0).into()),
+            op: UnaryOp::PostfixOp(PostfixOp::Increment(span)),
             exp: Exp::Unary {
-                op: UnaryOp::PostfixOp(PostfixOp::Decrement).span((0, 0).into()),
+                op: UnaryOp::PostfixOp(PostfixOp::Decrement(span)),
                 exp: Exp::Var {
-                    ident: "x".to_string().span((0, 0).into()),
+                    ident: "x".to_string(),
+                    span,
                 }
-                .boxed()
-                .span((0, 0).into()),
+                .boxed(),
+                span,
             }
-            .boxed()
-            .span((0, 0).into()),
+            .boxed(),
+            span,
         },
         "((x)--)++",
     );
@@ -300,17 +329,18 @@ fn prefix_precedence() {
     assert_to_from(
         "--++x",
         Exp::Unary {
-            op: UnaryOp::PrefixOp(PrefixOp::Decrement).span((0, 0).into()),
+            op: UnaryOp::PrefixOp(PrefixOp::Decrement(span)),
             exp: Exp::Unary {
-                op: UnaryOp::PrefixOp(PrefixOp::Increment).span((0, 0).into()),
+                op: UnaryOp::PrefixOp(PrefixOp::Increment(span)),
                 exp: Exp::Var {
-                    ident: "x".to_string().span((0, 0).into()),
+                    ident: "x".to_string(),
+                    span,
                 }
-                .boxed()
-                .span((0, 0).into()),
+                .boxed(),
+                span,
             }
-            .boxed()
-            .span((0, 0).into()),
+            .boxed(),
+            span,
         },
         "--(++(x))",
     );
@@ -321,27 +351,28 @@ fn prefix_postfix_precedence() {
     assert_to_from(
         "--++x--++",
         Exp::Unary {
-            op: UnaryOp::PrefixOp(PrefixOp::Decrement).span((0, 0).into()),
+            op: UnaryOp::PrefixOp(PrefixOp::Decrement(span)),
             exp: Exp::Unary {
-                op: UnaryOp::PrefixOp(PrefixOp::Increment).span((0, 0).into()),
+                op: UnaryOp::PrefixOp(PrefixOp::Increment(span)),
                 exp: Exp::Unary {
-                    op: UnaryOp::PostfixOp(PostfixOp::Increment).span((0, 0).into()),
+                    op: UnaryOp::PostfixOp(PostfixOp::Increment(span)),
                     exp: Exp::Unary {
-                        op: UnaryOp::PostfixOp(PostfixOp::Decrement).span((0, 0).into()),
+                        op: UnaryOp::PostfixOp(PostfixOp::Decrement(span)),
                         exp: Exp::Var {
-                            ident: "x".to_string().span((0, 0).into()),
+                            ident: "x".to_string(),
+                            span,
                         }
-                        .boxed()
-                        .span((0, 0).into()),
+                        .boxed(),
+                        span,
                     }
-                    .boxed()
-                    .span((0, 0).into()),
+                    .boxed(),
+                    span,
                 }
-                .boxed()
-                .span((0, 0).into()),
+                .boxed(),
+                span,
             }
-            .boxed()
-            .span((0, 0).into()),
+            .boxed(),
+            span,
         },
         "--(++(((x)--)++))",
     );
@@ -354,49 +385,50 @@ fn if_statement() {
         &tokens,
         &Statement::IfStmt(IfStmt {
             guard: Exp::Var {
-                ident: "a".to_string().span((0, 0).into()),
-            }
-            .span((0, 0).into()),
+                ident: "a".to_string(),
+                span,
+            },
             body: Statement::IfStmt(IfStmt {
                 guard: Exp::Binary {
                     lhs: Exp::Var {
-                        ident: "a".to_string().span((0, 0).into()),
+                        ident: "a".to_string(),
+                        span,
                     }
-                    .boxed()
-                    .span((0, 0).into()),
-                    op: BinaryOp::GreaterThan.span((0, 0).into()),
-                    rhs: Exp::Constant { constant: 10 }.boxed().span((0, 0).into()),
-                }
-                .span((0, 0).into()),
+                    .boxed(),
+                    op: BinaryOp::GreaterThan(span),
+                    rhs: Exp::Constant { constant: 10, span }.boxed(),
+                    span,
+                },
                 body: Statement::ReturnStmt(ReturnStmt {
                     exp: Exp::Var {
-                        ident: "a".to_string().span((0, 0).into()),
-                    }
-                    .span((0, 0).into()),
+                        ident: "a".to_string(),
+                        span,
+                    },
+                    span,
                 })
-                .span((0, 0).into())
                 .boxed(),
                 else_stmt: Some(ElseStmt {
                     body: Statement::ReturnStmt(ReturnStmt {
                         exp: Exp::Binary {
-                            lhs: Exp::Constant { constant: 10 }.boxed().span((0, 0).into()),
-                            op: BinaryOp::Minus.span((0, 0).into()),
+                            lhs: Exp::Constant { constant: 10, span }.boxed(),
+                            op: BinaryOp::Minus(span),
                             rhs: Exp::Var {
-                                ident: "a".to_string().span((0, 0).into()),
+                                ident: "a".to_string(),
+                                span,
                             }
-                            .boxed()
-                            .span((0, 0).into()),
-                        }
-                        .span((0, 0).into()),
+                            .boxed(),
+                            span,
+                        },
+                        span,
                     })
-                    .span((0, 0).into())
                     .boxed(),
-                })
-                .span((0, 0).into()),
+                    span,
+                }),
+                span,
             })
-            .span((0, 0).into())
             .boxed(),
-            else_stmt: None.span(SourceSpan::empty()),
+            else_stmt: None,
+            span,
         }),
     );
 }
@@ -407,23 +439,24 @@ fn if_statement_naked() {
     assert_forwards(
         &tokens,
         &Function {
-            name: "main".to_string().span((0, 0).into()),
+            name: ("main".to_string(), span),
             body: Block {
                 items: vec![BlockItem::Statement(Statement::IfStmt(IfStmt {
-                    guard: Exp::Constant { constant: 0 }.span((0, 0).into()),
+                    guard: Exp::Constant { constant: 0, span },
                     body: Statement::ReturnStmt(ReturnStmt {
                         exp: Exp::Var {
-                            ident: "a".to_string().span((0, 0).into()),
-                        }
-                        .span((0, 0).into()),
+                            ident: "a".to_string(),
+                            span,
+                        },
+                        span,
                     })
-                    .span((0, 0).into())
                     .boxed(),
-                    else_stmt: None.span(SourceSpan::empty()),
-                }))]
-                .span((0, 0).into()),
-            }
-            .span((0, 0).into()),
+                    else_stmt: None,
+                    span,
+                }))],
+                span,
+            },
+            span,
         },
     );
 }

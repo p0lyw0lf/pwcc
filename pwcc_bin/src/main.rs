@@ -84,7 +84,7 @@ fn main() -> Result<()> {
 
     if stage == Lex {
         for token in tokens.into_iter() {
-            println!("{}: {}", token.inner, token.span);
+            println!("{}: {}", token.0, token.1);
         }
         return Ok(());
     }

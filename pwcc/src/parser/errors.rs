@@ -16,14 +16,15 @@ pub enum ParseError {
     #[error("Unexpected token: expected {expected:-}, got {actual}")]
     UnexpectedToken {
         expected: Token,
-        actual: Span<Token>,
+        actual: Token,
+        span: Span,
     },
 
     #[error("Missing token: expected {expected}, reached end of tokens")]
     MissingToken { expected: Token },
 
     #[error("Expected end of tokens, got {actual}")]
-    ExtraToken { actual: Span<Token> },
+    ExtraToken { actual: Token, span: Span },
 
     #[error("No matches found")]
     NoMatches,
@@ -39,18 +40,18 @@ pub enum ParseError {
 // miette doesn't seem to like deriving this, so I'll just do it myself ig
 impl Diagnostic for ParseError {
     fn labels(&self) -> Option<Box<dyn Iterator<Item = LabeledSpan> + '_>> {
-        fn here(actual: &Span<Token>) -> Box<dyn Iterator<Item = LabeledSpan>> {
+        fn here(span: &Span) -> Box<dyn Iterator<Item = LabeledSpan>> {
             Box::new(core::iter::once(LabeledSpan::new_primary_with_span(
                 Some("here".to_string()),
-                actual.span,
+                span,
             )))
         }
 
         use ParseError::*;
         match self {
-            UnexpectedToken { actual, .. } => Some(here(actual)),
+            UnexpectedToken { span, .. } => Some(here(span)),
             MissingToken { .. } => None,
-            ExtraToken { actual } => Some(here(actual)),
+            ExtraToken { span, .. } => Some(here(span)),
             NoMatches => None,
             Context { err, .. } => err.labels(),
         }

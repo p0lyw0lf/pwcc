@@ -13,32 +13,36 @@ use crate::parser::Function;
 use crate::semantic::SemanticError;
 use crate::semantic::SemanticErrors;
 use crate::semantic::UniqueLabelFactory;
-use crate::span::SourceSpan;
 use crate::span::Span;
 use crate::span::Spanned;
 
 #[derive(Error, Diagnostic, Debug)]
 pub enum Error {
-    #[error("Duplicate declaration: {second}")]
+    #[error("Duplicate declaration: {label}")]
     DuplicateDeclaration {
+        label: String,
         #[label("first declared here")]
-        first: SourceSpan,
+        first: Span,
         #[label("later declared here")]
-        second: Span<String>,
+        second: Span,
     },
 
-    #[error("Unresolved variable: {0}")]
-    UnresolvedVariable(#[label("used here")] Span<String>),
+    #[error("Unresolved variable: {variable}")]
+    UnresolvedVariable {
+        variable: String,
+        #[label("used here")]
+        span: Span,
+    },
 
     #[error("Cannot assign to expression")]
-    InvalidAssignment(#[label] SourceSpan),
+    InvalidAssignment(#[label] Span),
 }
 
 /// Maps potentially-conflicting names to globally-unique names, in a given context
 #[derive(Default)]
 struct VariableMap {
     // All the mappings created in this block
-    this_block: HashMap<String, Span<String>>,
+    this_block: HashMap<String, (String, Span)>,
     // The mapping for the parent block
     parent: Option<Box<VariableMap>>,
     // A cache of the mappings returned by the parent
@@ -70,21 +74,22 @@ impl VariableMap {
 
     /// Returns whether the given ident is already declared in the current block. `Some` contains
     /// the span of the previous declaration.
-    fn declared_in_block(&self, ident: &str) -> Option<SourceSpan> {
-        self.this_block.get(ident).map(|d| d.span)
+    fn declared_in_block(&self, ident: &str) -> Option<Span> {
+        self.this_block.get(ident).map(|d| d.1)
     }
 
     /// Inserts a new mapping into the current block
-    fn new_mapping(&mut self, uf: &mut UniqueLabelFactory, ident: Span<String>) -> Span<String> {
-        let unique_name = uf.unique_label(&ident).span(ident.span);
-        self.this_block.insert(ident.inner, unique_name.clone());
+    fn new_mapping(&mut self, uf: &mut UniqueLabelFactory, ident: (String, Span)) -> String {
+        let unique_name = uf.unique_label(&ident.0);
+        self.this_block
+            .insert(ident.0, (unique_name.clone(), ident.1));
         unique_name
     }
 
     /// Resolves a variable
     fn resolve(&mut self, ident: &str) -> Option<String> {
         if let Some(name) = self.this_block.get(ident) {
-            return Some(name.inner.clone());
+            return Some(name.0.clone());
         }
         if let Some(name) = self.parent_cache.get(ident) {
             return Some(name.clone());
@@ -112,18 +117,19 @@ struct VariableResolution {
 
 impl visit_mut::VisitMut for VariableResolution {
     fn visit_mut_declaration(&mut self, decl: &mut Declaration) {
-        if let Some(existing) = self.variable_map.declared_in_block(&decl.name) {
+        if let Some(existing) = self.variable_map.declared_in_block(&decl.name.0) {
             self.errs.push(
                 Error::DuplicateDeclaration {
+                    label: decl.name.0.clone(),
                     first: existing,
-                    second: decl.name.clone(),
+                    second: decl.name.1,
                 }
                 .into(),
             );
             return;
         }
 
-        decl.name = self
+        decl.name.0 = self
             .variable_map
             .new_mapping(&mut self.factory, decl.name.clone());
         visit_mut::visit_mut_declaration(self, decl);
@@ -132,21 +138,24 @@ impl visit_mut::VisitMut for VariableResolution {
     fn visit_mut_exp(&mut self, exp: &mut Exp) {
         match exp {
             // Make sure all assignments are to Var, and nothing else
-            Exp::Assignment { lhs, .. } => match *lhs.inner {
+            Exp::Assignment { lhs, .. } => match **lhs {
                 Exp::Var { .. } => {}
                 _ => {
-                    self.errs.push(Error::InvalidAssignment(lhs.span).into());
+                    self.errs.push(Error::InvalidAssignment(lhs.span()).into());
                 }
             },
             // Replace all instantiations of Var with their unique name as determined by the
             // declaration
-            Exp::Var { ident } => match self.variable_map.resolve(&ident) {
+            Exp::Var { ident, span } => match self.variable_map.resolve(&ident) {
                 None => {
                     self.errs
-                        .push(Error::UnresolvedVariable(ident.clone()).into());
+                        .push(Error::UnresolvedVariable {
+                            variable: ident.clone(),
+                            span: *span,
+                        }.into());
                 }
                 Some(new_ident) => {
-                    *ident = new_ident.span(ident.span);
+                    *ident = new_ident;
                 }
             },
             _ => {}
@@ -171,7 +180,7 @@ impl visit_mut::VisitMut for VariableResolution {
 pub(super) fn resolve_variables(mut f: Function) -> Result<Function, SemanticErrors> {
     let mut ctx = VariableResolution::default();
 
-    ctx.visit_mut_block(&mut f.body.inner);
+    ctx.visit_mut_block(&mut f.body);
 
     if ctx.errs.len() > 0 {
         Err(SemanticErrors(ctx.errs))

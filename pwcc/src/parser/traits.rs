@@ -1,22 +1,17 @@
 use core::iter::Iterator;
 
-use functional::Semigroup;
-
 use crate::lexer::Token;
 use crate::parser::ParseError;
-use crate::span::SourceSpan;
 use crate::span::Span;
 use crate::span::Spanned;
 
-pub trait FromTokens: Sized {
+pub trait FromTokens: Sized + Spanned {
     fn from_tokens(
-        ts: &mut (impl Iterator<Item = Span<Token>> + Clone),
-    ) -> Result<Span<Self>, ParseError>;
+        ts: &mut (impl Iterator<Item = (Token, Span)> + Clone),
+    ) -> Result<Self, ParseError>;
     fn from_raw_tokens(ts: &mut (impl Iterator<Item = Token> + Clone)) -> Result<Self, ParseError> {
-        let tokens = ts
-            .map(|token| token.span(SourceSpan::empty()))
-            .collect::<Vec<_>>();
-        Self::from_tokens(&mut tokens.into_iter()).map(|span| span.inner)
+        let tokens = ts.map(|token| (token, Span::empty())).collect::<Vec<_>>();
+        Self::from_tokens(&mut tokens.into_iter())
     }
 }
 
@@ -25,12 +20,12 @@ where
     T: FromTokens,
 {
     fn from_tokens(
-        ts: &mut (impl Iterator<Item = Span<Token>> + Clone),
-    ) -> Result<Span<Self>, ParseError> {
+        ts: &mut (impl Iterator<Item = (Token, Span)> + Clone),
+    ) -> Result<Self, ParseError> {
         let mut iter = ts.clone();
         let out = T::from_tokens(&mut iter)?;
         *ts = iter;
-        Ok(out.boxed())
+        Ok(Box::new(out))
     }
 }
 
@@ -39,21 +34,15 @@ where
     T: FromTokens,
 {
     fn from_tokens(
-        ts: &mut (impl Iterator<Item = Span<Token>> + Clone),
-    ) -> Result<Span<Self>, ParseError> {
+        ts: &mut (impl Iterator<Item = (Token, Span)> + Clone),
+    ) -> Result<Self, ParseError> {
         let mut iter = ts.clone();
         Ok(match T::from_tokens(&mut iter).ok() {
-            Some(Span { inner, span }) => {
+            Some(v) => {
                 *ts = iter;
-                Span {
-                    inner: Some(inner),
-                    span,
-                }
+                Some(v)
             }
-            None => Span {
-                inner: None,
-                span: SourceSpan::empty(),
-            },
+            None => None,
         })
     }
 }
@@ -63,24 +52,19 @@ where
     T: FromTokens,
 {
     fn from_tokens(
-        ts: &mut (impl Iterator<Item = Span<Token>> + Clone),
-    ) -> Result<Span<Self>, ParseError> {
+        ts: &mut (impl Iterator<Item = (Token, Span)> + Clone),
+    ) -> Result<Self, ParseError> {
         let mut out = Self::new();
-        let mut overall_span = SourceSpan::empty();
         let mut iter = ts.clone();
-        while let Ok(Span { inner, span }) = T::from_tokens(&mut iter) {
-            out.push(inner);
-            overall_span = overall_span.sconcat(span);
+        while let Ok(v) = T::from_tokens(&mut iter) {
+            out.push(v);
         }
         *ts = iter;
-        Ok(Span {
-            inner: out,
-            span: overall_span,
-        })
+        Ok(out)
     }
 }
 
-// IntoIterator is too hard b/c can't name the IntoIter type
+/// We use this instead of IntoIterator b/c it's too hard to directly name the IntoIter type.
 pub trait ToTokens {
     fn to_tokens(self) -> impl Iterator<Item = Token>;
 }

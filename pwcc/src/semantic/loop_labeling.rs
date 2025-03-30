@@ -13,20 +13,21 @@ use crate::parser::SwitchStmt;
 use crate::parser::WhileStmt;
 use crate::semantic::SemanticErrors;
 use crate::semantic::UniqueLabelFactory;
+use crate::span::Span;
+use crate::span::Spanned;
 
 #[derive(Error, Diagnostic, Debug)]
 pub enum Error {
-    // TODO: I need to get spans on these somehow...
     #[error("\"break\" is outside of any enclosing loop or switch body")]
-    BreakOutsideLoop,
+    BreakOutsideLoop(#[label("here")] Span),
 
     #[error("\"continue\" is outside of any enclosing loop body")]
-    ContinueOutsideLoop,
+    ContinueOutsideLoop(#[label("here")] Span),
 }
 
 pub(super) fn labeling(mut function: Function) -> Result<Function, SemanticErrors> {
     let mut labeler = Labeler {
-        function: function.name.inner.clone(),
+        function: function.name.0.clone(),
         break_stack: Default::default(),
         continue_stack: Default::default(),
         factory: UniqueLabelFactory::default(),
@@ -67,7 +68,7 @@ macro_rules! label_loop {
         let new_label = $self.make_label();
         $self.break_stack.push(new_label.0.clone());
         $self.continue_stack.push(new_label.0.clone());
-        $v.label.inner = Some(new_label);
+        $v.label = Some(new_label);
         visit_mut::$f($self, $v);
         $self
             .break_stack
@@ -94,7 +95,7 @@ impl visit_mut::VisitMut for Labeler {
     fn visit_mut_switch_stmt(&mut self, switch_stmt: &mut SwitchStmt) {
         let new_label = self.make_label();
         self.break_stack.push(new_label.0.clone());
-        switch_stmt.label.inner = Some(new_label);
+        switch_stmt.label= Some(new_label);
         visit_mut::visit_mut_switch_stmt(self, switch_stmt);
         self.break_stack
             .pop()
@@ -103,9 +104,9 @@ impl visit_mut::VisitMut for Labeler {
 
     fn visit_mut_break_stmt(&mut self, break_stmt: &mut BreakStmt) {
         if let Some(label) = self.break_stack.last() {
-            break_stmt.label.inner = Some(LoopLabel(label.clone()));
+            break_stmt.label= Some(LoopLabel(label.clone()));
         } else {
-            self.errs.push(Error::BreakOutsideLoop);
+            self.errs.push(Error::BreakOutsideLoop(break_stmt.span()));
         }
 
         visit_mut::visit_mut_break_stmt(self, break_stmt);
@@ -113,9 +114,9 @@ impl visit_mut::VisitMut for Labeler {
 
     fn visit_mut_continue_stmt(&mut self, continue_stmt: &mut ContinueStmt) {
         if let Some(label) = self.continue_stack.last() {
-            continue_stmt.label.inner = Some(LoopLabel(label.clone()));
+            continue_stmt.label= Some(LoopLabel(label.clone()));
         } else {
-            self.errs.push(Error::ContinueOutsideLoop);
+            self.errs.push(Error::ContinueOutsideLoop(continue_stmt.span()));
         }
 
         visit_mut::visit_mut_continue_stmt(self, continue_stmt);

@@ -6,13 +6,14 @@ macro_rules! expect_token {
                 None => Err(ParseError::MissingToken {
                     expected: $token$((<$ty as Default>::default().into()))?,
                 }),
-                Some(Span { inner: $token$((v @ $pat))?, span }) => {
+                Some(($token$((v @ $pat))?, span)) => {
                     $span = $span.sconcat(span);
-                    Ok(($(Span { inner: <$ty>::from(v), span })?))
+                    Ok(($(<$ty>::from(v), span)?))
                 }
-                Some(t) => Err(ParseError::UnexpectedToken {
+                Some((t, span)) => Err(ParseError::UnexpectedToken {
                     expected: $token$((<$ty as Default>::default().into()))?,
                     actual: t,
+                    span,
                 }),
             })?
         }
@@ -81,7 +82,7 @@ macro_rules! nodes {
         mod ast {
         use std::collections::BTreeMap;
         use crate::span::Span;
-        use crate::span::SourceSpan;
+        use crate::span::Spanned;
         use crate::lexer::Token;
         use crate::parser::FromTokens;
         use crate::parser::ToTokens;
@@ -95,27 +96,34 @@ macro_rules! nodes {
         #[cfg_attr(test, derive(PartialEq))]
         $(#[$m_include()])?
         pub struct $node {$(
-            $(pub $m_sname: Span<$m_subnode>,)?
-            $(pub $m_cname: Span<$m_ty>,)?
-        )*}
+            $(pub $m_sname: $m_subnode,)?
+            $(pub $m_cname: ($m_ty, Span),)?
+        )*
+            pub span: Span,
+        }
+
+        impl Spanned for $node {
+            fn span(&self) -> Span {
+                self.span
+            }
+        }
 
         impl FromTokens for $node {
-            fn from_tokens(ts: &mut (impl Iterator<Item = Span<Token>> + Clone)) -> Result<Span<Self>, ParseError> {
-                fn run(ts: &mut (impl Iterator<Item = Span<Token>> + Clone)) -> Result<Span<$node>, ParseError> {
-                    let mut span = SourceSpan::empty();
+            fn from_tokens(ts: &mut (impl Iterator<Item = (Token, Span)> + Clone)) -> Result<Self, ParseError> {
+                fn run(ts: &mut (impl Iterator<Item = (Token, Span)> + Clone)) -> Result<$node, ParseError> {
+                    let mut span = Span::empty();
                     $(
                         $(expect_token!(ts, span, $m_token);)?
                         $(
-                            let $m_sname: Span<$m_subnode> = FromTokens::from_tokens(ts)?;
-                            span = span.sconcat($m_sname.span);
+                            let $m_sname: $m_subnode = FromTokens::from_tokens(ts)?;
+                            span = span.sconcat($m_sname.span());
                         )?
                         $(let $m_cname = expect_token!(ts, span, $m_ctoken($m_pat): $m_ty);)?
                     )*
-                    Ok(Span {
-                        inner: $node {$(
-                            $($m_sname,)?
-                            $($m_cname,)?
-                        )*},
+                    Ok($node {$(
+                        $($m_sname,)?
+                        $($m_cname,)?
+                    )*
                         span,
                     })
                 }
@@ -132,13 +140,15 @@ macro_rules! nodes {
                 let $node {$(
                     $($m_sname,)?
                     $($m_cname,)?
-                )*} = self;
+                )*
+                    ..
+                } = self;
 
                 ::core::iter::empty()
                 $(.chain(
                     $(::core::iter::once(Token::$m_token))?
-                    $($m_sname.inner.to_tokens())?
-                    $(::core::iter::once(Token::$m_ctoken($m_cname.inner.into())))?
+                    $($m_sname.to_tokens())?
+                    $(::core::iter::once(Token::$m_ctoken($m_cname.0.into())))?
                 ))*
             }
         }
@@ -150,35 +160,43 @@ macro_rules! nodes {
         #[cfg_attr(test, derive(PartialEq))]
         $(#[$a_include()])?
         pub enum $node {$(
-            $($a_token,)?
+            $($a_token(Span),)?
             $($a_subnode($a_subnode),)?
-            $($a_ctoken($a_ty),)?
+            $($a_ctoken($a_ty, Span),)?
         )*}
 
+        impl Spanned for $node {
+            fn span(&self) -> Span {
+                match self {$(
+                    $($node::$a_token(span) => *span,)?
+                    $($node::$a_subnode(node) => node.span(),)?
+                    $($node::$a_ctoken(_, span) => *span,)?
+                )*}
+            }
+        }
+
         impl FromTokens for $node {
-            fn from_tokens(ts: &mut (impl Iterator<Item = Span<Token>> + Clone)) -> Result<Span<Self>, ParseError> {
-                fn run(ts: &mut (impl Iterator<Item = Span<Token>> + Clone)) -> Result<Span<$node>, ParseError> {
+            fn from_tokens(ts: &mut (impl Iterator<Item = (Token, Span)> + Clone)) -> Result<Self, ParseError> {
+                fn run(ts: &mut (impl Iterator<Item = (Token, Span)> + Clone)) -> Result<$node, ParseError> {
                     try_parse!(
                         ts,
                         Err(ParseError::NoMatches),
                         $(|iter| {
                             $(
-                                let mut span = SourceSpan::empty();
+                                let mut span = Span::empty();
                                 expect_token!(iter, span, $a_token);
-                                let out = $node::$a_token;
+                                let out = $node::$a_token(span);
                             )?
                             $(
-                                let Span { inner, span } = $a_subnode::from_tokens(&mut iter)?;
+                                let inner: $a_subnode = FromTokens::from_tokens(&mut iter)?;
                                 let out = $node::$a_subnode(inner);
                             )?
                             $(
-                                let mut span = SourceSpan::empty();
-                                let out = $node::$a_ctoken(expect_token!(iter, span, $a_ctoken($a_pat): $a_ty));
+                                let mut span = Span::empty();
+                                let (ty, _) = expect_token!(iter, span, $a_ctoken($a_pat): $a_ty);
+                                let out = $node::$a_ctoken(ty, span);
                             )?
-                            Ok(Span {
-                                inner: out,
-                                span,
-                            })
+                            Ok(out)
                         },)*
                     )
                 }
@@ -194,9 +212,9 @@ macro_rules! nodes {
             fn to_tokens(self) -> impl Iterator<Item = Token> {
                 use $node::*;
                 let out: Box<dyn Iterator<Item = Token>> = match self {$(
-                    $($a_token => Box::new(::core::iter::once(Token::$a_token)),)?
+                    $($a_token(_) => Box::new(::core::iter::once(Token::$a_token)),)?
                     $($a_subnode(s) => Box::new(s.to_tokens()),)?
-                    $($a_ctoken(c) => Box::new(::core::iter::once(Token::$a_ctoken(c.into()))),)?
+                    $($a_ctoken(c, _) => Box::new(::core::iter::once(Token::$a_ctoken(c.into()))),)?
                 )*};
                 out
             }

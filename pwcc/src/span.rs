@@ -1,35 +1,27 @@
 use std::fmt::Display;
-use std::ops::Deref;
-use std::ops::DerefMut;
 
-use functional::ControlFlow;
-use functional::Foldable;
-use functional::FoldableMut;
-use functional::Functor;
-use functional::RecursiveCall;
 use functional::Semigroup;
-use functional::TryFunctor;
 
 /// Newtype for miette::SourceSpan that allows it to be grown. Also has a representation that's
 /// easier for me to work with, despite being less safe
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub struct SourceSpan {
+pub struct Span {
     start: usize,
     /// MUST be >= self.start
     end: usize,
 }
 
-impl SourceSpan {
+impl Span {
     pub const fn empty() -> Self {
         Self { start: 0, end: 0 }
     }
 }
 
-impl Semigroup for SourceSpan {
+impl Semigroup for Span {
     fn sconcat(self, other: Self) -> Self {
-        if self == SourceSpan::empty() {
+        if self == Span::empty() {
             other
-        } else if other == SourceSpan::empty() {
+        } else if other == Span::empty() {
             self
         } else {
             Self {
@@ -40,25 +32,25 @@ impl Semigroup for SourceSpan {
     }
 }
 
-impl Display for SourceSpan {
+impl Display for Span {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "({}, {})", self.start, self.end)
     }
 }
 
-impl Into<miette::SourceSpan> for SourceSpan {
+impl Into<miette::SourceSpan> for Span {
     fn into(self) -> miette::SourceSpan {
         (self.start, self.end - self.start).into()
     }
 }
 
-impl Into<miette::SourceSpan> for &SourceSpan {
+impl Into<miette::SourceSpan> for &Span {
     fn into(self) -> miette::SourceSpan {
         (*self).into()
     }
 }
 
-impl<T> From<T> for SourceSpan
+impl<T> From<T> for Span
 where
     miette::SourceSpan: From<T>,
 {
@@ -71,141 +63,48 @@ where
     }
 }
 
-/// Span<T> should be transparent to T for basically all trait implementations, except for `Into`
-/// so that it can be used as a `#[label]` in miette diagnostics.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub struct Span<T> {
-    pub inner: T,
-    pub span: SourceSpan,
+/// Trait to extract the Span from a given node, without needing to go thru an `Into`
+/// implementation.
+pub trait Spanned {
+    fn span(&self) -> Span;
 }
 
-impl<T> Into<miette::SourceSpan> for Span<T> {
-    fn into(self) -> miette::SourceSpan {
-        self.span.into()
+impl<T> Spanned for (T, Span) {
+    fn span(&self) -> Span {
+        self.1
     }
 }
 
-impl<T> Into<miette::SourceSpan> for &Span<T> {
-    fn into(self) -> miette::SourceSpan {
-        self.span.into()
+impl<T> Spanned for Box<T>
+where
+    T: Spanned,
+{
+    fn span(&self) -> Span {
+        (**self).span()
     }
 }
 
-impl<T> Span<T> {
-    pub fn boxed(self) -> Span<Box<T>> {
-        Span {
-            inner: Box::new(self.inner),
-            span: self.span,
+impl<T> Spanned for Option<T>
+where
+    T: Spanned,
+{
+    fn span(&self) -> Span {
+        match self {
+            Some(v) => v.span(),
+            None => Span::empty(),
         }
     }
 }
 
-/// Helper trait so that, when constructing nodes that are surrounded by Span<> for testing, it's
-/// much easier
-pub trait Spanned: Sized {
-    fn span(self, s: SourceSpan) -> Span<Self>;
-}
-
-impl<T> Spanned for T {
-    #[inline(always)]
-    fn span(self, s: SourceSpan) -> Span<Self> {
-        Span {
-            inner: self,
-            span: s,
+impl<T> Spanned for Vec<T>
+where
+    T: Spanned,
+{
+    fn span(&self) -> Span {
+        let mut out = Span::empty();
+        for v in self.iter() {
+            out = out.sconcat(v.span());
         }
-    }
-}
-
-impl<T> Deref for Span<T> {
-    type Target = T;
-    fn deref(&self) -> &Self::Target {
-        &self.inner
-    }
-}
-
-impl<T> DerefMut for Span<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.inner
-    }
-}
-
-impl<T> Display for Span<T>
-where
-    T: Display,
-{
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.inner.fmt(f)
-    }
-}
-
-/// First, we need to make sure that Span is transparent as a wrapper type, similar to how Vec,
-/// Box, and Option behave.
-impl<T, Output> Functor<Output> for Span<T>
-where
-    T: Functor<Output>,
-{
-    type Input = T::Input;
-    type Mapped = Span<T::Mapped>;
-
-    #[inline(always)]
-    fn fmap_impl(
-        self,
-        f: &mut impl FnMut(Self::Input) -> Output,
-        how: RecursiveCall,
-    ) -> Self::Mapped {
-        Span {
-            inner: self.inner.fmap_impl(f, how),
-            span: self.span,
-        }
-    }
-}
-
-impl<T, Output> TryFunctor<Output> for Span<T>
-where
-    T: TryFunctor<Output>,
-{
-    #[inline(always)]
-    fn try_fmap_impl<E: Semigroup + ControlFlow>(
-        self,
-        f: &mut impl FnMut(Self::Input) -> Result<Output, E>,
-        how: RecursiveCall,
-    ) -> Result<Self::Mapped, E> {
-        Ok(Span {
-            inner: self.inner.try_fmap_impl(f, how)?,
-            span: self.span,
-        })
-    }
-}
-
-impl<T, A> Foldable<A> for Span<T>
-where
-    T: Foldable<A>,
-{
-    #[inline(always)]
-    fn foldl_impl<'s, B>(
-        &'s self,
-        f: &mut impl FnMut(B, &'s A) -> B,
-        acc: B,
-        how: RecursiveCall,
-    ) -> B
-    where
-        A: 's,
-    {
-        self.inner.foldl_impl(f, acc, how)
-    }
-}
-
-impl<T, A> FoldableMut<A> for Span<T>
-where
-    T: FoldableMut<A>,
-{
-    #[inline(always)]
-    fn foldl_mut_impl<B>(
-        &mut self,
-        f: &mut impl FnMut(B, &mut A) -> B,
-        acc: B,
-        how: RecursiveCall,
-    ) -> B {
-        self.inner.foldl_mut_impl(f, acc, how)
+        out
     }
 }

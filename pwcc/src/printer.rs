@@ -17,6 +17,7 @@ impl Display for Token {
                 CloseBrace => write!(f, "}}"),
                 CloseParen => write!(f, ")"),
                 Colon => write!(f, ":"),
+                Comma => write!(f, ","),
                 Constant(n) => write!(f, "{n}"),
                 Decrement => write!(f, "--"),
                 DoubleAmpersand => write!(f, "&&"),

@@ -169,6 +169,8 @@ pub fn filter_coherent<'ast>(lattice: Lattice<'ast>) -> ANodes<'ast> {
         }
 
         bad_edges.clear();
+        
+        // TODO: in writing my blog post I realized the correct place to do the topological sort is here, not above.
 
         // 2. Remove all outgoing edges where there's other edges w/ overlapping generic contexts
         //    that cannot be transformed.

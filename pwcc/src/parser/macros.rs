@@ -111,15 +111,17 @@ macro_rules! nodes {
         impl FromTokens for $node {
             fn from_tokens(ts: &mut (impl Iterator<Item = (Token, Span)> + Clone)) -> Result<Self, ParseError> {
                 fn run(ts: &mut (impl Iterator<Item = (Token, Span)> + Clone)) -> Result<$node, ParseError> {
+                    let mut iter = ts.clone();
                     let mut span = Span::empty();
                     $(
-                        $(expect_token!(ts, span, $m_token);)?
+                        $(expect_token!(iter, span, $m_token);)?
                         $(
-                            let $m_sname: $m_subnode = FromTokens::from_tokens(ts)?;
+                            let $m_sname: $m_subnode = FromTokens::from_tokens(&mut iter)?;
                             span = span.sconcat($m_sname.span());
                         )?
-                        $(let $m_cname = expect_token!(ts, span, $m_ctoken($m_pat): $m_ty);)?
+                        $(let $m_cname = expect_token!(iter, span, $m_ctoken($m_pat): $m_ty);)?
                     )*
+                    *ts = iter;
                     Ok($node {$(
                         $($m_sname,)?
                         $($m_cname,)?

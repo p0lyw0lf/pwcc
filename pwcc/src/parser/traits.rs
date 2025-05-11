@@ -6,6 +6,8 @@ use crate::span::Span;
 use crate::span::Spanned;
 
 pub trait FromTokens: Sized + Spanned {
+    /// If this returns Ok(), then `ts` has been advanced past the parsed item.
+    /// If this returns Err(), then `ts` MUST remain where it was before this function was called.
     fn from_tokens(
         ts: &mut (impl Iterator<Item = (Token, Span)> + Clone),
     ) -> Result<Self, ParseError>;

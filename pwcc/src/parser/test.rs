@@ -67,6 +67,17 @@ fn statement() {
 }
 
 #[test]
+fn extra_junk() {
+    let mut tokens = lex("one two three ;")
+        .into_iter()
+        .map(|token| (token, Span::empty()));
+    let labels = Vec::<RawLabel>::from_tokens(&mut tokens).expect("Parse labels");
+    println!("{labels:?}");
+    let semicolon = NullStmt::from_tokens(&mut tokens).expect("Parse semicolon");
+    println!("{semicolon:?}");
+}
+
+#[test]
 fn function() {
     assert_convertible(
         "\

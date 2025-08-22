@@ -1,6 +1,8 @@
 //! TODO: eventually, I want to have this test the span generation too. However, that's a bit
 //! tricky, so I am leaving everything in place for now.
 
+use crate::printer::printable;
+
 use super::*;
 use std::fmt::Debug;
 
@@ -522,4 +524,55 @@ fn function_call_args() {
             span,
         },
     );
+}
+
+#[test]
+fn binary_assignment_op() {
+    assert_forwards(
+        &lex("a &= 0 || b;"),
+        &Statement::ExpressionStmt(ExpressionStmt {
+            exp: Exp::Assignment {
+                lhs: Exp::Var {
+                    ident: "a".to_string(),
+                    span,
+                }
+                .boxed(),
+                op: AssignmentOp::AmpersandEqual(span),
+                rhs: Exp::Binary {
+                    lhs: Exp::Constant { constant: 0, span }.boxed(),
+                    op: BinaryOp::DoublePipe(span),
+                    rhs: Exp::Var {
+                        ident: "b".to_string(),
+                        span,
+                    }
+                    .boxed(),
+                    span,
+                }
+                .boxed(),
+                span,
+            },
+            span,
+        }),
+    );
+}
+
+#[test]
+fn asdfs() {
+    let tokens = lex(r#"
+    int a = 11;
+    int b = 12;
+    a &= 0 || b;
+    b ^= a || 1;
+    int c = 14;
+    c |= a || b;
+    int d = 16;
+    d >>= c || d;
+    int e = 18;
+    e <<= c || d;
+    return (a == 1 && b == 13 && c == 15 && d == 8 && e == 36);
+"#);
+    let actual = Vec::<BlockItem>::from_raw_tokens(&mut Vec::from(tokens).into_iter())
+        .expect("parse failed");
+    println!("{}", printable(actual));
+    panic!("fail test");
 }

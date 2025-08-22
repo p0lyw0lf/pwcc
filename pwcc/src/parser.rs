@@ -163,6 +163,45 @@ nodes! {
     SwitchContext struct (pub BTreeMap<Option<isize>, (String, Span)>);
 }
 
+fn parse_comma_delimited<T, I: Iterator<Item = (Token, Span)> + Clone>(
+    ts: &mut I,
+    mut f: impl FnMut(&mut I) -> Result<T, ParseError>,
+    mut at_end: impl FnMut(&Token) -> bool,
+) -> Result<Vec<T>, ParseError> {
+    let mut iter = ts.clone();
+    let mut args = Vec::new();
+    loop {
+        args.push(f(&mut iter)?);
+
+        let mut peek_iter = iter.clone();
+        match peek_iter.next() {
+            Some((Token::Comma, _)) => {
+                // Parse the next argument
+                iter = peek_iter;
+            }
+            Some((token, _)) if at_end(&token) => {
+                // Reached end of arguments
+                break;
+            }
+            Some((otherwise, span)) => {
+                return Err(ParseError::UnexpectedToken {
+                    expected: Token::Comma,
+                    actual: otherwise,
+                    span,
+                });
+            }
+            None => {
+                return Err(ParseError::MissingToken {
+                    expected: Token::CloseParen,
+                });
+            }
+        }
+    }
+
+    *ts = iter;
+    Ok(args)
+}
+
 impl Spanned for DeclArgs {
     fn span(&self) -> Span {
         self.0.span()
@@ -174,34 +213,19 @@ impl FromTokens for DeclArgs {
         ts: &mut (impl Iterator<Item = (Token, Span)> + Clone),
     ) -> Result<Self, ParseError> {
         let mut iter = ts.clone();
-        let mut args = Vec::new();
 
-        fn parse_arg(
-            ts: &mut (impl Iterator<Item = (Token, Span)> + Clone),
-        ) -> Result<(String, Span), ParseError> {
-            let mut span = Span::empty();
-            let mut iter = ts.clone();
-            expect_token!(iter, span, KeywordInt);
-            let (ident, _) = expect_token!(iter, span, Ident(_): String);
-            *ts = iter;
-            Ok((ident, span))
-        }
-
-        while let Ok(arg) = parse_arg(&mut iter) {
-            args.push(arg);
-
-            let mut peek_iter = iter.clone();
-            match peek_iter.next() {
-                // Parse the next argument
-                Some((Token::Comma, _)) => {
-                    iter = peek_iter;
-                }
-                // Otherwise, we have reached the end of arguments.
-                // If there would be a parse error, it will be returned from whatever uses a
-                // DeclArgs
-                _ => break,
-            }
-        }
+        let args = parse_comma_delimited(
+            &mut iter,
+            |ts| -> Result<(String, Span), ParseError> {
+                let mut span = Span::empty();
+                let mut iter = ts.clone();
+                expect_token!(iter, span, KeywordInt);
+                let (ident, _) = expect_token!(iter, span, Ident(_): String);
+                *ts = iter;
+                Ok((ident, span))
+            },
+            |token| matches!(token, Token::CloseParen),
+        )?;
 
         *ts = iter;
         Ok(DeclArgs(args))
@@ -426,26 +450,17 @@ impl FromTokens for Exp {
                 |iter| {
                     let mut span = Span::empty();
                     let ident = expect_token!(iter, span, Ident(_): String);
+
                     expect_token!(iter, span, OpenParen);
 
-                    let mut args = Vec::new();
-                    while let Ok(arg) = parse_exp(&mut iter, Precedence::lowest()) {
-                        args.push(arg);
-
-                        let mut peek_iter = iter.clone();
-                        match peek_iter.next() {
-                            // Parse the next argument
-                            Some((Token::Comma, _)) => {
-                                iter = peek_iter;
-                            }
-                            // Otherwise, we have reached the end of arguments.
-                            // If there would be a parse error, it will be returned from whatever uses a
-                            // DeclArgs
-                            _ => break,
-                        }
-                    }
+                    let args = parse_comma_delimited(
+                        &mut iter,
+                        |ts| parse_exp(ts, Precedence::lowest()),
+                        |token| matches!(token, Token::CloseParen),
+                    )?;
 
                     expect_token!(iter, span, CloseParen);
+
                     Ok(Exp::FunctionCall { ident, args, span })
                 },
                 |iter| {

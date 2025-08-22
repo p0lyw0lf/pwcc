@@ -557,22 +557,17 @@ fn binary_assignment_op() {
 }
 
 #[test]
-fn asdfs() {
-    let tokens = lex(r#"
-    int a = 11;
-    int b = 12;
-    a &= 0 || b;
-    b ^= a || 1;
-    int c = 14;
-    c |= a || b;
-    int d = 16;
-    d >>= c || d;
-    int e = 18;
-    e <<= c || d;
-    return (a == 1 && b == 13 && c == 15 && d == 8 && e == 36);
-"#);
-    let actual = Vec::<BlockItem>::from_raw_tokens(&mut Vec::from(tokens).into_iter())
-        .expect("parse failed");
-    println!("{}", printable(actual));
-    panic!("fail test");
+fn trailing_comma() {
+    let tokens = lex("f(a, b, c,)");
+    let iter = &mut Vec::from(tokens).into_iter();
+    let _ = Exp::from_raw_tokens(iter).expect("parse succeeds"); // because it can parse f as ident
+    assert_eq!(iter.next(), Some(Token::OpenParen));
+}
+
+#[test]
+fn trailing_comma_decl() {
+    let tokens = lex("int ident(int a,) { return a; }");
+    let _ = FunctionDecl::from_raw_tokens(&mut Vec::from(tokens).into_iter())
+        .expect_err("parse did not fail");
+    // TODO: also test that error is "good" (currently it is not very helpful unfortunately...)
 }

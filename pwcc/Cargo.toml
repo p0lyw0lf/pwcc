@@ -7,5 +7,5 @@ edition = "2021"
 functional = { path = "../functional" }
 functional_macros = { path = "../functional_macros" }
 miette = "7.5"
-regex = "1.10.*"
-thiserror = "1.0"
+regex = "1.11.*"
+thiserror = "2.0"

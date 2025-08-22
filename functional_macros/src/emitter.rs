@@ -1,6 +1,6 @@
 use proc_macro2::TokenStream as TokenStream2;
-use quote::quote;
 use quote::ToTokens;
+use quote::quote;
 
 use crate::nodes::AField;
 use crate::nodes::ANode;

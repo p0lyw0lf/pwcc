@@ -1,12 +1,12 @@
-use syn::spanned::Spanned;
-use syn::visit_mut;
-use syn::visit_mut::VisitMut;
 use syn::GenericArgument;
 use syn::GenericParam;
 use syn::Generics;
 use syn::Ident;
 use syn::Token;
 use syn::WhereClause;
+use syn::spanned::Spanned;
+use syn::visit_mut;
+use syn::visit_mut::VisitMut;
 
 use crate::nodes::GenericContext;
 

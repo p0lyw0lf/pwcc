@@ -2,19 +2,19 @@ use std::collections::HashSet;
 use std::ops::Deref;
 
 use proc_macro2::TokenStream as TokenStream2;
-use quote::quote;
 use quote::ToTokens;
 use quote::TokenStreamExt;
-use syn::punctuated::Punctuated;
+use quote::quote;
 use syn::Token;
+use syn::punctuated::Punctuated;
 
-use crate::emitter::make_variant_constructor;
 use crate::emitter::BodyEmitter;
 use crate::emitter::FieldEmitter;
+use crate::emitter::make_variant_constructor;
+use crate::generics::Behavior;
 use crate::generics::generics_add_suffix;
 use crate::generics::generics_merge;
 use crate::generics::instantiation_add_suffix;
-use crate::generics::Behavior;
 use crate::nodes::ANode;
 use crate::nodes::ANodes;
 use crate::nodes::AType;

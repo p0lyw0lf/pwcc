@@ -1,9 +1,9 @@
 use std::collections::HashSet;
 
-use syn::parse::Parse;
-use syn::punctuated::Punctuated;
 use syn::Ident;
 use syn::Token;
+use syn::parse::Parse;
+use syn::punctuated::Punctuated;
 
 use crate::nodes::ExtraNode;
 

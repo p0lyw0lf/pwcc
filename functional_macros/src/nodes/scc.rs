@@ -67,14 +67,14 @@
 //!
 //! And with that, I believe my informal proof is complete! Now all that's left to do is to do it.
 
-use std::collections::hash_map;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::collections::hash_map;
 
 use syn::Ident;
 
-use crate::nodes::lattice::Lattice;
 use crate::nodes::ANode;
+use crate::nodes::lattice::Lattice;
 
 /// We're using the [Path-based strong component algorithm](https://en.wikipedia.org/wiki/Path-based_strong_component_algorithm) as outlined on Wikipedia. This datastructure will be the output of the algorithm: a list of all connected components.
 ///

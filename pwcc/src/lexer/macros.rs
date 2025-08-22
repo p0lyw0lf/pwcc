@@ -57,10 +57,10 @@ macro_rules! tokens {
             /// SAFETY: must only be called when `source` starts with the token
             /// at the specified index
             unsafe fn consume_specific_token(&self, source: &str, source_offset: usize, regex_index: usize) -> Result<($tokens, usize), TokenError> {
-                let pat = self.pats.get_unchecked(regex_index);
+                let pat = unsafe { self.pats.get_unchecked(regex_index) };
                 let token_str = pat.find_at(source, 0).unwrap().as_str();
 
-                let token = TO_TOKEN.get_unchecked(regex_index)(token_str, source_offset)?;
+                let token = unsafe { TO_TOKEN.get_unchecked(regex_index) }(token_str, source_offset)?;
 
                 Ok((token, token_str.len()))
             }

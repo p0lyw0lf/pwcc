@@ -38,13 +38,13 @@ use std::collections::HashSet;
 
 use syn::Ident;
 
-use crate::nodes::lattice::collapse_ty_edge;
-use crate::nodes::lattice::Lattice;
-use crate::nodes::scc::find_sccs;
-use crate::nodes::scc::StronglyConnectedComponents;
 use crate::nodes::ANode;
 use crate::nodes::ANodes;
 use crate::nodes::AType;
+use crate::nodes::lattice::Lattice;
+use crate::nodes::lattice::collapse_ty_edge;
+use crate::nodes::scc::StronglyConnectedComponents;
+use crate::nodes::scc::find_sccs;
 
 /// The first order of business is to run the topological sort to find the ordering we do the
 /// filtering in. We'll use the [Depth-first search](https://en.wikipedia.org/wiki/Topological_sorting#Depth-first_search) method.
@@ -169,7 +169,7 @@ pub fn filter_coherent<'ast>(lattice: Lattice<'ast>) -> ANodes<'ast> {
         }
 
         bad_edges.clear();
-        
+
         // TODO: in writing my blog post I realized the correct place to do the topological sort is here, not above.
 
         // 2. Remove all outgoing edges where there's other edges w/ overlapping generic contexts
@@ -193,7 +193,9 @@ pub fn filter_coherent<'ast>(lattice: Lattice<'ast>) -> ANodes<'ast> {
                 {
                     let edge_b_ident = edge_b.ident;
                     let edge_c_ident = edge_c.ident;
-                    eprintln!("// Node {ident}: filtering {edge_b_ident} due to {edge_c_ident} not being able to be transformed by it");
+                    eprintln!(
+                        "// Node {ident}: filtering {edge_b_ident} due to {edge_c_ident} not being able to be transformed by it"
+                    );
                     bad_edges.insert((*edge_b).clone());
                 }
             }

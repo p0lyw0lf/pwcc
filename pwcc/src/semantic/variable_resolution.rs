@@ -3,13 +3,13 @@ use std::collections::HashMap;
 use miette::Diagnostic;
 use thiserror::Error;
 
-use crate::parser::visit_mut;
-use crate::parser::visit_mut::VisitMut;
 use crate::parser::Block;
 use crate::parser::Exp;
 use crate::parser::ForStmt;
 use crate::parser::FunctionDecl;
 use crate::parser::VarDecl;
+use crate::parser::visit_mut;
+use crate::parser::visit_mut::VisitMut;
 use crate::semantic::SemanticError;
 use crate::semantic::SemanticErrors;
 use crate::semantic::UniqueLabelFactory;

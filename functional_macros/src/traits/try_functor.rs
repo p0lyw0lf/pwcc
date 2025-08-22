@@ -1,10 +1,10 @@
 use proc_macro2::TokenStream as TokenStream2;
-use quote::quote;
 use quote::ToTokens;
+use quote::quote;
 
-use crate::emitter::make_variant_constructor;
 use crate::emitter::BodyEmitter;
 use crate::emitter::FieldEmitter;
+use crate::emitter::make_variant_constructor;
 use crate::nodes::ANode;
 use crate::nodes::AType;
 use crate::nodes::AVariant;

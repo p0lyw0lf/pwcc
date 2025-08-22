@@ -24,7 +24,7 @@ pub(super) use expect_token;
 /// Tries multiple functions, returning the when the first returns OK, otherwise returning a
 /// default value.
 macro_rules! try_parse {
-    ($ts:ident, $default:expr, $(
+    ($ts:ident, $default:expr_2021, $(
         |$iter:ident| $tt:tt ,
     )*) => {
         {

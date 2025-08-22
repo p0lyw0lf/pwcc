@@ -41,7 +41,7 @@ pub fn pass<S: State<Location = Location>>(instructions: Instructions<S>) -> Ins
     ) -> usize {
         match l.as_ref() {
             Location::Reg(_) => prev_max,
-            Location::Stack(ref s) => core::cmp::max(*s, prev_max),
+            Location::Stack(s) => core::cmp::max(*s, prev_max),
         }
     }
     let max_stack_addr = instructions.foldl(count_stack_space, 0);

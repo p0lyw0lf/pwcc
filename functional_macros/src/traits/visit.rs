@@ -1,13 +1,13 @@
 use proc_macro2::Span as Span2;
 use proc_macro2::TokenStream as TokenStream2;
-use quote::quote;
 use quote::ToTokens;
 use quote::TokenStreamExt;
+use quote::quote;
 use syn::Ident;
 
 use crate::emitter::BodyEmitter;
-use crate::nodes::lattice::Lattice;
 use crate::nodes::AVariant;
+use crate::nodes::lattice::Lattice;
 
 /// Emits a module `prefix` (visit), with functions `prefix_*` (visit_*) for a trait `trait_name`
 /// (Visit), for reference types `ref_ty` (&'ast), using `associated_method` (foldl_impl) to map

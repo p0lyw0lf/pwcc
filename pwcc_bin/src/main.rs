@@ -4,19 +4,19 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::str::FromStr;
 
-use miette::diagnostic;
 use miette::IntoDiagnostic;
 use miette::Report;
 use miette::Result;
 use miette::WrapErr;
+use miette::diagnostic;
 
 use functional::Functor;
 use pwcc::{codegen, lexer, parser, printer, semantic, tacky};
 
 mod stages;
-use crate::stages::print_help;
 use crate::stages::Stages;
 use crate::stages::Stages::*;
+use crate::stages::print_help;
 
 fn main() -> Result<()> {
     let mut stage = NoExplicitStage;

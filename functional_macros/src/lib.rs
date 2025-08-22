@@ -2,9 +2,9 @@ use proc_macro::TokenStream;
 use proc_macro::TokenTree;
 
 use proc_macro2::TokenStream as TokenStream2;
-use quote::quote;
 use quote::ToTokens;
 use quote::TokenStreamExt;
+use quote::quote;
 use syn::ItemMod;
 
 mod emitter;
@@ -167,7 +167,7 @@ pub fn ast(attrs: TokenStream, item: TokenStream) -> TokenStream {
 
 /// Turns a syntax::ParseResult<T> into a T, panicking if it's a None or Some(Err)
 macro_rules! always {
-    ($e:expr) => {{
+    ($e:expr_2021) => {{
         match $e {
             Some(Ok(t)) => t,
             Some(Err(e)) => panic!("{e}"),
@@ -178,7 +178,7 @@ macro_rules! always {
 
 /// Turns a ParseResult<T> into a T, breaking from the loop if None, and panicking if Some(Err)
 macro_rules! break_none {
-    ($e:expr) => {
+    ($e:expr_2021) => {
         match $e {
             None => break,
             Some(Err(e)) => panic!("{e}"),

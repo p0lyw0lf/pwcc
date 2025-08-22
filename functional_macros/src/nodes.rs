@@ -4,9 +4,6 @@ use std::collections::HashSet;
 use std::hash::Hash;
 use std::ops::Deref;
 
-use syn::spanned::Spanned;
-use syn::visit;
-use syn::visit::Visit;
 use syn::Attribute;
 use syn::Field;
 use syn::Fields;
@@ -17,6 +14,9 @@ use syn::Ident;
 use syn::ItemEnum;
 use syn::ItemStruct;
 use syn::PathArguments;
+use syn::spanned::Spanned;
+use syn::visit;
+use syn::visit::Visit;
 
 pub mod coherence;
 pub mod lattice;
@@ -273,12 +273,12 @@ fn convert_field<'ast>(
                 let segment = &ty.path.segments[0];
                 let ident = &segment.ident;
                 if self.nodes.contains_key(ident) && !self.parent_ctx.has_type(ident) {
-                    let instantiation =
-                        if let PathArguments::AngleBracketed(args) = &segment.arguments {
+                    let instantiation = match &segment.arguments {
+                        PathArguments::AngleBracketed(args) => {
                             args.args.iter().map(Cow::Borrowed).collect()
-                        } else {
-                            Vec::default()
-                        };
+                        }
+                        _ => Vec::default(),
+                    };
                     let ctx = instantiation_collect_context(
                         self.parent_ctx,
                         instantiation.iter().map(Deref::deref),
@@ -496,10 +496,9 @@ fn parse_is_included<'ast>(attrs: impl IntoIterator<Item = &'ast Attribute>) -> 
 
 /// Returns if the attribute is `#[include()]`
 pub(crate) fn is_special_attr(attr: &Attribute) -> bool {
-    if let syn::Meta::List(l) = &attr.meta {
-        l.path.get_ident().is_some_and(|i| i == "include")
-    } else {
-        false
+    match &attr.meta {
+        syn::Meta::List(l) => l.path.get_ident().is_some_and(|i| i == "include"),
+        _ => false,
     }
 }
 

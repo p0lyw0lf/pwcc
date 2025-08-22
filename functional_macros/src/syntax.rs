@@ -1,7 +1,6 @@
 //! Hand-rolled parser, for partial parsing of TokenTrees without the need for all of syn
 #![allow(dead_code)]
 
-use proc_macro::token_stream;
 use proc_macro::Delimiter;
 use proc_macro::Group;
 use proc_macro::Ident;
@@ -9,6 +8,7 @@ use proc_macro::Punct;
 use proc_macro::Spacing;
 use proc_macro::TokenStream;
 use proc_macro::TokenTree;
+use proc_macro::token_stream;
 
 use core::error::Error;
 use core::fmt::Display;
@@ -80,7 +80,7 @@ pub type ParseResult<T = ()> = Option<Result<T, ParseError>>;
 
 /// Turns a ParseResult<T> into a T, early-returning if it's a None or Some(Err)
 macro_rules! always {
-    ($e:expr) => {{
+    ($e:expr_2021) => {{
         match $e {
             Some(Ok(t)) => t,
             Some(Err(e)) => return Some(Err(e)),
@@ -91,7 +91,7 @@ macro_rules! always {
 
 /// Turns a ParseResult<T> into a Result<T, ParseError>, early-returning if its None
 macro_rules! maybe {
-    ($e:expr) => {
+    ($e:expr_2021) => {
         match $e {
             Some(v) => v,
             None => return None,
@@ -112,7 +112,7 @@ pub fn keyword(
             return Some(Err(ParseError::ExpectedKeyword {
                 expected: ident.into(),
                 actual: other,
-            }))
+            }));
         }
     };
 

@@ -1,6 +1,6 @@
 use core::convert::From;
-use core::iter::once as one;
 use core::iter::Iterator;
+use core::iter::once as one;
 
 use functional::Semigroup;
 

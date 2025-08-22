@@ -3,20 +3,20 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::ops::Deref;
 
-use syn::visit_mut;
-use syn::visit_mut::VisitMut;
 use syn::Expr;
 use syn::GenericArgument;
 use syn::GenericParam;
 use syn::Ident;
 use syn::Token;
 use syn::Type;
+use syn::visit_mut;
+use syn::visit_mut::VisitMut;
 
-use crate::nodes::instantiation_collect_context;
 use crate::nodes::ANode;
 use crate::nodes::ANodes;
 use crate::nodes::AType;
 use crate::nodes::GenericContext;
+use crate::nodes::instantiation_collect_context;
 
 /// Given a path like A -> B -> C, collapse it into A -> C
 ///
@@ -151,21 +151,36 @@ pub fn collapse_ty_edge<'ast>(
                 if let GenericArgument::Lifetime(value) = value.deref() {
                     lifetime_map.insert(&key.lifetime.ident, &value.ident);
                 } else {
-                    panic!("got unexpected arg {:?} trying to match against {} in the definition of {}", value, key.lifetime, b.ident());
+                    panic!(
+                        "got unexpected arg {:?} trying to match against {} in the definition of {}",
+                        value,
+                        key.lifetime,
+                        b.ident()
+                    );
                 }
             }
             GenericParam::Type(key) => {
                 if let GenericArgument::Type(value) = value.deref() {
                     type_map.insert(&key.ident, value);
                 } else {
-                    panic!("got unexpected arg {:?} trying to match against {} in the definition of {}", value, key.ident, b.ident());
+                    panic!(
+                        "got unexpected arg {:?} trying to match against {} in the definition of {}",
+                        value,
+                        key.ident,
+                        b.ident()
+                    );
                 }
             }
             GenericParam::Const(key) => {
                 if let GenericArgument::Const(value) = value.deref() {
                     constant_map.insert(&key.ident, value);
                 } else {
-                    panic!("got unexpected arg {:?} trying to match against {} in the definition of {}", value, key.ident, b.ident());
+                    panic!(
+                        "got unexpected arg {:?} trying to match against {} in the definition of {}",
+                        value,
+                        key.ident,
+                        b.ident()
+                    );
                 }
             }
         }

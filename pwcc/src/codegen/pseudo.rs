@@ -62,7 +62,7 @@ impl From<tacky::Instructions> for Instructions<State> {
                             [
                                 Instruction::Mov {
                                     src: src.into(),
-                                    dst: wrap(dst.clone().into()),
+                                    dst: wrap(dst.into()),
                                 },
                                 Instruction::Cmp {
                                     left: wrap(dst.into()),
@@ -70,7 +70,7 @@ impl From<tacky::Instructions> for Instructions<State> {
                                 },
                                 Instruction::Mov {
                                     src: Operand::Imm(0),
-                                    dst: wrap(dst.clone().into()),
+                                    dst: wrap(dst.into()),
                                 },
                                 Instruction::SetCC(CondCode::E, wrap(dst.into())),
                             ]
@@ -108,15 +108,15 @@ impl From<tacky::Instructions> for Instructions<State> {
                             [
                                 Instruction::Mov {
                                     src: src1.into(),
-                                    dst: wrap(dst.clone().into()),
+                                    dst: wrap(dst.into()),
                                 },
                                 Instruction::Cmp {
-                                    left: wrap(dst.clone().into()),
+                                    left: wrap(dst.into()),
                                     right: src2.into(),
                                 },
                                 Instruction::Mov {
                                     src: Operand::Imm(0),
-                                    dst: wrap(dst.clone().into()),
+                                    dst: wrap(dst.into()),
                                 },
                                 Instruction::SetCC(
                                     match op {

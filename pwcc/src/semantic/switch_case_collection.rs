@@ -57,7 +57,7 @@ pub(super) fn collect(mut function: FunctionDecl) -> Result<FunctionDecl, Semant
 
     collector.visit_mut_function_decl(&mut function);
 
-    if collector.errs.len() > 0 {
+    if !collector.errs.is_empty() {
         Err(SemanticErrors(
             collector.errs.into_iter().map(Into::into).collect(),
         ))

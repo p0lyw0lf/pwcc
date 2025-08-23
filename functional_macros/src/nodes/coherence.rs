@@ -79,13 +79,12 @@ fn topological_sort<'ast>(sccs: &StronglyConnectedComponents<'ast>) -> Vec<&'ast
             // Visit all other components that are connected to this one
             for next_node in sccs.index_to_scc[index]
                 .iter()
-                .map(|ident| sccs.nodes[ident].all_tys())
-                .flatten()
+                .flat_map(|ident| sccs.nodes[ident].all_tys())
                 .map(|ty| &sccs.nodes[ty.ident])
             {
                 let next_index = sccs.node_to_index[next_node.ident()];
                 if next_index != index {
-                    self.visit(sccs, &next_node);
+                    self.visit(sccs, next_node);
                 }
             }
 
@@ -164,8 +163,8 @@ pub fn filter_coherent<'ast>(lattice: Lattice<'ast>) -> ANodes<'ast> {
 
         let node = nodes.0.get_mut(ident).unwrap();
         for field in node.fields_mut() {
-            field.tys.retain(|ty| !bad_edges.contains(&ty));
-            field.indirect_tys.retain(|ty| !bad_edges.contains(&ty));
+            field.tys.retain(|ty| !bad_edges.contains(ty));
+            field.indirect_tys.retain(|ty| !bad_edges.contains(ty));
         }
 
         bad_edges.clear();
@@ -188,7 +187,7 @@ pub fn filter_coherent<'ast>(lattice: Lattice<'ast>) -> ANodes<'ast> {
                 // Look for an edge c -> b. If we can't find it, then a -> b is a bad edge.
                 if !node_c
                     .unrestricted_tys()
-                    .map(|ty| collapse_ty_edge(node.ctx(), &edge_c, node_c, ty))
+                    .map(|ty| collapse_ty_edge(node.ctx(), edge_c, node_c, ty))
                     .any(|ty| &&ty == edge_b)
                 {
                     let edge_b_ident = edge_b.ident;
@@ -204,7 +203,7 @@ pub fn filter_coherent<'ast>(lattice: Lattice<'ast>) -> ANodes<'ast> {
         let node = nodes.0.get_mut(ident).unwrap();
         for field in node.fields_mut() {
             let mut restrict_ty = |ty: &AType<'ast>| {
-                let bad = bad_edges.contains(&ty);
+                let bad = bad_edges.contains(ty);
                 if bad {
                     field.restricted_tys.insert(ty.clone());
                 }
@@ -238,13 +237,11 @@ mod test {
                 .iter()
                 .map(|label| {
                     let node = &nodes[label];
-                    let edges = node
-                        .unrestricted_tys()
+                    node.unrestricted_tys()
                         .collect::<HashSet<_>>()
                         .into_iter()
                         .map(|ty| labels.iter().position(|label| label == ty.ident).unwrap())
-                        .collect::<Vec<_>>();
-                    edges
+                        .collect::<Vec<_>>()
                 })
                 .collect::<Vec<_>>();
 

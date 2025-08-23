@@ -122,13 +122,12 @@ pub fn collapse_ty_edge<'ast>(
 
         fn visit_expr_mut(&mut self, e: &mut syn::Expr) {
             visit_mut::visit_expr_mut(self, e);
-            if let Expr::Path(path) = e {
-                if path.qself.is_none() && path.path.segments.len() == 1 {
-                    let ident = path.path.get_ident().unwrap();
-                    if let Some(substitution) = self.constant_map.get(&ident) {
-                        *e = (*substitution).clone();
-                    }
-                }
+            if let Expr::Path(path) = e
+                && path.qself.is_none()
+                && let Some(ident) = path.path.get_ident()
+                && let Some(substitution) = self.constant_map.get(&ident)
+            {
+                *e = (*substitution).clone();
             }
         }
     }
@@ -265,8 +264,7 @@ pub(crate) fn make_lattice<'ast>(mut nodes: ANodes<'ast>) -> Lattice<'ast> {
         for (field, new_field_types) in nodes
             .0
             .values_mut()
-            .map(|a| a.fields_mut())
-            .flatten()
+            .flat_map(|a| a.fields_mut())
             .zip(new_types.drain(..))
         {
             let old_num_types = field.all_tys().count();

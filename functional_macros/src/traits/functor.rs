@@ -57,8 +57,8 @@ fn emit_base_case<'ast>(
             quote! { #ident #ty_generics },
         )
     } else {
-        let input_generics = generics_add_suffix(generics, "Input", &ctx, Behavior::KeepAll);
-        let output_generics = generics_add_suffix(generics, "Output", &ctx, Behavior::KeepAll);
+        let input_generics = generics_add_suffix(generics, "Input", ctx, Behavior::KeepAll);
+        let output_generics = generics_add_suffix(generics, "Output", ctx, Behavior::KeepAll);
 
         let all_generics = generics_merge(&input_generics, &output_generics);
 
@@ -101,6 +101,7 @@ impl BaseCaseEmitter for Emitter {
 }
 
 pub trait InductiveCaseEmitter {
+    #[allow(clippy::too_many_arguments)]
     fn inductive_case<'ast>(
         &self,
         container: &ANode<'ast>,
@@ -150,11 +151,11 @@ fn emit_inductive_case<'ast>(
         )
     } else {
         let container_input_generics_partial =
-            generics_add_suffix(container_generics, "Input", &inner_ctx, Behavior::OnlyCtx);
+            generics_add_suffix(container_generics, "Input", inner_ctx, Behavior::OnlyCtx);
         let container_input_generics_full =
-            generics_add_suffix(container_generics, "Input", &inner_ctx, Behavior::KeepAll);
+            generics_add_suffix(container_generics, "Input", inner_ctx, Behavior::KeepAll);
         let container_output_generics =
-            generics_add_suffix(container_generics, "Output", &inner_ctx, Behavior::KeepAll);
+            generics_add_suffix(container_generics, "Output", inner_ctx, Behavior::KeepAll);
 
         let all_generics = generics_merge(
             &container_input_generics_partial,
@@ -167,11 +168,11 @@ fn emit_inductive_case<'ast>(
 
         let inner_instantiation = inner.instantiation.iter().map(Deref::deref);
         let input_inner_instantiation =
-            instantiation_add_suffix(inner_instantiation.clone(), "Input", &inner_ctx)
+            instantiation_add_suffix(inner_instantiation.clone(), "Input", inner_ctx)
                 .collect::<Punctuated<_, Token![,]>>();
 
         let output_inner_instantiation =
-            instantiation_add_suffix(inner_instantiation, "Output", &inner_ctx)
+            instantiation_add_suffix(inner_instantiation, "Output", inner_ctx)
                 .collect::<Punctuated<_, Token![,]>>();
 
         emitter.inductive_case(
@@ -251,12 +252,10 @@ impl FieldEmitter for Emitter {
             } else {
                 quote! { #ident }
             }
+        } else if has_inner {
+            quote! { Functor::<#output_inner>::fmap_impl(#ident, f, how) }
         } else {
-            if has_inner {
-                quote! { Functor::<#output_inner>::fmap_impl(#ident, f, how) }
-            } else {
-                quote! { #ident }
-            }
+            quote! { #ident }
         }
     }
 }

@@ -37,13 +37,11 @@ pub fn analysis(f: FunctionDecl) -> Result<FunctionDecl, SemanticErrors> {
     let f = f.try_fmap(|raw_label: RawLabel| -> Result<_, SemanticErrors> {
         let (label, span) = raw_label.label;
         match labels.get(&label) {
-            Some((_, existing_span)) => {
-                return Err(Error::DuplicateLabel {
-                    label,
-                    first: *existing_span,
-                    second: span,
-                })?;
-            }
+            Some((_, existing_span)) => Err(Error::DuplicateLabel {
+                label,
+                first: *existing_span,
+                second: span,
+            })?,
             None => {
                 labels.insert(label.clone(), (label.clone(), span));
                 Ok(RawLabel {
@@ -59,10 +57,10 @@ pub fn analysis(f: FunctionDecl) -> Result<FunctionDecl, SemanticErrors> {
         if labels.contains_key(&goto_stmt.label.0) {
             Ok(goto_stmt)
         } else {
-            return Err(Error::MissingLabel {
+            Err(Error::MissingLabel {
                 label: goto_stmt.label.0,
                 span: goto_stmt.label.1,
-            })?;
+            })?
         }
     })?;
 

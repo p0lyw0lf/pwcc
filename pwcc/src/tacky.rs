@@ -148,11 +148,8 @@ impl Chompable for Val {
         match self {
             Self::Var(t) => t,
             src @ Val::Constant(_) => {
-                let dst = ctx.tf.next();
-                ctx.push(Instruction::Copy {
-                    src,
-                    dst: dst.clone(),
-                });
+                let dst = ctx.tf.next_temp();
+                ctx.push(Instruction::Copy { src, dst });
                 dst
             }
         }
@@ -291,7 +288,7 @@ impl Chompable for parser::Statement {
                     condition,
                     target: end.clone(),
                 });
-                let _ = body.chomp(ctx);
+                body.chomp(ctx);
                 ctx.push(Instruction::Label(end));
             }
             IfStmt(parser::IfStmt {
@@ -307,12 +304,12 @@ impl Chompable for parser::Statement {
                     condition,
                     target: else_label.clone(),
                 });
-                let _ = body.chomp(ctx);
+                body.chomp(ctx);
                 ctx.push(Instruction::Jump {
                     target: end.clone(),
                 });
                 ctx.push(Instruction::Label(else_label));
-                let _ = else_stmt.body.chomp(ctx);
+                else_stmt.body.chomp(ctx);
                 ctx.push(Instruction::Label(end));
             }
             SwitchStmt(switch_stmt) => {
@@ -330,7 +327,7 @@ impl Chompable for parser::Statement {
                 // Check all the present cases, in order
                 for (check, label) in labels {
                     if let Some(rhs) = check {
-                        let condition = ctx.tf.next();
+                        let condition = ctx.tf.next_temp();
                         ctx.push(Instruction::Binary {
                             src1: Val::Var(lhs),
                             op: BinaryOp::Equal,
@@ -470,7 +467,7 @@ impl Chompable for parser::Exp {
                 span: _span,
             } => {
                 let src = exp.chomp(ctx);
-                let dst = ctx.tf.next();
+                let dst = ctx.tf.next_temp();
                 use parser::PrefixOp::*;
                 let op = match op {
                     Minus(_) => UnaryOp::Negate,
@@ -519,7 +516,7 @@ impl Chompable for parser::Exp {
                 parser::Exp::Var { ident, .. } => {
                     let dst = ctx.tf.var(&ident);
                     let src = Val::Var(dst);
-                    let tmp = ctx.tf.next();
+                    let tmp = ctx.tf.next_temp();
 
                     ctx.push(Copy { src, dst: tmp });
 
@@ -576,26 +573,23 @@ impl Chompable for parser::Exp {
                     }
                 });
 
-                let dst = ctx.tf.next();
+                let dst = ctx.tf.next_temp();
                 let end_label = ctx.tf.next_label("end");
-                ctx.instructions.extend(
-                    [
-                        Copy {
-                            src: Val::Constant(if is_and { 1 } else { 0 }),
-                            dst: dst.clone(),
-                        },
-                        Jump {
-                            target: end_label.clone(),
-                        },
-                        Label(shortcut_label),
-                        Copy {
-                            src: Val::Constant(if is_and { 0 } else { 1 }),
-                            dst: dst.clone(),
-                        },
-                        Label(end_label),
-                    ]
-                    .into_iter(),
-                );
+                ctx.instructions.extend([
+                    Copy {
+                        src: Val::Constant(if is_and { 1 } else { 0 }),
+                        dst,
+                    },
+                    Jump {
+                        target: end_label.clone(),
+                    },
+                    Label(shortcut_label),
+                    Copy {
+                        src: Val::Constant(if is_and { 0 } else { 1 }),
+                        dst,
+                    },
+                    Label(end_label),
+                ]);
 
                 Val::Var(dst)
             }
@@ -607,7 +601,7 @@ impl Chompable for parser::Exp {
             } => {
                 let src1 = lhs.chomp(ctx);
                 let src2 = rhs.chomp(ctx);
-                let dst = ctx.tf.next();
+                let dst = ctx.tf.next_temp();
                 use parser::BinaryOp::*;
                 let op = match op {
                     Ampersand(_) => BinaryOp::BitAnd,
@@ -666,7 +660,7 @@ impl Chompable for parser::Exp {
                 span: _span,
             } => {
                 let condition = condition.chomp(ctx).chomp(ctx);
-                let result = ctx.tf.next();
+                let result = ctx.tf.next_temp();
                 let else_label = ctx.tf.next_label("else");
                 let end = ctx.tf.next_label("end");
 
@@ -715,7 +709,7 @@ impl<'a> TemporaryFactory<'a> {
         }
     }
 
-    pub fn next(&mut self) -> Temporary {
+    pub fn next_temp(&mut self) -> Temporary {
         let out = Temporary(self.tmp_i);
         self.tmp_i += 1;
         out
@@ -732,7 +726,7 @@ impl<'a> TemporaryFactory<'a> {
             return *existing;
         }
 
-        let out = self.next();
+        let out = self.next_temp();
         self.ident_to_i.insert(ident.to_string(), out);
         out
     }

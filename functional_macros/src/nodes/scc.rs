@@ -136,7 +136,7 @@ pub(crate) fn find_sccs<'ast>(nodes: Lattice<'ast>) -> StronglyConnectedComponen
                     None => {}
                     // Otherwise, if w has not yet been assigned a strongly connected component,
                     Some(existing_preorder)
-                        if self.node_to_index.get(next_node.ident()).is_none() =>
+                        if !self.node_to_index.contains_key(next_node.ident()) =>
                     {
                         // Repeatedly pop vertices from P until the top element of P has a preorder
                         // number less than or equal to the preorder number of w.

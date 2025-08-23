@@ -22,11 +22,11 @@ pub(super) fn check_operator_types(exp: Exp) -> Result<Exp, SemanticErrors> {
             if matches!(*exp, Exp::Var { .. }) {
                 Ok(Exp::Unary { op, exp, span })
             } else {
-                return Err(Error::InvalidUnaryOp {
+                Err(Error::InvalidUnaryOp {
                     op_span: op.span(),
                     op: format!("{}", printable(op)),
                     exp_span: exp.span(),
-                })?;
+                })?
             }
         }
         otherwise => Ok(otherwise),

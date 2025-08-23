@@ -35,19 +35,20 @@ impl<'ast, 'suffix, 'hashset> VisitMut for AddSuffix<'ast, 'suffix, 'hashset> {
     }
 
     fn visit_type_path_mut(&mut self, t: &mut syn::TypePath) {
-        if let Some(first) = t.path.segments.first_mut() {
-            if t.qself.is_none() && self.ctx.has_type(&first.ident) {
-                first.ident = Ident::new(
-                    &format!("{}{}", first.ident, self.suffix),
-                    first.ident.span(),
-                );
-            }
+        if let Some(first) = t.path.segments.first_mut()
+            && t.qself.is_none()
+            && self.ctx.has_type(&first.ident)
+        {
+            first.ident = Ident::new(
+                &format!("{}{}", first.ident, self.suffix),
+                first.ident.span(),
+            );
         }
         visit_mut::visit_type_path_mut(self, t);
     }
 
     fn visit_ident_mut(&mut self, i: &mut syn::Ident) {
-        if self.ctx.has_const(&i) {
+        if self.ctx.has_const(i) {
             *i = Ident::new(&format!("{}_{}", i, self.suffix.to_uppercase()), i.span());
         }
         visit_mut::visit_ident_mut(self, i);
@@ -119,7 +120,7 @@ pub fn generics_merge(a: &Generics, b: &Generics) -> Generics {
         .params
         .clone()
         .into_iter()
-        .chain(b.params.clone().into_iter())
+        .chain(b.params.clone())
         .collect();
     let where_clause = match (a.where_clause.as_ref(), b.where_clause.as_ref()) {
         (None, None) => None,
@@ -130,7 +131,7 @@ pub fn generics_merge(a: &Generics, b: &Generics) -> Generics {
                 .predicates
                 .clone()
                 .into_iter()
-                .chain(b_where.predicates.clone().into_iter())
+                .chain(b_where.predicates.clone())
                 .collect();
             Some(WhereClause {
                 where_token: <Token![where]>::default(),

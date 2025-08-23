@@ -36,6 +36,8 @@
           jq
           # For book tests
           python3
+          # For debugging
+          vscode-extensions.vadimcn.vscode-lldb.adapter
         ];
       in
       {

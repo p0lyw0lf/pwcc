@@ -6,6 +6,7 @@ macro_rules! expect_token {
                 None => Err(ParseError::MissingToken {
                     expected: $token$((<$ty as Default>::default().into()))?,
                 }),
+                #[allow(clippy::redundant_pattern)]
                 Some(($token$((v @ $pat))?, span)) => {
                     $span = $span.sconcat(span);
                     Ok(($(<$ty>::from(v), span)?))
@@ -30,6 +31,7 @@ macro_rules! try_parse {
         {
             $(
             let mut $iter = $ts.clone();
+            #[allow(clippy::redundant_closure_call)]
             if let Ok(out) = (|| -> Result<_, ParseError> $tt)() {
                 *$ts = $iter;
                 return Ok(out);
@@ -161,6 +163,7 @@ macro_rules! nodes {
         #[derive(Debug)]
         #[cfg_attr(test, derive(PartialEq))]
         $(#[$a_include()])?
+        #[allow(clippy::large_enum_variant)]
         pub enum $node {$(
             $($a_token(Span),)?
             $($a_subnode($a_subnode),)?

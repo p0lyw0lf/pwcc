@@ -1,8 +1,6 @@
 //! TODO: eventually, I want to have this test the span generation too. However, that's a bit
 //! tricky, so I am leaving everything in place for now.
 
-use crate::printer::printable;
-
 use super::*;
 use std::fmt::Debug;
 
@@ -559,7 +557,7 @@ fn binary_assignment_op() {
 #[test]
 fn trailing_comma() {
     let tokens = lex("f(a, b, c,)");
-    let iter = &mut Vec::from(tokens).into_iter();
+    let iter = &mut tokens.into_iter();
     let _ = Exp::from_raw_tokens(iter).expect("parse succeeds"); // because it can parse f as ident
     assert_eq!(iter.next(), Some(Token::OpenParen));
 }
@@ -567,7 +565,6 @@ fn trailing_comma() {
 #[test]
 fn trailing_comma_decl() {
     let tokens = lex("int ident(int a,) { return a; }");
-    let _ = FunctionDecl::from_raw_tokens(&mut Vec::from(tokens).into_iter())
-        .expect_err("parse did not fail");
+    let _ = FunctionDecl::from_raw_tokens(&mut tokens.into_iter()).expect_err("parse did not fail");
     // TODO: also test that error is "good" (currently it is not very helpful unfortunately...)
 }

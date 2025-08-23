@@ -239,7 +239,7 @@ fn for_each_ident(
 pub fn specialize(attrs: TokenStream, item: TokenStream) -> TokenStream {
     let iter = &mut attrs.into_iter();
     let magic = always!(syntax::ident(&mut TokenStream::new(), iter));
-    let _ = always!(syntax::punct(
+    let () = always!(syntax::punct(
         &mut TokenStream::new(),
         iter,
         &[

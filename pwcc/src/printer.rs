@@ -116,11 +116,8 @@ impl Display for Printable {
             };
 
         for token in self.0.iter() {
-            match token {
-                Token::CloseBrace => {
-                    newline(f, false, true)?;
-                }
-                _ => {}
+            if let Token::CloseBrace = token {
+                newline(f, false, true)?;
             };
 
             write!(f, "{token:#}")?;

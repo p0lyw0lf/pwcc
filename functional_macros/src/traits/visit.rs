@@ -128,7 +128,7 @@ impl<'ast> BodyEmitter<'ast> for Emitter<'_> {
         for field in variant.fields.iter() {
             let field_ident = &field.ident;
             for ty in field.tys.iter() {
-                let method = self.to_method(&ty.ident);
+                let method = self.to_method(ty.ident);
                 // It's a little strange, but it works! We do need something to go into wrapper
                 // types like Box and Option, so this is that.
                 out.append_all(quote! {

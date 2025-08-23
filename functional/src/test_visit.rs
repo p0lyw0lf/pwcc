@@ -56,7 +56,7 @@ impl<'ast> concrete::visit::Visit<'ast> for Collect {
     }
 }
 
-impl<'ast> concrete::visit_mut::VisitMut for AddOne {
+impl concrete::visit_mut::VisitMut for AddOne {
     fn visit_mut_c(&mut self, c: &mut concrete::C) {
         c.0 += 1;
         concrete::visit_mut::visit_mut_c(self, c);

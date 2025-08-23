@@ -158,15 +158,13 @@ impl FieldEmitter for Emitter {
             } else {
                 ident.into_token_stream()
             }
-        } else {
-            if has_inner {
-                quote! {
-                    // SAFETY: if we get here, we never encountered an error, so we must be init
-                    unsafe { #ident.assume_init() }
-                }
-            } else {
-                ident.into_token_stream()
+        } else if has_inner {
+            quote! {
+                // SAFETY: if we get here, we never encountered an error, so we must be init
+                unsafe { #ident.assume_init() }
             }
+        } else {
+            ident.into_token_stream()
         }
     }
 }

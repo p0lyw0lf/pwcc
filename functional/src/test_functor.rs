@@ -231,12 +231,12 @@ mod ast {
     #[test]
     fn functor_biplate() {
         let x = Function {
-            name: "main".into(),
+            name: "main",
             body: [Statement::<(), usize>::Return(Exp::Lit(42))].into(),
             output: None,
         };
         let x_expected = Function {
-            name: "main".into(),
+            name: "main",
             body: [Statement::Return(Exp::Lit(69))].into(),
             output: None,
         };
@@ -278,12 +278,12 @@ mod ast {
     #[test]
     fn try_functor_biplate() {
         let x = Function {
-            name: "main".into(),
+            name: "main",
             body: [Statement::<(), usize>::Return(Exp::Lit(42))].into(),
             output: None,
         };
         let x_expected = Function {
-            name: "main".into(),
+            name: "main",
             body: [Statement::Return(Exp::Lit(69))].into(),
             output: None,
         };

@@ -38,12 +38,14 @@ impl Display for Span {
     }
 }
 
+#[allow(clippy::from_over_into)]
 impl Into<miette::SourceSpan> for Span {
     fn into(self) -> miette::SourceSpan {
         (self.start, self.end - self.start).into()
     }
 }
 
+#[allow(clippy::from_over_into)]
 impl Into<miette::SourceSpan> for &Span {
     fn into(self) -> miette::SourceSpan {
         (*self).into()

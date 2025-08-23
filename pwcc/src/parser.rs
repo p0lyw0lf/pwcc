@@ -21,6 +21,7 @@ mod test;
 #[cfg(test)]
 mod test_errors;
 
+// TODO: I probably should make it so the enums are not so huge sometimes...
 nodes! {
     Program(*<functions: Vec<FunctionDecl>>);
     Block(*OpenBrace *<items: Vec<BlockItem>> *CloseBrace) [include];
@@ -550,7 +551,7 @@ impl FromTokens for Exp {
                         let span = span.sconcat(left.span()).sconcat(right.span());
                         left = Exp::Binary {
                             lhs: Box::new(left),
-                            op: op,
+                            op,
                             rhs: Box::new(right),
                             span,
                         };
@@ -561,7 +562,7 @@ impl FromTokens for Exp {
                         let span = span.sconcat(left.span()).sconcat(right.span());
                         left = Exp::Assignment {
                             lhs: Box::new(left),
-                            op: op,
+                            op,
                             rhs: Box::new(right),
                             span,
                         };

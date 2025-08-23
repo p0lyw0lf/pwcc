@@ -36,7 +36,7 @@ pub(super) fn labeling(mut function: FunctionDecl) -> Result<FunctionDecl, Seman
 
     labeler.visit_mut_function_decl(&mut function);
 
-    if labeler.errs.len() > 0 {
+    if !labeler.errs.is_empty() {
         Err(SemanticErrors(
             labeler.errs.into_iter().map(Into::into).collect(),
         ))

@@ -106,19 +106,19 @@ impl<'ast> GenericContext<'ast> {
         self.lifetimes.contains(i)
     }
     pub fn get_lifetime(&self, i: &Ident) -> Option<&'ast Ident> {
-        self.lifetimes.get(i).map(|x| *x)
+        self.lifetimes.get(i).cloned()
     }
     pub fn has_type(&self, i: &'ast Ident) -> bool {
         self.types.contains(i)
     }
     pub fn get_type(&self, i: &Ident) -> Option<&'ast Ident> {
-        self.types.get(i).map(|x| *x)
+        self.types.get(i).cloned()
     }
     pub fn has_const(&self, i: &'ast Ident) -> bool {
         self.consts.contains(i)
     }
     pub fn get_const(&self, i: &Ident) -> Option<&'ast Ident> {
-        self.consts.get(i).map(|x| *x)
+        self.consts.get(i).cloned()
     }
     pub fn intersects(&self, other: &GenericContext<'ast>) -> bool {
         !self.types.is_disjoint(&other.types)
@@ -167,12 +167,11 @@ impl<'ast, 'vec, 'outer> Visit<'vec> for Collect<'ast, 'outer> {
     }
 
     fn visit_type_path(&mut self, t: &'vec syn::TypePath) {
-        if t.qself.is_none() {
-            if let Some(ident) = t.path.get_ident() {
-                if let Some(ident) = self.parent_ctx.get_type(&ident) {
-                    self.ctx.types.insert(ident);
-                }
-            }
+        if t.qself.is_none()
+            && let Some(ident) = t.path.get_ident()
+            && let Some(ident) = self.parent_ctx.get_type(ident)
+        {
+            self.ctx.types.insert(ident);
         }
         visit::visit_type_path(self, t);
     }
@@ -345,8 +344,8 @@ pub struct AVariant<'ast> {
     pub fields: Vec<AField<'ast>>,
 }
 
-fn convert_variant<'nodes, 'ast>(
-    nodes: &'nodes BaseNodes<'ast>,
+fn convert_variant<'ast>(
+    nodes: &BaseNodes<'ast>,
     ident: &'ast Ident,
     ctx: &GenericContext<'ast>,
     fields: &'ast Fields,
@@ -437,41 +436,32 @@ impl<'ast> ANode<'ast> {
         match self {
             ANode::Struct(s) => &s.ctx,
             ANode::Enum(e) => &e.ctx,
-            ANode::Extra(_, ctx) => &ctx,
+            ANode::Extra(_, ctx) => ctx,
         }
     }
 
     pub fn fields(&self) -> Box<dyn Iterator<Item = &'_ AField<'ast>> + '_> {
         match self {
             ANode::Struct(s) => Box::new(s.data.fields.iter()),
-            ANode::Enum(s) => Box::new(
-                s.variants
-                    .iter()
-                    .map(|variant| variant.fields.iter())
-                    .flatten(),
-            ),
+            ANode::Enum(s) => Box::new(s.variants.iter().flat_map(|variant| variant.fields.iter())),
             ANode::Extra(_, _) => Box::new(core::iter::empty()),
         }
     }
 
     pub fn all_tys(&self) -> impl Iterator<Item = &'_ AType<'ast>> + '_ {
-        self.fields().map(|field| field.all_tys()).flatten()
+        self.fields().flat_map(|field| field.all_tys())
     }
 
     pub fn unrestricted_tys(&self) -> impl Iterator<Item = &'_ AType<'ast>> + '_ {
-        self.fields()
-            .map(|field| field.unrestricted_tys())
-            .flatten()
+        self.fields().flat_map(|field| field.unrestricted_tys())
     }
 
     pub fn restricted_tys(&self) -> impl Iterator<Item = &'_ AType<'ast>> + '_ {
-        self.fields()
-            .map(|field| field.restricted_tys.iter())
-            .flatten()
+        self.fields().flat_map(|field| field.restricted_tys.iter())
     }
 
     pub fn direct_tys(&self) -> impl Iterator<Item = &'_ AType<'ast>> + '_ {
-        self.fields().map(|field| field.tys.iter()).flatten()
+        self.fields().flat_map(|field| field.tys.iter())
     }
 
     pub fn fields_mut(&mut self) -> Box<dyn Iterator<Item = &'_ mut AField<'ast>> + '_> {
@@ -480,8 +470,7 @@ impl<'ast> ANode<'ast> {
             ANode::Enum(s) => Box::new(
                 s.variants
                     .iter_mut()
-                    .map(|variant| variant.fields.iter_mut())
-                    .flatten(),
+                    .flat_map(|variant| variant.fields.iter_mut()),
             ),
             ANode::Extra(_, _) => Box::new(core::iter::empty()),
         }
@@ -502,10 +491,7 @@ pub(crate) fn is_special_attr(attr: &Attribute) -> bool {
     }
 }
 
-fn convert_struct<'nodes, 'ast>(
-    nodes: &'nodes BaseNodes<'ast>,
-    item_struct: &'ast ItemStruct,
-) -> AStruct<'ast> {
+fn convert_struct<'ast>(nodes: &BaseNodes<'ast>, item_struct: &'ast ItemStruct) -> AStruct<'ast> {
     let ctx = generics_collect_context(&item_struct.generics);
     let data = convert_variant(nodes, &item_struct.ident, &ctx, &item_struct.fields);
 
@@ -558,7 +544,8 @@ pub fn make_nodes<'ast>(m: &'ast syn::ItemMod, extra_nodes: &'ast Vec<ExtraNode>
     base.visit_item_mod(m);
 
     // Pass 2: Annotate nodes with generic context data for their direct children.
-    let nodes = ANodes(
+    // For more complicated passes, see the `lattice` and `scc` modules.
+    ANodes(
         base.iter()
             .map(|(key, node)| {
                 (
@@ -573,10 +560,7 @@ pub fn make_nodes<'ast>(m: &'ast syn::ItemMod, extra_nodes: &'ast Vec<ExtraNode>
                 )
             })
             .collect(),
-    );
-
-    // For more complicated passes, see the `lattice` and `scc` modules.
-    nodes
+    )
 }
 
 #[cfg(test)]

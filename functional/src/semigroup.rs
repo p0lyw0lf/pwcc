@@ -21,7 +21,5 @@ impl<T: Semigroup> Semigroup for Option<T> {
 }
 
 impl Semigroup for () {
-    fn sconcat(self, _other: Self) -> Self {
-        ()
-    }
+    fn sconcat(self, _other: Self) -> Self {}
 }

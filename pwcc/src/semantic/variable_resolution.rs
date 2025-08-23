@@ -146,7 +146,7 @@ impl visit_mut::VisitMut for VariableResolution {
             },
             // Replace all instantiations of Var with their unique name as determined by the
             // declaration
-            Exp::Var { ident, span } => match self.variable_map.resolve(&ident) {
+            Exp::Var { ident, span } => match self.variable_map.resolve(ident) {
                 None => {
                     self.errs.push(
                         Error::UnresolvedVariable {
@@ -184,7 +184,7 @@ pub(super) fn resolve_variables(mut f: FunctionDecl) -> Result<FunctionDecl, Sem
 
     ctx.visit_mut_function_decl(&mut f);
 
-    if ctx.errs.len() > 0 {
+    if !ctx.errs.is_empty() {
         Err(SemanticErrors(ctx.errs))
     } else {
         Ok(f)

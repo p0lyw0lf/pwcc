@@ -14,6 +14,7 @@ use core::error::Error;
 use core::fmt::Display;
 
 #[derive(Debug)]
+#[allow(clippy::enum_variant_names)]
 pub enum ParseError {
     ExpectedKeyword {
         expected: String,
@@ -126,7 +127,7 @@ pub fn ident(out: &mut TokenStream, iter: &mut token_stream::IntoIter) -> ParseR
     let mut p = iter.clone();
     let i = match p.next()? {
         TokenTree::Ident(i) => i,
-        other => return Some(Err(ParseError::ExpectedIdent { actual: other }.into())),
+        other => return Some(Err(ParseError::ExpectedIdent { actual: other })),
     };
 
     *iter = p;

@@ -557,9 +557,16 @@ fn binary_assignment_op() {
 #[test]
 fn trailing_comma() {
     let tokens = lex("f(a, b, c,)");
+    let tokens = tokens
+        .into_iter()
+        .map(|token| (token, Span::empty()))
+        .collect::<Vec<_>>();
     let iter = &mut tokens.into_iter();
-    let _ = Exp::from_raw_tokens(iter).expect("parse succeeds"); // because it can parse f as ident
-    assert_eq!(iter.next(), Some(Token::OpenParen));
+    let _ = Exp::from_tokens(iter).expect("parse succeeds"); // because it can parse f as ident
+    assert_eq!(
+        Some(Token::OpenParen),
+        iter.clone().next().map(|(token, _)| token)
+    );
 }
 
 #[test]

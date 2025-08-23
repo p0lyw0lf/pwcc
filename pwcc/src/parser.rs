@@ -167,10 +167,17 @@ nodes! {
 fn parse_comma_delimited<T, I: Iterator<Item = (Token, Span)> + Clone>(
     ts: &mut I,
     mut f: impl FnMut(&mut I) -> Result<T, ParseError>,
-    mut at_end: impl FnMut(&Token) -> bool,
+    mut at_end: impl FnMut(Option<&Token>) -> bool,
 ) -> Result<Vec<T>, ParseError> {
     let mut iter = ts.clone();
     let mut args = Vec::new();
+
+    let peek = iter.clone().next().map(|(token, _)| token);
+    if at_end(peek.as_ref()) {
+        // Already at end, return empty list
+        return Ok(args);
+    }
+
     loop {
         args.push(f(&mut iter)?);
 
@@ -180,7 +187,7 @@ fn parse_comma_delimited<T, I: Iterator<Item = (Token, Span)> + Clone>(
                 // Parse the next argument
                 iter = peek_iter;
             }
-            Some((token, _)) if at_end(&token) => {
+            Some((ref token, _)) if at_end(Some(token)) => {
                 // Reached end of arguments
                 break;
             }
@@ -190,6 +197,9 @@ fn parse_comma_delimited<T, I: Iterator<Item = (Token, Span)> + Clone>(
                     actual: otherwise,
                     span,
                 });
+            }
+            None if at_end(None) => {
+                break;
             }
             None => {
                 return Err(ParseError::MissingToken {
@@ -225,7 +235,7 @@ impl FromTokens for DeclArgs {
                 *ts = iter;
                 Ok((ident, span))
             },
-            |token| matches!(token, Token::CloseParen),
+            |token| matches!(token, Some(Token::CloseParen)),
         )?;
 
         *ts = iter;
@@ -457,7 +467,7 @@ impl FromTokens for Exp {
                     let args = parse_comma_delimited(
                         &mut iter,
                         |ts| parse_exp(ts, Precedence::lowest()),
-                        |token| matches!(token, Token::CloseParen),
+                        |token| matches!(token, Some(Token::CloseParen)),
                     )?;
 
                     expect_token!(iter, span, CloseParen);

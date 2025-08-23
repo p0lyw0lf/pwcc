@@ -555,7 +555,7 @@ fn binary_assignment_op() {
 }
 
 #[test]
-fn trailing_comma() {
+fn trailing_comma_exp() {
     let tokens = lex("f(a, b, c,)");
     let tokens = tokens
         .into_iter()
@@ -574,4 +574,29 @@ fn trailing_comma_decl() {
     let tokens = lex("int ident(int a,) { return a; }");
     let _ = FunctionDecl::from_raw_tokens(&mut tokens.into_iter()).expect_err("parse did not fail");
     // TODO: also test that error is "good" (currently it is not very helpful unfortunately...)
+}
+
+#[test]
+fn empty_args_exp() {
+    assert_convertible(
+        "f()",
+        Exp::FunctionCall {
+            ident: ("f".to_string(), span),
+            args: vec![],
+            span,
+        },
+    );
+}
+
+#[test]
+fn empty_args_decl() {
+    assert_convertible(
+        "int f();",
+        FunctionDecl {
+            name: ("f".to_string(), span),
+            args: FunctionDeclArgs::DeclArgs(DeclArgs(vec![])),
+            body: FunctionBody::Semicolon(span),
+            span,
+        },
+    );
 }

@@ -7,6 +7,7 @@ DIR="$(dirname "$0")"
 FILES=()
 OPTIONS=()
 GCC_OPTIONS=()
+EXT=""
 INFO=0
 
 while [[ $# -gt 0 ]]; do
@@ -18,6 +19,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     -c)
       GCC_OPTIONS+=("$1")
+      EXT=".o"
       shift
       ;;
     -*)
@@ -79,11 +81,5 @@ process_file () {
 for file in "${FILES[@]}"; do
   process_file "${file}"
 done
-
-
-EXT=""
-if [[ "${#GCC_OPTIONS[@]}" -gt "0" ]]; then
-  EXT=".o"
-fi
 
 gcc "${GCC_OPTIONS[@]}" "${ASSEMBLIES[@]}" -o "${FILES[0]%.*}${EXT}"

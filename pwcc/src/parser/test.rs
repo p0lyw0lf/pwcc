@@ -480,7 +480,13 @@ fn function_decl_args() {
         "int incr(int x);",
         FunctionDecl {
             name: ("incr".to_string(), span),
-            args: FunctionDeclArgs::DeclArgs(DeclArgs(vec![("x".to_string(), span)])),
+            args: FunctionDeclArgs::DeclArgs(DeclArgs {
+                args: CommaDelimited(vec![DeclArg {
+                    name: ("x".to_string(), span),
+                    span,
+                }]),
+                span,
+            }),
             body: FunctionBody::Semicolon(span),
             span,
         },
@@ -490,10 +496,19 @@ fn function_decl_args() {
         "int cmp(int a,int b);",
         FunctionDecl {
             name: ("cmp".to_string(), span),
-            args: FunctionDeclArgs::DeclArgs(DeclArgs(vec![
-                ("a".to_string(), span),
-                ("b".to_string(), span),
-            ])),
+            args: FunctionDeclArgs::DeclArgs(DeclArgs {
+                args: CommaDelimited(vec![
+                    DeclArg {
+                        name: ("a".to_string(), span),
+                        span,
+                    },
+                    DeclArg {
+                        name: ("b".to_string(), span),
+                        span,
+                    },
+                ]),
+                span,
+            }),
             body: FunctionBody::Semicolon(span),
             span,
         },
@@ -506,7 +521,7 @@ fn function_call_args() {
         "incr(5)",
         Exp::FunctionCall {
             ident: ("incr".to_string(), span),
-            args: vec![Exp::Constant { constant: 5, span }],
+            args: CommaDelimited(vec![Exp::Constant { constant: 5, span }]),
             span,
         },
     );
@@ -515,10 +530,10 @@ fn function_call_args() {
         "cmp(4,10)",
         Exp::FunctionCall {
             ident: ("cmp".to_string(), span),
-            args: vec![
+            args: CommaDelimited(vec![
                 Exp::Constant { constant: 4, span },
                 Exp::Constant { constant: 10, span },
-            ],
+            ]),
             span,
         },
     );
@@ -582,7 +597,7 @@ fn empty_args_exp() {
         "f()",
         Exp::FunctionCall {
             ident: ("f".to_string(), span),
-            args: vec![],
+            args: CommaDelimited(vec![]),
             span,
         },
     );
@@ -594,7 +609,10 @@ fn empty_args_decl() {
         "int f();",
         FunctionDecl {
             name: ("f".to_string(), span),
-            args: FunctionDeclArgs::DeclArgs(DeclArgs(vec![])),
+            args: FunctionDeclArgs::DeclArgs(DeclArgs {
+                args: CommaDelimited(vec![]),
+                span,
+            }),
             body: FunctionBody::Semicolon(span),
             span,
         },

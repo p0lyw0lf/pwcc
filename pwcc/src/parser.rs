@@ -5,14 +5,16 @@ use core::iter::once as one;
 use functional::Semigroup;
 
 use crate::lexer::Token;
+use crate::parser::helpers::CommaDelimited;
 use crate::span::Span;
 use crate::span::Spanned;
 
 mod errors;
+mod helpers;
 mod macros;
 mod traits;
 
-pub use errors::ParseError;
+use errors::ParseError;
 use macros::*;
 pub use traits::*;
 
@@ -23,6 +25,18 @@ mod test_errors;
 
 // TODO: I probably should make it so the enums are not so huge sometimes...
 nodes! {
+    {
+        use crate::lexer::Token;
+        use crate::parser::errors::ParseError;
+        use crate::parser::helpers::CommaDelimited;
+        use crate::parser::macros::expect_token;
+        use crate::parser::macros::try_parse;
+        use crate::parser::traits::FromTokens;
+        use crate::parser::traits::ToTokens;
+        use crate::span::Span;
+        use crate::span::Spanned;
+        use std::collections::BTreeMap;
+    }
     Program(*<functions: Vec<FunctionDecl>>);
     Block(*OpenBrace *<items: Vec<BlockItem>> *CloseBrace) [include];
     BlockItem(+<Statement> +<Declaration>) [include];
@@ -73,7 +87,8 @@ nodes! {
             *<body: FunctionBody>
     ) [include];
     FunctionDeclArgs(+KeywordVoid +<DeclArgs>);
-    DeclArgs struct (pub Vec<(String, Span)>);
+    DeclArgs(*<args: CommaDelimited<DeclArg>>);
+    DeclArg(*KeywordInt *{name: Ident(_ = String)});
     FunctionBody(+Semicolon +<Block>);
     VarDecl(*KeywordInt *{name: Ident(_ = String)} *<init: Initializer>);
     Initializer(+<NoInit> +<ExpressionInit>);
@@ -145,7 +160,7 @@ nodes! {
         },
         FunctionCall {
             ident: (String, Span),
-            args: Vec<Exp>,
+            args: CommaDelimited<Exp>,
             span: Span,
         },
     } [include];
@@ -162,94 +177,6 @@ nodes! {
     // Maps the constant-evaluated case value (if applicable) to the case it should jump to if the
     // value matches.
     SwitchContext struct (pub BTreeMap<Option<isize>, (String, Span)>);
-}
-
-fn parse_comma_delimited<T, I: Iterator<Item = (Token, Span)> + Clone>(
-    ts: &mut I,
-    mut f: impl FnMut(&mut I) -> Result<T, ParseError>,
-    mut at_end: impl FnMut(Option<&Token>) -> bool,
-) -> Result<Vec<T>, ParseError> {
-    let mut iter = ts.clone();
-    let mut args = Vec::new();
-
-    let peek = iter.clone().next().map(|(token, _)| token);
-    if at_end(peek.as_ref()) {
-        // Already at end, return empty list
-        return Ok(args);
-    }
-
-    loop {
-        args.push(f(&mut iter)?);
-
-        let mut peek_iter = iter.clone();
-        match peek_iter.next() {
-            Some((Token::Comma, _)) => {
-                // Parse the next argument
-                iter = peek_iter;
-            }
-            Some((ref token, _)) if at_end(Some(token)) => {
-                // Reached end of arguments
-                break;
-            }
-            Some((otherwise, span)) => {
-                return Err(ParseError::UnexpectedToken {
-                    expected: Token::Comma,
-                    actual: otherwise,
-                    span,
-                });
-            }
-            None if at_end(None) => {
-                break;
-            }
-            None => {
-                return Err(ParseError::MissingToken {
-                    expected: Token::CloseParen,
-                });
-            }
-        }
-    }
-
-    *ts = iter;
-    Ok(args)
-}
-
-impl Spanned for DeclArgs {
-    fn span(&self) -> Span {
-        self.0.span()
-    }
-}
-
-impl FromTokens for DeclArgs {
-    fn from_tokens(
-        ts: &mut (impl Iterator<Item = (Token, Span)> + Clone),
-    ) -> Result<Self, ParseError> {
-        let mut iter = ts.clone();
-
-        let args = parse_comma_delimited(
-            &mut iter,
-            |ts| -> Result<(String, Span), ParseError> {
-                let mut span = Span::empty();
-                let mut iter = ts.clone();
-                expect_token!(iter, span, KeywordInt);
-                let (ident, _) = expect_token!(iter, span, Ident(_): String);
-                *ts = iter;
-                Ok((ident, span))
-            },
-            |token| matches!(token, Some(Token::CloseParen)),
-        )?;
-
-        *ts = iter;
-        Ok(DeclArgs(args))
-    }
-}
-
-impl ToTokens for DeclArgs {
-    fn to_tokens(self) -> impl Iterator<Item = Token> {
-        self.0
-            .into_iter()
-            .flat_map(|(arg, _)| [Token::Comma, Token::KeywordInt, Token::Ident(arg)])
-            .skip(1)
-    }
 }
 
 impl Spanned for LoopLabel {
@@ -463,13 +390,7 @@ impl FromTokens for Exp {
                     let ident = expect_token!(iter, span, Ident(_): String);
 
                     expect_token!(iter, span, OpenParen);
-
-                    let args = parse_comma_delimited(
-                        &mut iter,
-                        |ts| parse_exp(ts, Precedence::lowest()),
-                        |token| matches!(token, Some(Token::CloseParen)),
-                    )?;
-
+                    let args = CommaDelimited::<Exp>::from_tokens(&mut iter)?;
                     expect_token!(iter, span, CloseParen);
 
                     Ok(Exp::FunctionCall { ident, args, span })
@@ -678,11 +599,7 @@ impl ToTokens for Exp {
             } => Box::new(
                 one(Ident(ident.0))
                     .chain(one(OpenParen))
-                    .chain(
-                        args.into_iter()
-                            .flat_map(|arg| one(Comma).chain(arg.to_tokens()))
-                            .skip(1),
-                    )
+                    .chain(args.to_tokens())
                     .chain(one(CloseParen)),
             ),
         };

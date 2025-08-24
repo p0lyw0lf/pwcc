@@ -47,7 +47,9 @@ pub(super) use try_parse;
 /// able to generate all struct definitions at once if we want to use `#[functional_macros::ast]`
 /// on them.
 macro_rules! nodes {
-    ($(
+    (
+      { $(use $usepath:path;)* }
+      $(
         $node:ident
         $(
             // Multiplication: concatenate all nodes
@@ -82,15 +84,7 @@ macro_rules! nodes {
     ; )*) => {
         #[functional_macros::ast(typeclasses = [Functor, TryFunctor, VisitMut])]
         mod ast {
-        use std::collections::BTreeMap;
-        use crate::span::Span;
-        use crate::span::Spanned;
-        use crate::lexer::Token;
-        use crate::parser::FromTokens;
-        use crate::parser::ToTokens;
-        use crate::parser::ParseError;
-        use crate::parser::expect_token;
-        use crate::parser::try_parse;
+        $(use $usepath;)*
         $(
         $(
         // Multiplication

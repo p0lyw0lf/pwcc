@@ -12,13 +12,13 @@ use crate::parser::FunctionDecl;
 use crate::parser::Program;
 
 mod goto;
+mod ident_resolution;
 mod loop_labeling;
 mod operator_types;
 mod switch_case_collection;
-mod variable_resolution;
 
 pub fn validate(p: Program) -> Result<Program, SemanticErrors> {
-    let p = p.try_fmap(variable_resolution::resolve_variables)?;
+    let p = p.try_fmap(ident_resolution::resolve_idents)?;
     let p = p.try_fmap(|f: FunctionDecl| -> Result<_, SemanticErrors> {
         if matches!(f.body, FunctionBody::Semicolon(_)) {
             return Ok(f);
@@ -55,7 +55,7 @@ pub enum SemanticError {
     GotoError(#[from] goto::Error),
     #[error(transparent)]
     #[diagnostic(transparent)]
-    VariableResolutionError(#[from] variable_resolution::Error),
+    VariableResolutionError(#[from] ident_resolution::Error),
     #[error(transparent)]
     #[diagnostic(transparent)]
     LoopLabelingError(#[from] loop_labeling::Error),

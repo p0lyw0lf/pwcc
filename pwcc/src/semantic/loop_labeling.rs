@@ -81,7 +81,7 @@ macro_rules! label_loop {
     };
 }
 
-impl visit_mut::VisitMut for Labeler {
+impl VisitMut for Labeler {
     fn visit_mut_for_stmt(&mut self, for_stmt: &mut ForStmt) {
         label_loop!(self, for_stmt, visit_mut_for_stmt);
     }

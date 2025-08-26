@@ -16,9 +16,13 @@ mod ident_resolution;
 mod loop_labeling;
 mod operator_types;
 mod switch_case_collection;
+mod type_check;
+
+pub use type_check::SymbolTable;
 
 pub fn validate(p: Program) -> Result<Program, SemanticErrors> {
-    let p = p.try_fmap(ident_resolution::resolve_idents)?;
+    let p = ident_resolution::resolve_idents(p)?;
+    let (p, _symbol_table) = type_check::type_check(p)?;
     let p = p.try_fmap(|f: FunctionDecl| -> Result<_, SemanticErrors> {
         if matches!(f.body, FunctionBody::Semicolon(_)) {
             return Ok(f);
@@ -49,13 +53,16 @@ impl UniqueLabelFactory {
 pub enum SemanticError {
     #[error(transparent)]
     #[diagnostic(transparent)]
+    IdentResolutionError(#[from] ident_resolution::Error),
+    #[error(transparent)]
+    #[diagnostic(transparent)]
+    TypeCheckError(#[from] type_check::Error),
+    #[error(transparent)]
+    #[diagnostic(transparent)]
     OperandError(#[from] operator_types::Error),
     #[error(transparent)]
     #[diagnostic(transparent)]
     GotoError(#[from] goto::Error),
-    #[error(transparent)]
-    #[diagnostic(transparent)]
-    VariableResolutionError(#[from] ident_resolution::Error),
     #[error(transparent)]
     #[diagnostic(transparent)]
     LoopLabelingError(#[from] loop_labeling::Error),

@@ -179,6 +179,36 @@ nodes! {
     SwitchContext struct (pub BTreeMap<Option<isize>, (String, Span)>);
 }
 
+impl FunctionDeclArgs {
+    pub fn num_args(&self) -> usize {
+        match self {
+            FunctionDeclArgs::KeywordVoid(_) => 0,
+            FunctionDeclArgs::DeclArgs(DeclArgs { args, span: _ }) => args.0.len(),
+        }
+    }
+}
+
+impl IntoIterator for FunctionDeclArgs {
+    type Item = DeclArg;
+    type IntoIter = <Vec<Self::Item> as IntoIterator>::IntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        match self {
+            FunctionDeclArgs::KeywordVoid(_) => vec![].into_iter(),
+            FunctionDeclArgs::DeclArgs(DeclArgs { args, span: _ }) => args.0.into_iter(),
+        }
+    }
+}
+
+impl FunctionDeclArgs {
+    pub fn iter(&self) -> std::slice::Iter<'_, DeclArg> {
+        match self {
+            FunctionDeclArgs::KeywordVoid(_) => [].iter(),
+            FunctionDeclArgs::DeclArgs(DeclArgs { args, span: _ }) => args.0.iter(),
+        }
+    }
+}
+
 impl Spanned for LoopLabel {
     fn span(&self) -> Span {
         Span::empty()

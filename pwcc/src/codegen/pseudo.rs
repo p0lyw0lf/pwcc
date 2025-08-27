@@ -229,6 +229,7 @@ impl From<tacky::Instructions> for Instructions<State> {
                             .into_iter(),
                         ),
                         Label(identifier) => Box::new([Instruction::Label(identifier)].into_iter()),
+                        Call { .. } => todo!(),
                     };
                     out
                 })

@@ -11,7 +11,11 @@ pub struct Program {
 impl From<parser::Program> for Program {
     fn from(program: parser::Program) -> Self {
         Self {
-            functions: program.functions.into_iter().map(Into::into).collect(),
+            functions: program
+                .functions
+                .into_iter()
+                .filter_map(|decl| Function::try_from(decl).ok())
+                .collect(),
         }
     }
 }
@@ -22,16 +26,28 @@ pub struct Identifier(pub String);
 #[derive(Debug)]
 pub struct Function {
     pub name: Identifier,
+    pub args: Vec<Identifier>,
     pub body: Instructions,
 }
 
-impl From<parser::FunctionDecl> for Function {
-    fn from(function: parser::FunctionDecl) -> Self {
+impl TryFrom<parser::FunctionDecl> for Function {
+    type Error = ();
+    fn try_from(function: parser::FunctionDecl) -> Result<Self, Self::Error> {
+        let body = match function.body {
+            parser::FunctionBody::Block(block) => block,
+            parser::FunctionBody::Semicolon(_) => return Err(()),
+        };
         let name = Identifier(function.name.0);
-        Self {
-            body: Instructions::from_function(&name, todo!()),
+        let args = function
+            .args
+            .into_iter()
+            .map(|arg| Identifier(arg.name.0))
+            .collect::<Vec<_>>();
+        Ok(Self {
+            body: Instructions::from_function(&name, body),
             name,
-        }
+            args,
+        })
     }
 }
 
@@ -69,6 +85,11 @@ pub enum Instruction {
         target: Identifier,
     },
     Label(Identifier),
+    Call {
+        name: Identifier,
+        args: Vec<Val>,
+        dst: Temporary,
+    },
 }
 
 #[derive(Debug)]
@@ -162,20 +183,9 @@ impl Instructions {
         let tf = TemporaryFactory::new(identifier);
 
         let mut ctx = ChompContext { instructions, tf };
+        block.items.chomp(&mut ctx);
 
-        for block_item in block.items {
-            block_item.chomp(&mut ctx);
-        }
-
-        let mut instructions = ctx.instructions;
-
-        // See page 113; This will do nothing if the function is well-formed, and guarantees we
-        // exit in case there is undefined behavior.
-        instructions.push(Instruction::Return {
-            val: Val::Constant(0),
-        });
-
-        Self(instructions)
+        Self(ctx.instructions)
     }
 }
 
@@ -218,7 +228,7 @@ impl Chompable for parser::BlockItem {
         use parser::Declaration::*;
         match self {
             Declaration(VarDecl(decl)) => decl.chomp(ctx),
-            Declaration(FunctionDecl(_)) => todo!(),
+            Declaration(FunctionDecl(decl)) => decl.chomp(ctx),
             Statement(statement) => statement.chomp(ctx),
         }
     }
@@ -234,6 +244,25 @@ impl Chompable for parser::VarDecl {
                 let src = expression_init.exp.chomp(ctx);
                 let dst = ctx.tf.var(&self.name.0);
                 ctx.push(Instruction::Copy { src, dst });
+            }
+        }
+    }
+}
+
+impl Chompable for parser::FunctionDecl {
+    type Output = ();
+    fn chomp<'a>(self, ctx: &mut ChompContext<'a>) -> Self::Output {
+        use parser::FunctionBody::*;
+        match self.body {
+            Semicolon(_) => {}
+            Block(block) => {
+                block.items.chomp(ctx);
+
+                // See page 113; This will do nothing if the function is well-formed, and guarantees we
+                // exit in case there is undefined behavior.
+                ctx.push(Instruction::Return {
+                    val: Val::Constant(0),
+                });
             }
         }
     }
@@ -686,7 +715,25 @@ impl Chompable for parser::Exp {
 
                 Val::Var(result)
             }
-            parser::Exp::FunctionCall { .. } => todo!(),
+            parser::Exp::FunctionCall {
+                ident,
+                args,
+                span: _span,
+            } => {
+                let vals = args
+                    .0
+                    .into_iter()
+                    .map(|arg| arg.chomp(ctx))
+                    .collect::<Vec<_>>();
+                let dst = ctx.tf.next_temp();
+                ctx.push(Call {
+                    name: Identifier(ident.0),
+                    args: vals,
+                    dst,
+                });
+
+                Val::Var(dst)
+            }
         }
     }
 }

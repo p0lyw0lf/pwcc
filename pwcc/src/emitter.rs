@@ -51,6 +51,9 @@ impl Display for Instruction<hardware::Pass> {
             JmpCC(cc, label) => writeln!(f, "\tj{cc}\t.L{label}"),
             SetCC(cc, dst) => writeln!(f, "\tset{cc}\t{dst:1}"),
             Label(label) => writeln!(f, ".L{label}:"),
+            DeallocateStack { amount } => todo!(),
+            Push(operand) => todo!(),
+            Call(identifier) => todo!(),
         }
     }
 }
@@ -58,40 +61,40 @@ impl Display for Instruction<hardware::Pass> {
 impl Display for UnaryOp {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use UnaryOp::*;
-        match self {
-            Neg => write!(f, "negl"),
-            Not => write!(f, "notl"),
-        }
+        f.write_str(match self {
+            Neg => "negl",
+            Not => "notl",
+        })
     }
 }
 
 impl Display for BinaryOp {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use BinaryOp::*;
-        match self {
-            Add => write!(f, "addl"),
-            Sub => write!(f, "subl"),
-            Mult => write!(f, "imull"),
-            And => write!(f, "andl"),
-            Or => write!(f, "orl"),
-            Xor => write!(f, "xorl"),
-            SAL => write!(f, "sall"),
-            SAR => write!(f, "sarl"),
-        }
+        f.write_str(match self {
+            Add => "addl",
+            Sub => "subl",
+            Mult => "imull",
+            And => "andl",
+            Or => "orl",
+            Xor => "xorl",
+            SAL => "sall",
+            SAR => "sarl",
+        })
     }
 }
 
 impl Display for CondCode {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use CondCode::*;
-        match self {
-            E => write!(f, "e"),
-            NE => write!(f, "ne"),
-            G => write!(f, "g"),
-            GE => write!(f, "ge"),
-            L => write!(f, "l"),
-            LE => write!(f, "le"),
-        }
+        f.write_str(match self {
+            E => "e",
+            NE => "ne",
+            G => "g",
+            GE => "ge",
+            L => "l",
+            LE => "le",
+        })
     }
 }
 
@@ -118,23 +121,31 @@ impl Display for hardware::Location {
 impl Display for hardware::Reg {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use hardware::Reg::*;
-        if f.width() == Some(1) {
+        f.write_str(if f.width() == Some(1) {
             match self {
-                AX => write!(f, "%al"),
-                CX => write!(f, "%cl"),
-                DX => write!(f, "%dl"),
-                R10 => write!(f, "%r10b"),
-                R11 => write!(f, "%r11b"),
+                AX => "%al",
+                CX => "%cl",
+                DX => "%dl",
+                DI => "%dil",
+                SI => "%sil",
+                R8 => "%r8b",
+                R9 => "%r9b",
+                R10 => "%r10b",
+                R11 => "%r11b",
             }
         } else {
             match self {
-                AX => write!(f, "%eax"),
-                CX => write!(f, "%ecx"),
-                DX => write!(f, "%edx"),
-                R10 => write!(f, "%r10d"),
-                R11 => write!(f, "%r11d"),
+                AX => "%eax",
+                CX => "%ecx",
+                DX => "%edx",
+                DI => "%edi",
+                SI => "%esi",
+                R8 => "%r8d",
+                R9 => "%r9d",
+                R10 => "%r10d",
+                R11 => "%r11d",
             }
-        }
+        })
     }
 }
 

@@ -1,9 +1,14 @@
 use core::convert::From;
+use std::iter;
 
 use super::*;
 use crate::tacky;
 
+#[cfg(test)]
+mod test;
+
 #[derive(Debug)]
+#[cfg_attr(test, derive(PartialEq))]
 pub struct State;
 
 impl super::State for State {
@@ -11,10 +16,16 @@ impl super::State for State {
 }
 
 #[derive(Debug)]
+#[cfg_attr(test, derive(PartialEq))]
 pub enum Location {
     Pseudo(usize),
     Concrete(hardware::Location),
 }
+
+const ARG_REGISTERS: [hardware::Reg; 6] = {
+    use hardware::Reg::*;
+    [DI, SI, DX, CX, R8, R9]
+};
 
 impl From<tacky::Program> for Program<State> {
     fn from(program: tacky::Program) -> Self {
@@ -26,9 +37,28 @@ impl From<tacky::Program> for Program<State> {
 
 impl From<tacky::Function> for Function<State> {
     fn from(function: tacky::Function) -> Self {
+        let caller_args = ARG_REGISTERS
+            .iter()
+            .map(|reg| hardware::Location::Reg(*reg))
+            .chain(iter::successors(Some(16), |n| Some(n + 8)).map(hardware::Location::Stack))
+            .map(Location::Concrete)
+            .map(wrap::<State>)
+            .map(Operand::Location);
+
+        let preamble = function
+            .args
+            .into_iter()
+            .zip(caller_args)
+            .map(|(arg, loc)| Instruction::Mov {
+                src: loc,
+                dst: wrap(arg.into()),
+            });
+
+        let body: Instructions<State> = function.body.into();
+
         Self {
             name: function.name.0,
-            instructions: function.body.into(),
+            instructions: Instructions(preamble.chain(body.0).collect()),
         }
     }
 }
@@ -229,7 +259,63 @@ impl From<tacky::Instructions> for Instructions<State> {
                             .into_iter(),
                         ),
                         Label(identifier) => Box::new([Instruction::Label(identifier)].into_iter()),
-                        Call { .. } => todo!(),
+                        Call {
+                            name,
+                            mut args,
+                            dst,
+                        } => {
+                            let mut instructions = Vec::<Instruction<State>>::new();
+
+                            let stack_args = args
+                                .drain(std::cmp::max(args.len(), ARG_REGISTERS.len())..)
+                                .rev();
+                            let num_stack_args = stack_args.len();
+
+                            let stack_padding = (num_stack_args % 2) * 8;
+                            if stack_padding != 0 {
+                                instructions.push(Instruction::AllocateStack {
+                                    amount: stack_padding,
+                                });
+                            }
+
+                            for arg in stack_args {
+                                instructions.push(Instruction::Push(arg.into()));
+                            }
+
+                            let register_args = args.into_iter().zip(
+                                ARG_REGISTERS
+                                    .iter()
+                                    .map(|reg| hardware::Location::Reg(*reg)),
+                            );
+                            for (arg, reg) in register_args {
+                                instructions.push(Instruction::Mov {
+                                    src: arg.into(),
+                                    dst: wrap(Location::Concrete(reg)),
+                                });
+                            }
+
+                            instructions.push(Instruction::Call(name));
+
+                            let bytes_to_remove = 8 * num_stack_args + stack_padding;
+                            if bytes_to_remove != 0 {
+                                instructions.push(Instruction::DeallocateStack {
+                                    amount: bytes_to_remove,
+                                });
+                            }
+
+                            instructions.push(Instruction::Mov {
+                                // TODO: this is a very ugly way to say "%rax". I should probably
+                                // add more conversion helpers...
+                                // Maybe also want to simplify the conversion helpers somehow too?
+                                // There's a lot of ugliness elsewhere too ya
+                                src: Operand::Location(wrap(Location::Concrete(
+                                    hardware::Location::Reg(hardware::Reg::AX),
+                                ))),
+                                dst: wrap(dst.into()),
+                            });
+
+                            Box::new(instructions.into_iter())
+                        }
                     };
                     out
                 })

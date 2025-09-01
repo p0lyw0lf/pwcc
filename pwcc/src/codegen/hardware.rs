@@ -8,18 +8,28 @@ impl State for Pass {
 }
 
 #[derive(Debug, Clone)]
+#[cfg_attr(test, derive(PartialEq))]
 pub enum Location {
     Reg(Reg),
     Stack(usize),
 }
 
 #[derive(Debug, Copy, Clone)]
+#[cfg_attr(test, derive(PartialEq))]
 pub enum Reg {
     AX,
     CX,
     DX,
+    DI,
+    SI,
+    R8,
+    R9,
     R10,
     R11,
+}
+
+fn rax<S: State<Location = Location>>() -> super::Location<S> {
+    wrap(Location::Reg(Reg::AX))
 }
 
 fn rcx<S: State<Location = Location>>() -> super::Location<S> {
@@ -154,17 +164,30 @@ pub fn pass<S: State<Location = Location>>(instructions: Instructions<S>) -> Ins
                     Cmp {
                         left: left @ super::Location(Location::Stack(_)),
                         right: right @ Operand::Location(super::Location(Location::Stack(_))),
-                    } => {
-                        let i1: Instruction<Pass> = Mov {
-                            src: Operand::Location(left.identity()),
-                            dst: r10d(),
-                        };
-                        let i2: Instruction<Pass> = Cmp {
-                            left: r10d(),
-                            right: right.identity(),
-                        };
-                        Box::new([i1, i2].into_iter())
-                    }
+                    } => Box::new(
+                        [
+                            Mov {
+                                src: Operand::Location(left.identity()),
+                                dst: r10d(),
+                            },
+                            Cmp {
+                                left: r10d(),
+                                right: right.identity(),
+                            },
+                        ]
+                        .into_iter(),
+                    ),
+                    // Direct pushes of memory aren't allowed for alignment reasons
+                    Push(loc @ Operand::Location(super::Location(Location::Stack(_)))) => Box::new(
+                        [
+                            Mov {
+                                src: loc.identity(),
+                                dst: rax(),
+                            },
+                            Push(Operand::Location(rax())),
+                        ]
+                        .into_iter(),
+                    ),
                     other => Box::new([other.identity()].into_iter()),
                 }
             });

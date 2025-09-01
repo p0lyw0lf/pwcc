@@ -21,12 +21,13 @@ impl From<parser::Program> for Program {
 }
 
 #[derive(Debug, Clone)]
+#[cfg_attr(test, derive(PartialEq))]
 pub struct Identifier(pub String);
 
 #[derive(Debug)]
 pub struct Function {
     pub name: Identifier,
-    pub args: Vec<Identifier>,
+    pub args: Vec<Temporary>,
     pub body: Instructions,
 }
 
@@ -37,14 +38,17 @@ impl TryFrom<parser::FunctionDecl> for Function {
             parser::FunctionBody::Block(block) => block,
             parser::FunctionBody::Semicolon(_) => return Err(()),
         };
+
         let name = Identifier(function.name.0);
+        let mut tf = TemporaryFactory::new(&name);
         let args = function
             .args
             .into_iter()
-            .map(|arg| Identifier(arg.name.0))
+            .map(|arg| tf.var(&arg.name.0))
             .collect::<Vec<_>>();
+
         Ok(Self {
-            body: Instructions::from_function(&name, body),
+            body: Instructions::from_function(tf, body),
             name,
             args,
         })
@@ -178,10 +182,8 @@ impl Chompable for Val {
 }
 
 impl Instructions {
-    fn from_function(identifier: &Identifier, block: parser::Block) -> Self {
+    fn from_function(tf: TemporaryFactory, block: parser::Block) -> Self {
         let instructions = Vec::<Instruction>::new();
-        let tf = TemporaryFactory::new(identifier);
-
         let mut ctx = ChompContext { instructions, tf };
         block.items.chomp(&mut ctx);
 

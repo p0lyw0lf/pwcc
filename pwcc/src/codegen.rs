@@ -12,6 +12,10 @@ pub mod stack;
 
 /// A State represents an assembly AST, where the operands of certain functions are abstracted.
 pub trait State: Debug + Sized {
+    #[cfg(test)]
+    type Location: Debug + Sized + PartialEq;
+
+    #[cfg(not(test))]
     type Location: Debug + Sized;
 }
 
@@ -21,6 +25,7 @@ mod ast {
 
     /// Newtype needed to avoid "unconstrained type" errors
     #[derive(Debug)]
+    #[cfg_attr(test, derive(PartialEq))]
     #[include()]
     pub struct Location<S: State>(pub S::Location);
 
@@ -30,6 +35,7 @@ mod ast {
     }
 
     #[derive(Debug)]
+    #[cfg_attr(test, derive(PartialEq))]
     pub struct Function<S: State> {
         pub name: String,
         pub instructions: Instructions<S>,
@@ -38,10 +44,12 @@ mod ast {
     /// We separate this out into a newtype struct so that we can map over it as well as individual
     /// instructions.
     #[derive(Debug)]
+    #[cfg_attr(test, derive(PartialEq))]
     #[include()]
     pub struct Instructions<S: State>(pub Vec<Instruction<S>>);
 
     #[derive(Debug)]
+    #[cfg_attr(test, derive(PartialEq))]
     #[include()]
     pub enum Instruction<S: State> {
         Mov {
@@ -72,16 +80,23 @@ mod ast {
         AllocateStack {
             amount: usize,
         },
+        DeallocateStack {
+            amount: usize,
+        },
+        Push(Operand<S>),
+        Call(Identifier),
         Ret,
     }
 
     #[derive(Debug, Copy, Clone)]
+    #[cfg_attr(test, derive(PartialEq))]
     pub enum UnaryOp {
         Neg,
         Not,
     }
 
     #[derive(Debug, Copy, Clone)]
+    #[cfg_attr(test, derive(PartialEq))]
     pub enum BinaryOp {
         Add,
         Sub,
@@ -94,6 +109,7 @@ mod ast {
     }
 
     #[derive(Debug, Copy, Clone)]
+    #[cfg_attr(test, derive(PartialEq))]
     pub enum CondCode {
         E,
         NE,
@@ -104,6 +120,7 @@ mod ast {
     }
 
     #[derive(Debug)]
+    #[cfg_attr(test, derive(PartialEq))]
     pub enum Operand<S: State> {
         Imm(isize),
         Location(Location<S>),

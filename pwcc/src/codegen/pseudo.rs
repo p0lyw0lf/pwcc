@@ -267,7 +267,7 @@ impl From<tacky::Instructions> for Instructions<State> {
                             let mut instructions = Vec::<Instruction<State>>::new();
 
                             let stack_args = args
-                                .drain(std::cmp::max(args.len(), ARG_REGISTERS.len())..)
+                                .drain(std::cmp::min(args.len(), ARG_REGISTERS.len())..)
                                 .rev();
                             let num_stack_args = stack_args.len();
 

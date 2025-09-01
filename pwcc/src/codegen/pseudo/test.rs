@@ -56,7 +56,28 @@ fn function_with_call() {
     assert_eq!(
         Function {
             name: "function_with_call".to_string(),
-            instructions: Instructions(vec![]),
+            instructions: Instructions(vec![
+                Instruction::Mov {
+                    src: Operand::Imm(2),
+                    dst: Location(Location::Concrete(hardware::Location::Reg(
+                        hardware::Reg::DI
+                    )))
+                },
+                Instruction::Call(Identifier("called_function".to_string())),
+                Instruction::Mov {
+                    src: Operand::Location(Location(Location::Concrete(hardware::Location::Reg(
+                        hardware::Reg::AX
+                    )))),
+                    dst: Location(Location::Pseudo(0))
+                },
+                Instruction::Mov {
+                    src: Operand::Location(Location(Location::Pseudo(0))),
+                    dst: Location(Location::Concrete(hardware::Location::Reg(
+                        hardware::Reg::AX
+                    )))
+                },
+                Instruction::Ret
+            ]),
         },
         f
     );

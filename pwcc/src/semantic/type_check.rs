@@ -51,6 +51,13 @@ impl SymbolTable {
     pub fn get_symbol(&self, name: &str) -> Option<&Declaration> {
         self.0.get(name)
     }
+
+    pub fn is_internal_symbol(&self, name: &str) -> bool {
+        match self.get_symbol(name) {
+            Some(Declaration { defined, .. }) => *defined,
+            None => false,
+        }
+    }
 }
 
 #[derive(Error, Diagnostic, Debug)]

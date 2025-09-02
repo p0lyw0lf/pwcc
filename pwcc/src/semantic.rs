@@ -20,9 +20,9 @@ mod type_check;
 
 pub use type_check::SymbolTable;
 
-pub fn validate(p: Program) -> Result<Program, SemanticErrors> {
+pub fn validate(p: Program) -> Result<(Program, SymbolTable), SemanticErrors> {
     let p = ident_resolution::resolve_idents(p)?;
-    let (p, _symbol_table) = type_check::type_check(p)?;
+    let (p, symbol_table) = type_check::type_check(p)?;
     let p = p.try_fmap(|f: FunctionDecl| -> Result<_, SemanticErrors> {
         if matches!(f.body, FunctionBody::Semicolon(_)) {
             return Ok(f);
@@ -33,7 +33,7 @@ pub fn validate(p: Program) -> Result<Program, SemanticErrors> {
         let f = f.try_fmap(switch_case_collection::collect)?;
         Ok(f)
     })?;
-    Ok(p)
+    Ok((p, symbol_table))
 }
 
 #[derive(Default)]

@@ -1,6 +1,5 @@
 use std::env;
 use std::fs;
-use std::io::Write;
 use std::path::PathBuf;
 use std::str::FromStr;
 
@@ -11,7 +10,7 @@ use miette::WrapErr;
 use miette::diagnostic;
 
 use functional::Functor;
-use pwcc::{codegen, lexer, parser, printer, semantic, tacky};
+use pwcc::{codegen, emitter, lexer, parser, printer, semantic, tacky};
 
 mod stages;
 use crate::stages::Stages;
@@ -100,7 +99,7 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    let tree =
+    let (tree, symbol_table) =
         semantic::validate(tree).map_err(|e| Report::from(e).with_source_code(source.clone()))?;
 
     if stage == Validate {
@@ -141,7 +140,7 @@ fn main() -> Result<()> {
         .into_diagnostic()
         .wrap_err("Error opening output file")?;
 
-    write!(output, "{code}")
+    emitter::emit(&mut output, &code, &symbol_table)
         .into_diagnostic()
         .wrap_err("Error writing to output file")?;
 

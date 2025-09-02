@@ -147,9 +147,10 @@ impl Display for CondCode {
 impl Display for Operand<hardware::Pass> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use Operand::*;
+        let w = f.width().unwrap_or(4);
         match self {
             Imm(i) => write!(f, "${i}"),
-            Location(l) => write!(f, "{l}"),
+            Location(l) => write!(f, "{:w$}", l),
         }
     }
 }
@@ -157,8 +158,9 @@ impl Display for Operand<hardware::Pass> {
 impl Display for hardware::Location {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use hardware::Location::*;
+        let w = f.width().unwrap_or(4);
         match self {
-            Reg(reg) => write!(f, "{reg:4}"),
+            Reg(reg) => write!(f, "{:w$}", reg),
             Stack(i) => write!(f, "-{i}(%rbp)"),
         }
     }

@@ -35,7 +35,7 @@ impl TryFrom<parser::FunctionDecl> for Function {
     type Error = ();
     fn try_from(function: parser::FunctionDecl) -> Result<Self, Self::Error> {
         let body = match function.body {
-            parser::FunctionBody::Block(block) => block,
+            block @ parser::FunctionBody::Block(_) => block,
             parser::FunctionBody::Semicolon(_) => return Err(()),
         };
 
@@ -182,10 +182,10 @@ impl Chompable for Val {
 }
 
 impl Instructions {
-    fn from_function(tf: TemporaryFactory, block: parser::Block) -> Self {
+    fn from_function(tf: TemporaryFactory, body: parser::FunctionBody) -> Self {
         let instructions = Vec::<Instruction>::new();
         let mut ctx = ChompContext { instructions, tf };
-        block.items.chomp(&mut ctx);
+        body.chomp(&mut ctx);
 
         Self(ctx.instructions)
     }
@@ -230,7 +230,7 @@ impl Chompable for parser::BlockItem {
         use parser::Declaration::*;
         match self {
             Declaration(VarDecl(decl)) => decl.chomp(ctx),
-            Declaration(FunctionDecl(decl)) => decl.chomp(ctx),
+            Declaration(FunctionDecl(decl)) => decl.body.chomp(ctx),
             Statement(statement) => statement.chomp(ctx),
         }
     }
@@ -251,11 +251,11 @@ impl Chompable for parser::VarDecl {
     }
 }
 
-impl Chompable for parser::FunctionDecl {
+impl Chompable for parser::FunctionBody {
     type Output = ();
     fn chomp<'a>(self, ctx: &mut ChompContext<'a>) -> Self::Output {
         use parser::FunctionBody::*;
-        match self.body {
+        match self {
             Semicolon(_) => {}
             Block(block) => {
                 block.items.chomp(ctx);

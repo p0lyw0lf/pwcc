@@ -18,6 +18,7 @@ impl super::State for State {
 #[derive(Debug)]
 #[cfg_attr(test, derive(PartialEq))]
 pub enum Location {
+    /// offset is the virtual register representing this location
     Pseudo(usize),
     Concrete(hardware::Location),
 }

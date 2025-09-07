@@ -161,7 +161,7 @@ impl Display for hardware::Location {
         let w = f.width().unwrap_or(4);
         match self {
             Reg(reg) => write!(f, "{:w$}", reg),
-            Stack(i) => write!(f, "-{i}(%rbp)"),
+            Stack(i) => write!(f, "{i}(%rbp)"),
         }
     }
 }

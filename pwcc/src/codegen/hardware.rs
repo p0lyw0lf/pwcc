@@ -11,7 +11,8 @@ impl State for Pass {
 #[cfg_attr(test, derive(PartialEq))]
 pub enum Location {
     Reg(Reg),
-    Stack(usize),
+    /// offset is relative to %rbp
+    Stack(isize),
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -46,12 +47,12 @@ fn r11d<S: State<Location = Location>>() -> super::Location<S> {
 
 pub fn pass<S: State<Location = Location>>(instructions: Instructions<S>) -> Instructions<Pass> {
     fn count_stack_space<S: State<Location = Location>>(
-        prev_max: usize,
+        prev_max: isize,
         l: &super::Location<S>,
-    ) -> usize {
+    ) -> isize {
         match l.as_ref() {
             Location::Reg(_) => prev_max,
-            Location::Stack(s) => core::cmp::max(*s, prev_max),
+            Location::Stack(s) => core::cmp::max(-*s, prev_max),
         }
     }
     let max_stack_addr = instructions.foldl(count_stack_space, 0);
@@ -194,7 +195,7 @@ pub fn pass<S: State<Location = Location>>(instructions: Instructions<S>) -> Ins
 
     Instructions(
         core::iter::once(Instruction::AllocateStack {
-            amount: max_stack_addr,
+            amount: max_stack_addr.try_into().unwrap(),
         })
         .chain(instructions)
         .collect(),

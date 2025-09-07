@@ -12,9 +12,7 @@ pub fn pass<S: State<Location = pseudo::Location>>(
 ) -> super::Location<Pass> {
     use pseudo::Location::*;
     wrap(match loc.inner() {
-        Pseudo(i) => hardware::Location::Stack(
-            -std::convert::TryInto::<isize>::try_into(4 * (i + 1)).unwrap(),
-        ),
+        Pseudo(i) => hardware::Location::Stack(-isize::try_from(4 * (i + 1)).unwrap()),
         Concrete(c) => c,
     })
 }

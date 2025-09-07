@@ -46,16 +46,21 @@ fn r11d<S: State<Location = Location>>() -> super::Location<S> {
 }
 
 pub fn pass<S: State<Location = Location>>(instructions: Instructions<S>) -> Instructions<Pass> {
-    fn count_stack_space<S: State<Location = Location>>(
-        prev_max: isize,
+    fn min_stack_addr<S: State<Location = Location>>(
+        prev_min: isize,
         l: &super::Location<S>,
     ) -> isize {
         match l.as_ref() {
-            Location::Reg(_) => prev_max,
-            Location::Stack(s) => core::cmp::max(-*s, prev_max),
+            Location::Reg(_) => prev_min,
+            Location::Stack(s) => core::cmp::min(*s, prev_min),
         }
     }
-    let max_stack_addr = instructions.foldl(count_stack_space, 0);
+    let min_stack_addr = instructions.foldl(min_stack_addr, 0);
+    let required_stack_space = usize::try_from(-min_stack_addr)
+        .unwrap()
+        // Allocate stack space in multiples of 16 so that the stack is always aligned when we make
+        // another function call.
+        .next_multiple_of(16);
 
     let instructions =
         instructions
@@ -195,7 +200,7 @@ pub fn pass<S: State<Location = Location>>(instructions: Instructions<S>) -> Ins
 
     Instructions(
         core::iter::once(Instruction::AllocateStack {
-            amount: max_stack_addr.try_into().unwrap(),
+            amount: required_stack_space,
         })
         .chain(instructions)
         .collect(),

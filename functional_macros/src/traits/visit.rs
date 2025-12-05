@@ -55,24 +55,72 @@ impl<'a> Emitter<'a> {
 
     /// Given the set of nodes, emits a definition for the Visit trait.
     fn emit_trait<'ast>(&self, nodes: &Lattice<'ast>) -> TokenStream2 {
-        let mut inner = TokenStream2::new();
+        let mut body = TokenStream2::new();
         let ref_ty = &self.ref_ty;
 
         for node in nodes.values() {
             let ident = &node.ident();
             let method = self.to_method(ident);
 
-            inner.append_all(quote! {
+            body.append_all(quote! {
                 fn #method(&mut self, node: #ref_ty #ident) {
                     #method(self, node)
                 }
             });
         }
 
+        if self.has_lifetime {
+            body.append_all(self.emit_trait_helper_chain(nodes));
+        }
+
         let trait_name = self.trait_def();
         quote! {
             pub trait #trait_name {
-                #inner
+                #body
+            }
+        }
+    }
+
+    /// Given the set of nodes, emit a helper function that allows for chaining of different
+    /// visitors.
+    fn emit_trait_helper_chain<'ast>(&self, nodes: &Lattice<'ast>) -> TokenStream2 {
+        let mut body = TokenStream2::new();
+        let ref_ty = &self.ref_ty;
+
+        for node in nodes.values() {
+            let ident = &node.ident();
+            let method = self.to_method(ident);
+            body.append_all(quote! {
+                fn #method(&mut self, node: #ref_ty #ident) {
+                    self.first.#method(node);
+                    self.second.#method(node);
+                }
+            });
+        }
+
+        let trait_name = self.trait_def();
+        quote! {
+            fn chain<FunctionalMacros: #trait_name>(self, other: FunctionalMacros) -> impl #trait_name
+            where
+                Self: Sized,
+            {
+                struct FunctionalMacrosVisitChain<A, B> {
+                    first: A,
+                    second: B,
+                }
+
+                impl<'ast, FunctionalMacrosA, FunctionalMacrosB> #trait_name for FunctionalMacrosVisitChain<FunctionalMacrosA, FunctionalMacrosB>
+                where
+                    FunctionalMacrosA: #trait_name,
+                    FunctionalMacrosB: #trait_name,
+                {
+                    #body
+                }
+
+                FunctionalMacrosVisitChain {
+                    first: self,
+                    second: other,
+                }
             }
         }
     }

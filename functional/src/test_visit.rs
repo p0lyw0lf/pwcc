@@ -1,7 +1,10 @@
+use std::{cell::RefCell, rc::Rc};
+
 use crate as functional;
 use functional_macros::ast;
 
-struct Collect(Vec<i32>);
+#[derive(Clone)]
+struct Collect(Rc<RefCell<Vec<i32>>>);
 struct AddOne;
 
 #[ast(typeclasses = [Visit, VisitMut])]
@@ -30,9 +33,10 @@ mod concrete {
     fn test_visit() {
         use visit::Visit;
 
-        let mut cs = Collect(vec![]);
+        let mut cs = Collect::default();
         cs.visit_a(&example());
-        assert_eq!(cs.0, &[6, 9]);
+        let out = Rc::into_inner(cs.0).unwrap().into_inner();
+        assert_eq!(&out, &[6, 9]);
     }
 
     #[test]
@@ -47,11 +51,34 @@ mod concrete {
         AddOne.visit_mut_a(&mut x_actual);
         assert_eq!(x_expected, x_actual);
     }
+
+    #[test]
+    fn test_visit_chain() {
+        use visit::Visit;
+
+        let cs1 = Collect::default();
+        let cs2 = Collect::default();
+        {
+            let e = example();
+            let mut cs = cs1.clone().chain(cs2.clone());
+            cs.visit_a(&e);
+        }
+        let out1 = Rc::into_inner(cs1.0).unwrap().into_inner();
+        let out2 = Rc::into_inner(cs2.0).unwrap().into_inner();
+        assert_eq!(&out1, &[6, 9]);
+        assert_eq!(&out2, &[6, 9]);
+    }
+}
+
+impl Default for Collect {
+    fn default() -> Self {
+        Self(Rc::new(RefCell::new(Vec::new())))
+    }
 }
 
 impl<'ast> concrete::visit::Visit<'ast> for Collect {
     fn visit_c(&mut self, c: &'ast concrete::C) {
-        self.0.push(c.0);
+        self.0.borrow_mut().push(c.0);
         concrete::visit::visit_c(self, c);
     }
 }
@@ -94,9 +121,10 @@ mod recursive {
     #[test]
     fn test_visit() {
         use visit::Visit;
-        let mut is = Collect(vec![]);
+        let mut is = Collect::default();
         is.visit_tree(&example());
-        assert_eq!(is.0, &[2, 1, 3]);
+        let out = Rc::into_inner(is.0).unwrap().into_inner();
+        assert_eq!(out, &[2, 1, 3]);
     }
 
     #[test]
@@ -124,7 +152,7 @@ mod recursive {
 
 impl<'ast> recursive::visit::Visit<'ast> for Collect {
     fn visit_tree(&mut self, node: &'ast recursive::Tree) {
-        self.0.push(node.val);
+        self.0.borrow_mut().push(node.val);
         recursive::visit::visit_tree(self, node);
     }
 }

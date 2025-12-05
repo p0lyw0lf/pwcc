@@ -23,3 +23,9 @@ impl<T: Semigroup> Semigroup for Option<T> {
 impl Semigroup for () {
     fn sconcat(self, _other: Self) -> Self {}
 }
+
+impl<T: Semigroup> Semigroup for Box<T> {
+    fn sconcat(self, other: Self) -> Self {
+        Box::new(T::sconcat(*self, *other))
+    }
+}

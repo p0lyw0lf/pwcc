@@ -142,6 +142,7 @@ impl<'a> Emitter<'a> {
         for node in nodes.values() {
             let ident = &node.ident();
             let method = self.to_method(ident);
+            let (pre, post) = self.to_methods(ident);
 
             let body = self.emit_body(quote! { node }, node, &());
 
@@ -155,7 +156,10 @@ impl<'a> Emitter<'a> {
                     {
                         #body
                     }
-                    inner(self, node)
+
+                    self.#pre(node);
+                    inner(self, node);
+                    self.#post(node);
                 }
             });
         }

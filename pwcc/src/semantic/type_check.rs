@@ -5,11 +5,10 @@ use miette::Diagnostic;
 use thiserror::Error;
 
 use crate::parser::Exp;
-use crate::parser::Program;
 use crate::parser::visit_mut::VisitMut;
-use crate::parser::visit_mut::VisitMutExt;
 use crate::semantic::SemanticError;
 use crate::semantic::SemanticErrors;
+use crate::semantic::ToErrors;
 use crate::span::Span;
 
 #[derive(PartialEq, Debug, Clone)]
@@ -100,9 +99,19 @@ pub enum Error {
 }
 
 #[derive(Default)]
-struct TypeChecker {
-    symbol_table: SymbolTable,
+pub(super) struct TypeChecker {
+    pub symbol_table: SymbolTable,
     errs: Vec<SemanticError>,
+}
+
+pub(super) fn type_check() -> TypeChecker {
+    TypeChecker::default()
+}
+
+impl ToErrors for TypeChecker {
+    fn to_errors(self) -> SemanticErrors {
+        SemanticErrors(self.errs)
+    }
 }
 
 impl VisitMut for TypeChecker {
@@ -243,17 +252,5 @@ impl VisitMut for TypeChecker {
             }
             _ => {}
         }
-    }
-}
-
-pub(super) fn type_check(mut p: Program) -> Result<(Program, SymbolTable), SemanticErrors> {
-    let mut checker = TypeChecker::default();
-
-    checker.visit_mut_program(&mut p);
-
-    if !checker.errs.is_empty() {
-        Err(SemanticErrors(checker.errs))
-    } else {
-        Ok((p, checker.symbol_table))
     }
 }

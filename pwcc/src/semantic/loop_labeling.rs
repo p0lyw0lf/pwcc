@@ -5,13 +5,12 @@ use crate::parser::BreakStmt;
 use crate::parser::ContinueStmt;
 use crate::parser::DoWhileStmt;
 use crate::parser::ForStmt;
-use crate::parser::FunctionDecl;
 use crate::parser::LoopLabel;
 use crate::parser::SwitchStmt;
 use crate::parser::WhileStmt;
 use crate::parser::visit_mut::VisitMut;
-use crate::parser::visit_mut::VisitMutExt;
 use crate::semantic::SemanticErrors;
+use crate::semantic::ToErrors;
 use crate::semantic::UniqueLabelFactory;
 use crate::span::Span;
 use crate::span::Spanned;
@@ -25,23 +24,13 @@ pub enum Error {
     ContinueOutsideLoop(#[label("here")] Span),
 }
 
-pub(super) fn labeling(mut function: FunctionDecl) -> Result<FunctionDecl, SemanticErrors> {
-    let mut labeler = Labeler {
-        function: function.name.0.clone(),
+pub(super) fn labeling(function: &str) -> impl VisitMut + ToErrors {
+    Labeler {
+        function: function.to_string(),
         break_stack: Default::default(),
         continue_stack: Default::default(),
         factory: UniqueLabelFactory::default(),
         errs: Default::default(),
-    };
-
-    labeler.visit_mut_function_decl(&mut function);
-
-    if !labeler.errs.is_empty() {
-        Err(SemanticErrors(
-            labeler.errs.into_iter().map(Into::into).collect(),
-        ))
-    } else {
-        Ok(function)
     }
 }
 
@@ -55,6 +44,12 @@ struct Labeler {
     factory: UniqueLabelFactory,
 
     errs: Vec<Error>,
+}
+
+impl ToErrors for Labeler {
+    fn to_errors(self) -> SemanticErrors {
+        SemanticErrors(self.errs.into_iter().map(Into::into).collect())
+    }
 }
 
 impl Labeler {

@@ -172,7 +172,7 @@ impl<'a> Emitter<'a> {
     fn emit_extension_chain<'ast>(&self, nodes: &Lattice<'ast>) -> (TokenStream2, TokenStream2) {
         let trait_name = self.trait_name();
         let def = quote! {
-            fn chain(self, other: impl #trait_name) -> impl #trait_name
+            fn chain<FunctionalMacros2: #trait_name>(self, other: FunctionalMacros2) -> impl #trait_name + Into<(Self, FunctionalMacros2)>
             where
                 Self: Sized;
         };
@@ -196,7 +196,7 @@ impl<'a> Emitter<'a> {
         }
 
         let r#impl = quote! {
-            fn chain(self, other: impl #trait_name) -> impl #trait_name
+            fn chain<FunctionalMacros2: #trait_name>(self, other: FunctionalMacros2) -> impl #trait_name + Into<(Self, FunctionalMacros2)>
             where
                 Self: Sized,
             {
@@ -211,6 +211,12 @@ impl<'a> Emitter<'a> {
                     FunctionalMacrosB: #trait_name,
                 {
                     #body
+                }
+
+                impl<FunctionalMacrosA, FunctionalMacrosB> Into<(FunctionalMacrosA, FunctionalMacrosB)> for FunctionalMacrosVisitChain<FunctionalMacrosA, FunctionalMacrosB> {
+                    fn into(self) -> (FunctionalMacrosA, FunctionalMacrosB) {
+                        (self.first, self.second)
+                    }
                 }
 
                 FunctionalMacrosVisitChain {

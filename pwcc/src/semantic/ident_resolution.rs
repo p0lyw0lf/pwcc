@@ -9,12 +9,11 @@ use crate::parser::Exp;
 use crate::parser::ForStmt;
 use crate::parser::FunctionBody;
 use crate::parser::FunctionDecl;
-use crate::parser::Program;
 use crate::parser::VarDecl;
 use crate::parser::visit_mut::VisitMut;
-use crate::parser::visit_mut::VisitMutExt;
 use crate::semantic::SemanticError;
 use crate::semantic::SemanticErrors;
+use crate::semantic::ToErrors;
 use crate::semantic::UniqueLabelFactory;
 use crate::span::Span;
 use crate::span::Spanned;
@@ -42,6 +41,10 @@ pub enum Error {
 
     #[error("Nested function definitions are not allowed")]
     LocalFunctionDefinition(#[label] Span),
+}
+
+pub(super) fn resolve_idents() -> impl VisitMut + ToErrors {
+    IdentResolution::default()
 }
 
 #[derive(Copy, Clone)]
@@ -145,6 +148,12 @@ struct IdentResolution {
     factory: UniqueLabelFactory,
     /// The errors collected so far
     errs: Vec<SemanticError>,
+}
+
+impl ToErrors for IdentResolution {
+    fn to_errors(self) -> SemanticErrors {
+        SemanticErrors(self.errs)
+    }
 }
 
 impl VisitMut for IdentResolution {
@@ -284,17 +293,5 @@ impl VisitMut for IdentResolution {
 
     fn visit_mut_block_post(&mut self, _block: &mut Block) {
         self.ident_map.exit_scope();
-    }
-}
-
-pub(super) fn resolve_idents(mut p: Program) -> Result<Program, SemanticErrors> {
-    let mut ctx = IdentResolution::default();
-
-    ctx.visit_mut_program(&mut p);
-
-    if !ctx.errs.is_empty() {
-        Err(SemanticErrors(ctx.errs))
-    } else {
-        Ok(p)
     }
 }

@@ -10,6 +10,7 @@ use functional::TryFunctor;
 use crate::parser::FunctionBody;
 use crate::parser::FunctionDecl;
 use crate::parser::Program;
+use crate::parser::visit_mut::VisitMutExt;
 
 mod goto;
 mod ident_resolution;
@@ -23,20 +24,28 @@ mod test;
 
 pub use type_check::SymbolTable;
 
-pub fn validate(p: Program) -> Result<(Program, SymbolTable), SemanticErrors> {
-    let p = ident_resolution::resolve_idents(p)?;
-    let (p, symbol_table) = type_check::type_check(p)?;
+pub fn validate(mut p: Program) -> Result<(Program, SymbolTable), SemanticErrors> {
+    let mut outer_pass = ident_resolution::resolve_idents().chain(type_check::type_check());
+    outer_pass.visit_mut_program(&mut p);
+    // TODO: get errors from outer_pass
     let p = p.try_fmap(|f: FunctionDecl| -> Result<_, SemanticErrors> {
         if matches!(f.body, FunctionBody::Semicolon(_)) {
             return Ok(f);
         }
         let f = f.try_fmap(operator_types::check_operator_types)?;
         let f = f.try_fmap(goto::analysis)?;
-        let f = f.try_fmap(loop_labeling::labeling)?;
-        let f = f.try_fmap(switch_case_collection::collect)?;
+
+        let function_name = &f.name.0.clone();
+        let mut inner_pass = loop_labeling::labeling(function_name)
+            .chain(switch_case_collection::collect(function_name));
+        let mut f = f;
+        inner_pass.visit_mut_function_decl(&mut f);
+        // TODO: get errors from inner_pass
         Ok(f)
     })?;
-    Ok((p, symbol_table))
+
+    let (_, checker) = outer_pass.into();
+    Ok((p, checker.symbol_table))
 }
 
 #[derive(Default)]
@@ -77,6 +86,10 @@ pub enum SemanticError {
 #[derive(Error, Diagnostic, Debug)]
 #[error("Semantic errors")]
 pub struct SemanticErrors(#[related] pub Vec<SemanticError>);
+
+trait ToErrors {
+    fn to_errors(self) -> SemanticErrors;
+}
 
 impl<E: Into<SemanticError>> From<E> for SemanticErrors {
     fn from(value: E) -> Self {

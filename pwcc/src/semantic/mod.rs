@@ -18,6 +18,9 @@ mod operator_types;
 mod switch_case_collection;
 mod type_check;
 
+#[cfg(test)]
+mod test;
+
 pub use type_check::SymbolTable;
 
 pub fn validate(p: Program) -> Result<(Program, SymbolTable), SemanticErrors> {

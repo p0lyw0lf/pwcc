@@ -88,7 +88,7 @@ impl VisitMut for Labeler {
         self.visit_loop_post();
     }
 
-    fn visit_mut_while_stmt(&mut self, while_stmt: &mut WhileStmt) {
+    fn visit_mut_while_stmt_pre(&mut self, while_stmt: &mut WhileStmt) {
         self.visit_loop_pre(&mut while_stmt.label);
     }
     fn visit_mut_while_stmt_post(&mut self, _while_stmt: &mut WhileStmt) {

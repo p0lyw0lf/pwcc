@@ -19,9 +19,6 @@ use crate::semantic::UniqueLabelFactory;
 use crate::span::Span;
 use crate::span::Spanned;
 
-#[cfg(test)]
-mod test;
-
 #[derive(Error, Diagnostic, Debug)]
 pub enum Error {
     #[error("Duplicate declaration: {label}")]

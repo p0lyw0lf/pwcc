@@ -1,10 +1,9 @@
 use functional::TryFunctor;
 
-use super::*;
-
 use crate::lexer::lex;
 use crate::parser::FromTokens;
 use crate::parser::Program;
+use crate::semantic::ident_resolution::*;
 
 fn parse(source: &str) -> Program {
     Program::from_tokens(&mut lex(source).expect("lex failed").into_iter()).expect("parse failed")

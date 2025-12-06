@@ -143,6 +143,7 @@ impl IdentMap {
 #[derive(Default)]
 struct IdentResolution {
     ident_map: IdentMap,
+    in_function_scope: bool,
     /// Keeps a global counter that ensures all varaibles are unique
     factory: UniqueLabelFactory,
     /// The errors collected so far
@@ -150,7 +151,7 @@ struct IdentResolution {
 }
 
 impl visit_mut::VisitMut for IdentResolution {
-    fn visit_mut_var_decl(&mut self, decl: &mut VarDecl) {
+    fn visit_mut_var_decl_pre(&mut self, decl: &mut VarDecl) {
         if let Some(existing) = self.ident_map.declared_in_scope(&decl.name.0) {
             self.errs.push(
                 Error::DuplicateDeclaration {
@@ -166,10 +167,9 @@ impl visit_mut::VisitMut for IdentResolution {
         decl.name.0 =
             self.ident_map
                 .new_mapping(&mut self.factory, decl.name.clone(), Linkage::None);
-        visit_mut::visit_mut_var_decl(self, decl);
     }
 
-    fn visit_mut_function_decl(&mut self, fn_decl: &mut FunctionDecl) {
+    fn visit_mut_function_decl_pre(&mut self, fn_decl: &mut FunctionDecl) {
         if self.ident_map.parent.is_some() && !matches!(fn_decl.body, FunctionBody::Semicolon(_)) {
             self.errs
                 .push(Error::LocalFunctionDefinition(fn_decl.span()).into());
@@ -194,17 +194,24 @@ impl visit_mut::VisitMut for IdentResolution {
             self.ident_map
                 .new_mapping(&mut self.factory, fn_decl.name.clone(), Linkage::External);
 
-        // Can't visit_mut_function_decl directly, since if we do, it will count the arguments and
-        // the function body as different scopes. Instead, we manually visit what we need to here.
+        // This is required to make sure the function arguments and the function block count as the
+        // same scope. There is a check in visit_mut_block_pre to make sure we don't enter another
+        // scope if this is set.
         self.ident_map.enter_scope();
-        visit_mut::visit_mut_function_decl_args(self, &mut fn_decl.args);
-        if let FunctionBody::Block(block) = &mut fn_decl.body {
-            visit_mut::visit_mut_block(self, block)
-        };
-        self.ident_map.exit_scope();
+        assert!(!self.in_function_scope);
+        self.in_function_scope = true;
     }
 
-    fn visit_mut_decl_arg(&mut self, decl: &mut DeclArg) {
+    fn visit_mut_function_decl_post(&mut self, fn_decl: &mut FunctionDecl) {
+        match fn_decl.body {
+            // There was already an exit_scope() called from exiting the body.
+            FunctionBody::Block(_) => {}
+            // There was no body, so no exit_scope() called yet, so we need to close it here.
+            FunctionBody::Semicolon(_) => self.ident_map.exit_scope(),
+        }
+    }
+
+    fn visit_mut_decl_arg_pre(&mut self, decl: &mut DeclArg) {
         if let Some(existing) = self.ident_map.declared_in_scope(&decl.name.0) {
             self.errs.push(
                 Error::DuplicateDeclaration {
@@ -220,10 +227,9 @@ impl visit_mut::VisitMut for IdentResolution {
         decl.name.0 =
             self.ident_map
                 .new_mapping(&mut self.factory, decl.name.clone(), Linkage::None);
-        visit_mut::visit_mut_decl_arg(self, decl);
     }
 
-    fn visit_mut_exp(&mut self, exp: &mut Exp) {
+    fn visit_mut_exp_pre(&mut self, exp: &mut Exp) {
         match exp {
             // Make sure all assignments are to Var, and nothing else
             Exp::Assignment { lhs, .. } => match **lhs {
@@ -254,19 +260,24 @@ impl visit_mut::VisitMut for IdentResolution {
             },
             _ => {}
         };
-
-        visit_mut::visit_mut_exp(self, exp);
     }
 
-    fn visit_mut_for_stmt(&mut self, for_stmt: &mut ForStmt) {
+    fn visit_mut_for_stmt_pre(&mut self, _for_stmt: &mut ForStmt) {
         self.ident_map.enter_scope();
-        visit_mut::visit_mut_for_stmt(self, for_stmt);
+    }
+
+    fn visit_mut_for_stmt_post(&mut self, _for_stmt: &mut ForStmt) {
         self.ident_map.exit_scope();
     }
 
-    fn visit_mut_block(&mut self, block: &mut Block) {
-        self.ident_map.enter_scope();
-        visit_mut::visit_mut_block(self, block);
+    fn visit_mut_block_pre(&mut self, _block: &mut Block) {
+        if !self.in_function_scope {
+            self.ident_map.enter_scope();
+            self.in_function_scope = false;
+        }
+    }
+
+    fn visit_mut_block_post(&mut self, _block: &mut Block) {
         self.ident_map.exit_scope();
     }
 }

@@ -37,7 +37,25 @@ impl<'a> Emitter<'a> {
         Ident::new(&out, Span2::call_site())
     }
 
-    fn trait_def(&self) -> TokenStream2 {
+    /// Converts a type name like "TypeName" into 3 identifiers needed for doing recursion:
+    ///
+    /// + "visit_type_name_pre"
+    /// + "visit_type_name"
+    /// + "visit_type_name_post"
+    ///
+    /// The middle one is the one that will actually run the recursion, and the other ones are the
+    /// only ones that should be overridden by implementors (for composability).
+    ///
+    /// TODO: figure out if it's possible to "seal" the implementation of the middle, so users can
+    /// _never_ override it.
+    fn to_methods(&self, ty: &Ident) -> (Ident, Ident, Ident) {
+        let prefix = self.to_method(ty);
+        let make_ident =
+            |suffix: &str| Ident::new(&format!("{prefix}_{suffix}"), Span2::call_site());
+        (make_ident("pre"), prefix.clone(), make_ident("post"))
+    }
+
+    fn trait_name(&self) -> TokenStream2 {
         let trait_name = &Ident::new(self.trait_name, Span2::call_site());
         if self.has_lifetime {
             quote! { #trait_name<'ast> }
@@ -46,7 +64,7 @@ impl<'a> Emitter<'a> {
         }
     }
 
-    fn extension_trait_def(&self) -> TokenStream2 {
+    fn extension_trait_name(&self) -> TokenStream2 {
         let extension_trait_name =
             &Ident::new(&format!("{}Ext", self.trait_name), Span2::call_site());
         if self.has_lifetime {
@@ -56,7 +74,7 @@ impl<'a> Emitter<'a> {
         }
     }
 
-    fn method_generics(&self) -> TokenStream2 {
+    fn generics(&self) -> TokenStream2 {
         if self.has_lifetime {
             quote! { <'ast, FunctionalMacros> }
         } else {
@@ -72,15 +90,20 @@ impl<'a> Emitter<'a> {
         for node in nodes.values() {
             let ident = &node.ident();
             let method = self.to_method(ident);
+            let (pre, recur, post) = self.to_methods(ident);
 
             body.append_all(quote! {
-                fn #method(&mut self, node: #ref_ty #ident) {
-                    #method(self, node)
+                fn #recur(&mut self, node: #ref_ty #ident) {
+                    self.#pre(node);
+                    #method(self, node);
+                    self.#post(node);
                 }
+                fn #pre(&mut self, node: #ref_ty #ident) {}
+                fn #post(&mut self, node: #ref_ty #ident) {}
             });
         }
 
-        let trait_name = self.trait_def();
+        let trait_name = self.trait_name();
         quote! {
             pub trait #trait_name {
                 #body
@@ -91,8 +114,8 @@ impl<'a> Emitter<'a> {
     /// Given the set of nodes, emits all the `visit_*` functions needed to implement the Visit trait.
     fn emit_methods<'ast>(&self, nodes: &Lattice<'ast>) -> TokenStream2 {
         let mut out = TokenStream2::new();
-        let trait_name = self.trait_def();
-        let method_generics = self.method_generics();
+        let trait_name = self.trait_name();
+        let generics = self.generics();
         let ref_ty = &self.ref_ty;
 
         for node in nodes.values() {
@@ -103,7 +126,7 @@ impl<'a> Emitter<'a> {
 
             out.append_all(quote! {
                 #[allow(unused_variables)]
-                pub fn #method #method_generics(mut v: &mut FunctionalMacros, node: #ref_ty #ident)
+                pub fn #method #generics(mut v: &mut FunctionalMacros, node: #ref_ty #ident)
                 where
                     FunctionalMacros: #trait_name + ?Sized
                 {
@@ -116,18 +139,18 @@ impl<'a> Emitter<'a> {
     }
 
     fn emit_extension<'ast>(&self, nodes: &Lattice<'ast>) -> TokenStream2 {
-        let trait_def = self.trait_def();
-        let extension_trait_def = self.extension_trait_def();
-        let generics = self.method_generics();
+        let trait_name = self.trait_name();
+        let extension_trait_name = self.extension_trait_name();
+        let generics = self.generics();
 
         let (chain_def, chain_impl) = self.emit_extension_chain(nodes);
 
         quote! {
-            pub trait #extension_trait_def: #trait_def {
+            pub trait #extension_trait_name: #trait_name {
                 #chain_def
             }
 
-            impl #generics #extension_trait_def for FunctionalMacros where FunctionalMacros: #trait_def {
+            impl #generics #extension_trait_name for FunctionalMacros where FunctionalMacros: #trait_name {
                 #chain_impl
             }
         }
@@ -136,7 +159,7 @@ impl<'a> Emitter<'a> {
     /// Given the set of nodes, emit a helper function that allows for chaining of different
     /// visitors.
     fn emit_extension_chain<'ast>(&self, nodes: &Lattice<'ast>) -> (TokenStream2, TokenStream2) {
-        let trait_name = self.trait_def();
+        let trait_name = self.trait_name();
         let def = quote! {
             fn chain(self, other: impl #trait_name) -> impl #trait_name
             where
@@ -148,11 +171,15 @@ impl<'a> Emitter<'a> {
 
         for node in nodes.values() {
             let ident = &node.ident();
-            let method = self.to_method(ident);
+            let (pre, _, post) = self.to_methods(ident);
             body.append_all(quote! {
-                fn #method(&mut self, node: #ref_ty #ident) {
-                    self.first.#method(node);
-                    self.second.#method(node);
+                fn #pre(&mut self, node: #ref_ty #ident) {
+                    self.first.#pre(node);
+                    self.second.#pre(node);
+                }
+                fn #post(&mut self, node: #ref_ty #ident) {
+                    self.second.#post(node);
+                    self.first.#post(node);
                 }
             });
         }
@@ -211,11 +238,11 @@ impl<'ast> BodyEmitter<'ast> for Emitter<'_> {
         for field in variant.fields.iter() {
             let field_ident = &field.ident;
             for ty in field.tys.iter() {
-                let method = self.to_method(ty.ident);
+                let (_, recur, _) = self.to_methods(ty.ident);
                 // It's a little strange, but it works! We do need something to go into wrapper
                 // types like Box and Option, so this is that.
                 out.append_all(quote! {
-                    v = #field_ident.#associated_method(&mut |v: &mut FunctionalMacros, n| { v.#method(n); v }, v, RecursiveCall::None);
+                    v = #field_ident.#associated_method(&mut |v: &mut FunctionalMacros, n| { v.#recur(n); v }, v, RecursiveCall::None);
                 });
             }
         }

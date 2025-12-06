@@ -6,7 +6,6 @@ use thiserror::Error;
 
 use crate::parser::Exp;
 use crate::parser::Program;
-use crate::parser::visit_mut;
 use crate::parser::visit_mut::VisitMut;
 use crate::semantic::SemanticError;
 use crate::semantic::SemanticErrors;
@@ -106,7 +105,7 @@ struct TypeChecker {
 }
 
 impl VisitMut for TypeChecker {
-    fn visit_mut_var_decl(&mut self, decl: &mut crate::parser::VarDecl) {
+    fn visit_mut_var_decl_pre(&mut self, decl: &mut crate::parser::VarDecl) {
         self.symbol_table.add_symbol(
             decl.name.0.clone(),
             Declaration {
@@ -115,11 +114,9 @@ impl VisitMut for TypeChecker {
                 span: decl.name.1,
             },
         );
-
-        visit_mut::visit_mut_var_decl(self, decl);
     }
 
-    fn visit_mut_function_decl(&mut self, decl: &mut crate::parser::FunctionDecl) {
+    fn visit_mut_function_decl_pre(&mut self, decl: &mut crate::parser::FunctionDecl) {
         let fun_type = Type::Function(decl.args.num_args());
         let has_body = matches!(decl.body, crate::parser::FunctionBody::Block(_));
         let mut already_defined = false;
@@ -173,11 +170,9 @@ impl VisitMut for TypeChecker {
                 );
             }
         }
-
-        visit_mut::visit_mut_function_decl(self, decl);
     }
 
-    fn visit_mut_exp(&mut self, exp: &mut Exp) {
+    fn visit_mut_exp_pre(&mut self, exp: &mut Exp) {
         match exp {
             Exp::FunctionCall {
                 ident,
@@ -242,14 +237,11 @@ impl VisitMut for TypeChecker {
                             }
                             .into(),
                         );
-                        return;
                     }
                 }
             }
             _ => {}
         }
-
-        visit_mut::visit_mut_exp(self, exp);
     }
 }
 

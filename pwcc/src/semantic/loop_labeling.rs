@@ -9,7 +9,6 @@ use crate::parser::FunctionDecl;
 use crate::parser::LoopLabel;
 use crate::parser::SwitchStmt;
 use crate::parser::WhileStmt;
-use crate::parser::visit_mut;
 use crate::parser::visit_mut::VisitMut;
 use crate::semantic::SemanticErrors;
 use crate::semantic::UniqueLabelFactory;
@@ -61,65 +60,73 @@ impl Labeler {
     fn make_label(&mut self) -> LoopLabel {
         LoopLabel(self.factory.unique_label(&self.function))
     }
-}
 
-macro_rules! label_loop {
-    ($self:expr_2021, $v:expr_2021, $f:ident) => {
-        let new_label = $self.make_label();
-        $self.break_stack.push(new_label.0.clone());
-        $self.continue_stack.push(new_label.0.clone());
-        $v.label = Some(new_label);
-        visit_mut::$f($self, $v);
-        $self
-            .break_stack
+    /// Common routine for labeling loop statements, before recurring into the statement.
+    fn visit_loop_pre(&mut self, label: &mut Option<LoopLabel>) {
+        let new_label = self.make_label();
+        self.break_stack.push(new_label.0.clone());
+        self.continue_stack.push(new_label.0.clone());
+        *label = Some(new_label);
+    }
+
+    /// Common routine for labeling loop statements, after recurring into the statement.
+    fn visit_loop_post(&mut self) {
+        self.break_stack
             .pop()
             .expect("unexpected empty break label stack");
-        $self
-            .continue_stack
+        self.continue_stack
             .pop()
             .expect("unexpected empty break label stack");
-    };
+    }
 }
 
 impl VisitMut for Labeler {
-    fn visit_mut_for_stmt(&mut self, for_stmt: &mut ForStmt) {
-        label_loop!(self, for_stmt, visit_mut_for_stmt);
+    fn visit_mut_for_stmt_pre(&mut self, for_stmt: &mut ForStmt) {
+        self.visit_loop_pre(&mut for_stmt.label);
     }
-    fn visit_mut_while_stmt(&mut self, while_stmt: &mut WhileStmt) {
-        label_loop!(self, while_stmt, visit_mut_while_stmt);
-    }
-    fn visit_mut_do_while_stmt(&mut self, do_while_stmt: &mut DoWhileStmt) {
-        label_loop!(self, do_while_stmt, visit_mut_do_while_stmt);
+    fn visit_mut_for_stmt_post(&mut self, _for_stmt: &mut ForStmt) {
+        self.visit_loop_post();
     }
 
-    fn visit_mut_switch_stmt(&mut self, switch_stmt: &mut SwitchStmt) {
+    fn visit_mut_while_stmt(&mut self, while_stmt: &mut WhileStmt) {
+        self.visit_loop_pre(&mut while_stmt.label);
+    }
+    fn visit_mut_while_stmt_post(&mut self, _while_stmt: &mut WhileStmt) {
+        self.visit_loop_post();
+    }
+
+    fn visit_mut_do_while_stmt_pre(&mut self, do_while_stmt: &mut DoWhileStmt) {
+        self.visit_loop_pre(&mut do_while_stmt.label);
+    }
+    fn visit_mut_do_while_stmt_post(&mut self, _do_while_stmt: &mut DoWhileStmt) {
+        self.visit_loop_post();
+    }
+
+    fn visit_mut_switch_stmt_pre(&mut self, switch_stmt: &mut SwitchStmt) {
         let new_label = self.make_label();
         self.break_stack.push(new_label.0.clone());
         switch_stmt.label = Some(new_label);
-        visit_mut::visit_mut_switch_stmt(self, switch_stmt);
+    }
+    fn visit_mut_switch_stmt_post(&mut self, _switch_stmt: &mut SwitchStmt) {
         self.break_stack
             .pop()
             .expect("unexpected empty break label stack");
     }
 
-    fn visit_mut_break_stmt(&mut self, break_stmt: &mut BreakStmt) {
+    fn visit_mut_break_stmt_pre(&mut self, break_stmt: &mut BreakStmt) {
         if let Some(label) = self.break_stack.last() {
             break_stmt.label = Some(LoopLabel(label.clone()));
         } else {
             self.errs.push(Error::BreakOutsideLoop(break_stmt.span()));
         }
-
-        visit_mut::visit_mut_break_stmt(self, break_stmt);
     }
 
-    fn visit_mut_continue_stmt(&mut self, continue_stmt: &mut ContinueStmt) {
+    fn visit_mut_continue_stmt_pre(&mut self, continue_stmt: &mut ContinueStmt) {
         if let Some(label) = self.continue_stack.last() {
             continue_stmt.label = Some(LoopLabel(label.clone()));
         } else {
             self.errs
                 .push(Error::ContinueOutsideLoop(continue_stmt.span()));
         }
-
-        visit_mut::visit_mut_continue_stmt(self, continue_stmt);
     }
 }

@@ -10,7 +10,6 @@ use crate::parser::CaseLabel;
 use crate::parser::FunctionDecl;
 use crate::parser::SwitchContext;
 use crate::parser::SwitchStmt;
-use crate::parser::visit_mut;
 use crate::parser::visit_mut::VisitMut;
 use crate::semantic::SemanticErrors;
 use crate::semantic::UniqueLabelFactory;
@@ -69,8 +68,8 @@ pub(super) fn collect(mut function: FunctionDecl) -> Result<FunctionDecl, Semant
 struct Collector {
     function: String,
     factory: UniqueLabelFactory,
-    /// The current switch cases we've seen so far
-    labels: Option<BTreeMap<Option<isize>, (String, Span)>>,
+    /// The current switch cases we've seen so far. This is a stack.
+    labels: Vec<BTreeMap<Option<isize>, (String, Span)>>,
 
     errs: Vec<Error>,
 }
@@ -81,32 +80,29 @@ impl Collector {
     }
 }
 
-impl visit_mut::VisitMut for Collector {
-    fn visit_mut_switch_stmt(&mut self, switch_stmt: &mut SwitchStmt) {
-        // Save context for outer switch on the stack
-        let mut labels = Some(BTreeMap::new());
-        core::mem::swap(&mut self.labels, &mut labels);
+impl VisitMut for Collector {
+    fn visit_mut_switch_stmt_pre(&mut self, _switch_stmt: &mut SwitchStmt) {
+        // Enter into new label context for this statement.
+        self.labels.push(BTreeMap::new());
+    }
 
-        // Recur, collecting all the labels for case/default labels belonging to this switch
-        visit_mut::visit_mut_switch_stmt(self, switch_stmt);
-
-        // Restore context for outer switch
-        core::mem::swap(&mut self.labels, &mut labels);
-
+    fn visit_mut_switch_stmt_post(&mut self, switch_stmt: &mut SwitchStmt) {
         // Use the newly-collected labels to fill out the context
         switch_stmt.ctx = Some(SwitchContext(
-            labels.expect("labels became unset while visiting switch cases"),
+            self.labels
+                .pop()
+                .expect("labels became unset while visiting switch cases"),
         ));
     }
 
-    fn visit_mut_case_label(&mut self, existing_case_label: &mut CaseLabel) {
+    fn visit_mut_case_label_pre(&mut self, existing_case_label: &mut CaseLabel) {
         // Store explicitly-labeled version into AST, taking ownership of the Exp
         let label = self.make_label();
         let mut case_label = CaseLabel::Labeled(label.clone(), existing_case_label.span());
         core::mem::swap(&mut case_label, existing_case_label);
 
         match case_label {
-            CaseLabel::Case(exp) => match self.labels.as_mut() {
+            CaseLabel::Case(exp) => match self.labels.last_mut() {
                 Some(labels) => {
                     let span = exp.span();
                     match evaluate(exp) {
@@ -128,7 +124,7 @@ impl visit_mut::VisitMut for Collector {
                 }
                 None => self.errs.push(Error::CaseOutsideSwitch(exp.span())),
             },
-            CaseLabel::Default(span) => match self.labels.as_mut() {
+            CaseLabel::Default(span) => match self.labels.last_mut() {
                 Some(labels) => match labels.entry(None) {
                     btree_map::Entry::Vacant(e) => {
                         e.insert((label, span));

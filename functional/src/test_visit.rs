@@ -1,3 +1,7 @@
+//! TODO: other tests I'd like to write:
+//! + guarnateeing that `.chain()` traverses the AST exactly once
+//! + checking that pre and post-order things are actually ordered properly
+
 use std::{cell::RefCell, rc::Rc};
 
 use crate as functional;
@@ -93,16 +97,14 @@ impl Default for Collect {
 }
 
 impl<'ast> concrete::visit::Visit<'ast> for Collect {
-    fn visit_c(&mut self, c: &'ast concrete::C) {
+    fn visit_c_pre(&mut self, c: &'ast concrete::C) {
         self.0.borrow_mut().push(c.0);
-        concrete::visit::visit_c(self, c);
     }
 }
 
 impl concrete::visit_mut::VisitMut for AddOne {
-    fn visit_mut_c(&mut self, c: &mut concrete::C) {
+    fn visit_mut_c_pre(&mut self, c: &mut concrete::C) {
         c.0 += 1;
-        concrete::visit_mut::visit_mut_c(self, c);
     }
 }
 
@@ -167,15 +169,13 @@ mod recursive {
 }
 
 impl<'ast> recursive::visit::Visit<'ast> for Collect {
-    fn visit_tree(&mut self, node: &'ast recursive::Tree) {
+    fn visit_tree_pre(&mut self, node: &'ast recursive::Tree) {
         self.0.borrow_mut().push(node.val);
-        recursive::visit::visit_tree(self, node);
     }
 }
 
 impl recursive::visit_mut::VisitMut for AddOne {
-    fn visit_mut_tree(&mut self, node: &mut recursive::Tree) {
+    fn visit_mut_tree_pre(&mut self, node: &mut recursive::Tree) {
         node.val += 1;
-        recursive::visit_mut::visit_mut_tree(self, node);
     }
 }

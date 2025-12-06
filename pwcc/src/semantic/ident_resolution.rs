@@ -11,8 +11,8 @@ use crate::parser::FunctionBody;
 use crate::parser::FunctionDecl;
 use crate::parser::Program;
 use crate::parser::VarDecl;
-use crate::parser::visit_mut;
 use crate::parser::visit_mut::VisitMut;
+use crate::parser::visit_mut::VisitMutExt;
 use crate::semantic::SemanticError;
 use crate::semantic::SemanticErrors;
 use crate::semantic::UniqueLabelFactory;
@@ -147,7 +147,7 @@ struct IdentResolution {
     errs: Vec<SemanticError>,
 }
 
-impl visit_mut::VisitMut for IdentResolution {
+impl VisitMut for IdentResolution {
     fn visit_mut_var_decl_pre(&mut self, decl: &mut VarDecl) {
         if let Some(existing) = self.ident_map.declared_in_scope(&decl.name.0) {
             self.errs.push(

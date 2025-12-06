@@ -11,6 +11,7 @@ use crate::parser::FunctionDecl;
 use crate::parser::SwitchContext;
 use crate::parser::SwitchStmt;
 use crate::parser::visit_mut::VisitMut;
+use crate::parser::visit_mut::VisitMutExt;
 use crate::semantic::SemanticErrors;
 use crate::semantic::UniqueLabelFactory;
 use crate::span::Span;

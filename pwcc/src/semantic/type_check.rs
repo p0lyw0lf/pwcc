@@ -7,6 +7,7 @@ use thiserror::Error;
 use crate::parser::Exp;
 use crate::parser::Program;
 use crate::parser::visit_mut::VisitMut;
+use crate::parser::visit_mut::VisitMutExt;
 use crate::semantic::SemanticError;
 use crate::semantic::SemanticErrors;
 use crate::span::Span;

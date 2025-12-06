@@ -10,6 +10,7 @@ use crate::parser::LoopLabel;
 use crate::parser::SwitchStmt;
 use crate::parser::WhileStmt;
 use crate::parser::visit_mut::VisitMut;
+use crate::parser::visit_mut::VisitMutExt;
 use crate::semantic::SemanticErrors;
 use crate::semantic::UniqueLabelFactory;
 use crate::span::Span;

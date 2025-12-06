@@ -35,7 +35,7 @@ mod concrete {
 
     #[test]
     fn test_visit() {
-        use visit::Visit;
+        use visit::VisitExt;
 
         let mut cs = Collect::default();
         cs.visit_a(&example());
@@ -45,7 +45,7 @@ mod concrete {
 
     #[test]
     fn test_visit_mut() {
-        use visit_mut::VisitMut;
+        use visit_mut::VisitMutExt;
         let mut x_actual = example();
         let x_expected = A {
             b: B { c: C(7) },
@@ -58,7 +58,6 @@ mod concrete {
 
     #[test]
     fn test_visit_chain() {
-        use visit::Visit;
         use visit::VisitExt;
 
         let cs1 = Collect::default();
@@ -76,7 +75,6 @@ mod concrete {
 
     #[test]
     fn test_visit_mut_chain() {
-        use visit_mut::VisitMut;
         use visit_mut::VisitMutExt;
         let mut x_actual = example();
         let x_expected = A {
@@ -138,7 +136,7 @@ mod recursive {
 
     #[test]
     fn test_visit() {
-        use visit::Visit;
+        use visit::VisitExt;
         let mut is = Collect::default();
         is.visit_tree(&example());
         let out = Rc::into_inner(is.0).unwrap().into_inner();
@@ -147,7 +145,7 @@ mod recursive {
 
     #[test]
     fn test_visit_mut() {
-        use visit_mut::VisitMut;
+        use visit_mut::VisitMutExt;
         let mut x_actual = example();
         let x_expected = Tree {
             lhs: Some(Box::new(Tree {

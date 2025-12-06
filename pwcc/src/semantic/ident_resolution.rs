@@ -194,12 +194,19 @@ impl visit_mut::VisitMut for IdentResolution {
             self.ident_map
                 .new_mapping(&mut self.factory, fn_decl.name.clone(), Linkage::External);
 
-        // This is required to make sure the function arguments and the function block count as the
-        // same scope. There is a check in visit_mut_block_pre to make sure we don't enter another
-        // scope if this is set.
         self.ident_map.enter_scope();
-        assert!(!self.in_function_scope);
-        self.in_function_scope = true;
+
+        match fn_decl.body {
+            // This is required to make sure the function arguments and the function block count as the
+            // same scope. There is a check in visit_mut_block_pre to make sure we don't enter another
+            // scope if this is set.
+            FunctionBody::Block(_) => {
+                assert!(!self.in_function_scope);
+                self.in_function_scope = true;
+            }
+            // Don't have to handle a block scope, nothing to be done.
+            FunctionBody::Semicolon(_) => {}
+        }
     }
 
     fn visit_mut_function_decl_post(&mut self, fn_decl: &mut FunctionDecl) {
@@ -271,9 +278,10 @@ impl visit_mut::VisitMut for IdentResolution {
     }
 
     fn visit_mut_block_pre(&mut self, _block: &mut Block) {
-        if !self.in_function_scope {
-            self.ident_map.enter_scope();
+        if self.in_function_scope {
             self.in_function_scope = false;
+        } else {
+            self.ident_map.enter_scope();
         }
     }
 

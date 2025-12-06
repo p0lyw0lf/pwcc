@@ -55,6 +55,7 @@ mod concrete {
     #[test]
     fn test_visit_chain() {
         use visit::Visit;
+        use visit::VisitExt;
 
         let cs1 = Collect::default();
         let cs2 = Collect::default();
@@ -67,6 +68,21 @@ mod concrete {
         let out2 = Rc::into_inner(cs2.0).unwrap().into_inner();
         assert_eq!(&out1, &[6, 9]);
         assert_eq!(&out2, &[6, 9]);
+    }
+
+    #[test]
+    fn test_visit_mut_chain() {
+        use visit_mut::VisitMut;
+        use visit_mut::VisitMutExt;
+        let mut x_actual = example();
+        let x_expected = A {
+            b: B { c: C(8) },
+            c: C(11),
+        };
+
+        let mut v = AddOne.chain(AddOne);
+        v.visit_mut_a(&mut x_actual);
+        assert_eq!(x_expected, x_actual);
     }
 }
 

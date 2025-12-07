@@ -8,7 +8,6 @@ use crate::parser::Exp;
 use crate::parser::visit_mut::VisitMut;
 use crate::semantic::SemanticError;
 use crate::semantic::SemanticErrors;
-use crate::semantic::ToErrors;
 use crate::span::Span;
 
 #[derive(PartialEq, Debug, Clone)]
@@ -108,9 +107,13 @@ pub(super) fn type_check() -> TypeChecker {
     TypeChecker::default()
 }
 
-impl ToErrors for TypeChecker {
-    fn to_errors(self) -> SemanticErrors {
-        SemanticErrors(self.errs)
+impl From<TypeChecker> for Result<(), SemanticErrors> {
+    fn from(v: TypeChecker) -> Self {
+        if v.errs.is_empty() {
+            Ok(())
+        } else {
+            Err(SemanticErrors(v.errs))
+        }
     }
 }
 

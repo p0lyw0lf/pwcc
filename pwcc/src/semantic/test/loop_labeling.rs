@@ -1,15 +1,21 @@
-use functional::TryFunctor;
-
 use crate::lexer::lex;
 use crate::parser::BlockItem;
 use crate::parser::FromTokens;
 use crate::parser::FunctionBody;
 use crate::parser::Program;
 use crate::parser::Statement;
+use crate::parser::visit_mut::VisitMutExt;
+use crate::semantic::SemanticErrors;
 use crate::semantic::loop_labeling::*;
 
 fn parse(source: &str) -> Program {
     Program::from_tokens(&mut lex(source).expect("lex failed").into_iter()).expect("parse failed")
+}
+
+fn run_labeling(function: &str, mut tree: Program) -> Result<Program, SemanticErrors> {
+    let mut visitor = labeling(function);
+    visitor.visit_mut_program(&mut tree);
+    visitor.into().map(|_| tree)
 }
 
 #[test]
@@ -24,7 +30,7 @@ fn labels_breaks_in_while_loop() {
         }
         "#,
     );
-    let result = tree.try_fmap(labeling);
+    let result = run_labeling("main", tree);
     assert!(
         result.is_ok(),
         "expected to succeed, got error {}",

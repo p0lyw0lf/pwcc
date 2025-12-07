@@ -13,7 +13,6 @@ use crate::parser::VarDecl;
 use crate::parser::visit_mut::VisitMut;
 use crate::semantic::SemanticError;
 use crate::semantic::SemanticErrors;
-use crate::semantic::ToErrors;
 use crate::semantic::UniqueLabelFactory;
 use crate::span::Span;
 use crate::span::Spanned;
@@ -43,7 +42,7 @@ pub enum Error {
     LocalFunctionDefinition(#[label] Span),
 }
 
-pub(super) fn resolve_idents() -> impl VisitMut + ToErrors {
+pub(super) fn resolve_idents() -> impl VisitMut + Into<Result<(), SemanticErrors>> {
     IdentResolution::default()
 }
 
@@ -150,9 +149,13 @@ struct IdentResolution {
     errs: Vec<SemanticError>,
 }
 
-impl ToErrors for IdentResolution {
-    fn to_errors(self) -> SemanticErrors {
-        SemanticErrors(self.errs)
+impl From<IdentResolution> for Result<(), SemanticErrors> {
+    fn from(v: IdentResolution) -> Self {
+        if v.errs.is_empty() {
+            Ok(())
+        } else {
+            Err(SemanticErrors(v.errs))
+        }
     }
 }
 

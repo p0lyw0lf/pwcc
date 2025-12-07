@@ -87,10 +87,6 @@ pub enum SemanticError {
 #[error("Semantic errors")]
 pub struct SemanticErrors(#[related] pub Vec<SemanticError>);
 
-trait ToErrors {
-    fn to_errors(self) -> SemanticErrors;
-}
-
 impl<E: Into<SemanticError>> From<E> for SemanticErrors {
     fn from(value: E) -> Self {
         Self(Vec::from([value.into()]))

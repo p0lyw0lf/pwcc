@@ -11,7 +11,6 @@ use crate::parser::SwitchContext;
 use crate::parser::SwitchStmt;
 use crate::parser::visit_mut::VisitMut;
 use crate::semantic::SemanticErrors;
-use crate::semantic::ToErrors;
 use crate::semantic::UniqueLabelFactory;
 use crate::span::Span;
 use crate::span::Spanned;
@@ -46,7 +45,7 @@ pub enum Error {
     },
 }
 
-pub(super) fn collect(function: &str) -> impl VisitMut + ToErrors {
+pub(super) fn collect(function: &str) -> impl VisitMut + Into<Result<(), SemanticErrors>> {
     Collector {
         function: function.to_string(),
         factory: UniqueLabelFactory::default(),
@@ -70,9 +69,13 @@ impl Collector {
     }
 }
 
-impl ToErrors for Collector {
-    fn to_errors(self) -> SemanticErrors {
-        SemanticErrors(self.errs.into_iter().map(Into::into).collect())
+impl From<Collector> for Result<(), SemanticErrors> {
+    fn from(v: Collector) -> Self {
+        if v.errs.is_empty() {
+            Ok(())
+        } else {
+            Err(SemanticErrors(v.errs.into_iter().map(Into::into).collect()))
+        }
     }
 }
 

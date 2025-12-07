@@ -1,6 +1,4 @@
-use crate::lexer::lex;
 use crate::parser::BlockItem;
-use crate::parser::FromTokens;
 use crate::parser::FunctionBody;
 use crate::parser::Program;
 use crate::parser::Statement;
@@ -8,9 +6,7 @@ use crate::parser::visit_mut::VisitMutExt;
 use crate::semantic::SemanticErrors;
 use crate::semantic::loop_labeling::*;
 
-fn parse(source: &str) -> Program {
-    Program::from_tokens(&mut lex(source).expect("lex failed").into_iter()).expect("parse failed")
-}
+use super::parse;
 
 fn run_labeling(function: &str, mut tree: Program) -> Result<Program, SemanticErrors> {
     let mut visitor = labeling(function);

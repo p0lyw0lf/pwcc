@@ -1,13 +1,9 @@
-use crate::lexer::lex;
-use crate::parser::FromTokens;
 use crate::parser::Program;
 use crate::parser::visit_mut::VisitMutExt;
 use crate::semantic::SemanticErrors;
 use crate::semantic::ident_resolution::*;
 
-fn parse(source: &str) -> Program {
-    Program::from_tokens(&mut lex(source).expect("lex failed").into_iter()).expect("parse failed")
-}
+use super::parse;
 
 fn run_resolve_idents(mut tree: Program) -> Result<(), SemanticErrors> {
     let mut visitor = resolve_idents();

@@ -252,8 +252,7 @@ impl<'a> Emitter<'a> {
             body.append_all(quote! {
                 pub fn #pre #generics (f: FunctionalMacrosFn) -> impl #trait_name + Into<Result<(), FunctionalMacros>>
                 where
-                    // TODO: use #crate_name instead of hard-coding "functional" here
-                    FunctionalMacros: functional::Semigroup,
+                    FunctionalMacros: Semigroup,
                     FunctionalMacrosFn: FnMut(#ref_ty #ident) -> Result<(), FunctionalMacros>,
                 {
                     struct FunctionalMacrosVisitor<FunctionalMacrosFn, FunctionalMacrosInner> {
@@ -269,7 +268,7 @@ impl<'a> Emitter<'a> {
 
                     impl #generics #trait_name for FunctionalMacrosVisitor<FunctionalMacrosFn, FunctionalMacros>
                     where
-                        FunctionalMacros: functional::Semigroup,
+                        FunctionalMacros: Semigroup,
                         FunctionalMacrosFn: FnMut(#ref_ty #ident) -> Result<(), FunctionalMacros>,
                     {
                         fn #pre(&mut self, node: #ref_ty #ident) {

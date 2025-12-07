@@ -110,6 +110,16 @@ pub fn ast(attrs: TokenStream, item: TokenStream) -> TokenStream {
             });
         }
 
+        if options.has_any_typeclass(&[
+            options::Typeclass::TryFunctor,
+            options::Typeclass::Visit,
+            options::Typeclass::VisitMut,
+        ]) {
+            out.append_all(quote! {
+                use #crate_name::Semigroup;
+            });
+        }
+
         #[cfg(feature = "foldable")]
         if options.has_any_typeclass(&[options::Typeclass::Foldable, options::Typeclass::Visit]) {
             out.append_all(quote! {
@@ -155,7 +165,6 @@ pub fn ast(attrs: TokenStream, item: TokenStream) -> TokenStream {
         if options.has_typeclass(&options::Typeclass::TryFunctor) {
             out.append_all(quote! {
                 use #crate_name::ControlFlow;
-                use #crate_name::Semigroup;
                 use #crate_name::TryFunctor;
             });
             traits::functor::emit(out, &nodes, &traits::try_functor::Emitter);

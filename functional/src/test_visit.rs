@@ -86,6 +86,44 @@ mod concrete {
         v.visit_mut_a(&mut x_actual);
         assert_eq!(x_expected, x_actual);
     }
+
+    #[test]
+    fn test_visit_builder() {
+        use visit::VisitBuilder;
+        use visit::VisitExt;
+
+        let v_expected = vec![6, 9];
+        let mut v_actual: Vec<i32> = vec![];
+        {
+            let a = example();
+            let mut cs = VisitBuilder::visit_c_pre(|c| {
+                v_actual.push(c.0);
+                Ok::<(), ()>(())
+            });
+            cs.visit_a(&a);
+        }
+        assert_eq!(v_expected, v_actual);
+    }
+
+    #[test]
+    fn test_visit_mut_builder() {
+        use visit_mut::VisitMutBuilder;
+        use visit_mut::VisitMutExt;
+
+        let mut x_actual = example();
+        let x_expected = A {
+            b: B { c: C(9) },
+            c: C(12),
+        };
+
+        let mut adder = VisitMutBuilder::visit_mut_c_pre(|c| {
+            c.0 += 3;
+            Ok::<(), ()>(())
+        });
+        adder.visit_mut_a(&mut x_actual);
+
+        assert_eq!(x_expected, x_actual);
+    }
 }
 
 impl Default for Collect {

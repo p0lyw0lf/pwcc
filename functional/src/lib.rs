@@ -3,7 +3,9 @@ mod foldable;
 mod foldable_mut;
 mod functor;
 mod semigroup;
+mod try_coalesce;
 mod try_functor;
+mod tuple;
 
 #[cfg(test)]
 mod test_foldable;
@@ -18,7 +20,9 @@ pub use foldable::Foldable;
 pub use foldable_mut::FoldableMut;
 pub use functor::Functor;
 pub use semigroup::Semigroup;
+pub use try_coalesce::TryCoalesce;
 pub use try_functor::TryFunctor;
+pub use tuple::Tuple;
 
 pub use functional_macros::*;
 

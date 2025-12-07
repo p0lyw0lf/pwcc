@@ -1,10 +1,12 @@
 use std::borrow::Borrow;
 
+use functional::tuple;
 use miette::Diagnostic;
 use thiserror::Error;
 
 use functional::ControlFlow;
 use functional::Semigroup;
+use functional::TryCoalesce;
 use functional::TryFunctor;
 
 use crate::parser::FunctionBody;
@@ -30,16 +32,7 @@ pub fn validate(mut p: Program) -> Result<(Program, SymbolTable), SemanticErrors
         let mut visitor = ident_resolution::resolve_idents().chain(type_check::type_check());
         visitor.visit_mut_program(&mut p);
 
-        let (resolution, checker) = visitor.into();
-        match (resolution.into(), checker.into()) {
-            (Ok(()), Ok(symbol_table)) => Ok(symbol_table),
-            (Err(ea), Ok(_)) => Err(ea),
-            (Ok(_), Err(eb)) => Err(eb),
-            (Err(mut ea), Err(eb)) => {
-                ea.sconcat(eb);
-                Err(ea)
-            }
-        }
+        visitor.try_coalesce()
     };
 
     let inner_result = p.try_fmap(|f: FunctionDecl| -> Result<_, SemanticErrors> {
@@ -55,18 +48,12 @@ pub fn validate(mut p: Program) -> Result<(Program, SymbolTable), SemanticErrors
 
         let mut f = f;
         visitor.visit_mut_function_decl(&mut f);
-        Ok(f)
+
+        visitor.try_coalesce().map(|_| f)
     });
 
-    match (outer_result, inner_result) {
-        (Ok(symbol_table), Ok(p)) => Ok((p, symbol_table)),
-        (Err(ea), Ok(_)) => Err(ea),
-        (Ok(_), Err(eb)) => Err(eb),
-        (Err(mut ea), Err(eb)) => {
-            ea.sconcat(eb);
-            Err(ea)
-        }
-    }
+    let final_result = tuple!(outer_result, inner_result).try_coalesce()?;
+    Ok((final_result.snd, final_result.fst.snd))
 }
 
 #[derive(Default)]

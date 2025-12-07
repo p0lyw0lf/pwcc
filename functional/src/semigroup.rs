@@ -1,3 +1,5 @@
+use crate::Tuple;
+
 /// A type with an associative binary operation, usually representing concatenation.
 pub trait Semigroup {
     fn sconcat(&mut self, other: Self);
@@ -39,6 +41,18 @@ impl Semigroup for () {
     fn sconcat(&mut self, _other: Self) {}
 }
 
+impl<A, B> Semigroup for Tuple<A, B>
+where
+    A: Semigroup,
+    B: Semigroup,
+{
+    fn sconcat(&mut self, other: Self) {
+        self.fst.sconcat(other.fst);
+        self.snd.sconcat(other.snd);
+    }
+}
+
+/// Lets the `Err` case take precedence over the `Ok` case.
 impl<T, E> Semigroup for Result<T, E>
 where
     T: Semigroup,

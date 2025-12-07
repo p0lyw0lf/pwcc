@@ -125,10 +125,10 @@ impl<'a> Emitter<'a> {
                 #chain_def
             }
 
+            #chain_impl
+
             impl #generics private::Sealed for FunctionalMacros where FunctionalMacros: #trait_name {}
-            impl #generics #extension_trait_name for FunctionalMacros where FunctionalMacros: #trait_name {
-                #chain_impl
-            }
+            impl #generics #extension_trait_name for FunctionalMacros where FunctionalMacros: #trait_name {}
         }
     }
 
@@ -172,9 +172,15 @@ impl<'a> Emitter<'a> {
     fn emit_extension_chain<'ast>(&self, nodes: &Lattice<'ast>) -> (TokenStream2, TokenStream2) {
         let trait_name = self.trait_name();
         let def = quote! {
-            fn chain<FunctionalMacros2: #trait_name>(self, other: FunctionalMacros2) -> impl #trait_name + Into<(Self, FunctionalMacros2)>
+            fn chain<FunctionalMacros2: #trait_name>(self, other: FunctionalMacros2) -> Tuple<Self, FunctionalMacros2>
             where
-                Self: Sized;
+                Self: Sized
+            {
+                Tuple {
+                    fst: self,
+                    snd: other,
+                }
+            }
         };
 
         let mut body = TokenStream2::new();
@@ -185,44 +191,25 @@ impl<'a> Emitter<'a> {
             let (pre, post) = self.to_methods(ident);
             body.append_all(quote! {
                 fn #pre(&mut self, node: #ref_ty #ident) {
-                    self.first.#pre(node);
-                    self.second.#pre(node);
+                    self.fst.#pre(node);
+                    self.snd.#pre(node);
                 }
                 fn #post(&mut self, node: #ref_ty #ident) {
-                    self.second.#post(node);
-                    self.first.#post(node);
+                    self.fst.#post(node);
+                    self.snd.#post(node);
                 }
             });
         }
 
+        let generics = self.generics(quote! { FunctionalMacros2 });
+
         let r#impl = quote! {
-            fn chain<FunctionalMacros2: #trait_name>(self, other: FunctionalMacros2) -> impl #trait_name + Into<(Self, FunctionalMacros2)>
+            impl #generics #trait_name for Tuple<FunctionalMacros, FunctionalMacros2>
             where
-                Self: Sized,
+                FunctionalMacros: #trait_name,
+                FunctionalMacros2: #trait_name,
             {
-                struct FunctionalMacrosVisitChain<A, B> {
-                    first: A,
-                    second: B,
-                }
-
-                impl<'ast, FunctionalMacrosA, FunctionalMacrosB> #trait_name for FunctionalMacrosVisitChain<FunctionalMacrosA, FunctionalMacrosB>
-                where
-                    FunctionalMacrosA: #trait_name,
-                    FunctionalMacrosB: #trait_name,
-                {
-                    #body
-                }
-
-                impl<FunctionalMacrosA, FunctionalMacrosB> Into<(FunctionalMacrosA, FunctionalMacrosB)> for FunctionalMacrosVisitChain<FunctionalMacrosA, FunctionalMacrosB> {
-                    fn into(self) -> (FunctionalMacrosA, FunctionalMacrosB) {
-                        (self.first, self.second)
-                    }
-                }
-
-                FunctionalMacrosVisitChain {
-                    first: self,
-                    second: other,
-                }
+                #body
             }
         };
 

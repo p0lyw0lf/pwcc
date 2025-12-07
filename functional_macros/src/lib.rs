@@ -120,6 +120,12 @@ pub fn ast(attrs: TokenStream, item: TokenStream) -> TokenStream {
             });
         }
 
+        if options.has_any_typeclass(&[options::Typeclass::Visit, options::Typeclass::VisitMut]) {
+            out.append_all(quote! {
+                use #crate_name::Tuple;
+            });
+        }
+
         #[cfg(feature = "foldable")]
         if options.has_any_typeclass(&[options::Typeclass::Foldable, options::Typeclass::Visit]) {
             out.append_all(quote! {

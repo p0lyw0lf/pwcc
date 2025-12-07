@@ -10,6 +10,7 @@ use functional::TryFunctor;
 use crate::parser::FunctionBody;
 use crate::parser::FunctionDecl;
 use crate::parser::Program;
+use crate::parser::visit_mut::VisitMutBuilder;
 use crate::parser::visit_mut::VisitMutExt;
 
 mod goto;
@@ -25,27 +26,47 @@ mod test;
 pub use type_check::SymbolTable;
 
 pub fn validate(mut p: Program) -> Result<(Program, SymbolTable), SemanticErrors> {
-    let mut outer_pass = ident_resolution::resolve_idents().chain(type_check::type_check());
-    outer_pass.visit_mut_program(&mut p);
-    // TODO: get errors from outer_pass
-    let p = p.try_fmap(|f: FunctionDecl| -> Result<_, SemanticErrors> {
+    let outer_result = {
+        let mut visitor = ident_resolution::resolve_idents().chain(type_check::type_check());
+        visitor.visit_mut_program(&mut p);
+
+        let (resolution, checker) = visitor.into();
+        match (resolution.into(), checker.into()) {
+            (Ok(()), Ok(symbol_table)) => Ok(symbol_table),
+            (Err(ea), Ok(_)) => Err(ea),
+            (Ok(_), Err(eb)) => Err(eb),
+            (Err(mut ea), Err(eb)) => {
+                ea.sconcat(eb);
+                Err(ea)
+            }
+        }
+    };
+
+    let inner_result = p.try_fmap(|f: FunctionDecl| -> Result<_, SemanticErrors> {
         if matches!(f.body, FunctionBody::Semicolon(_)) {
             return Ok(f);
         }
-        let f = f.try_fmap(operator_types::check_operator_types)?;
-        let f = f.try_fmap(goto::analysis)?;
 
         let function_name = &f.name.0.clone();
-        let mut inner_pass = loop_labeling::labeling(function_name)
+        let mut visitor = VisitMutBuilder::visit_mut_exp_pre(operator_types::check_operator_types)
+            .chain(VisitMutBuilder::visit_mut_function_decl_pre(goto::analysis))
+            .chain(loop_labeling::labeling(function_name))
             .chain(switch_case_collection::collect(function_name));
-        let mut f = f;
-        inner_pass.visit_mut_function_decl(&mut f);
-        // TODO: get errors from inner_pass
-        Ok(f)
-    })?;
 
-    let (_, checker) = outer_pass.into();
-    Ok((p, checker.symbol_table))
+        let mut f = f;
+        visitor.visit_mut_function_decl(&mut f);
+        Ok(f)
+    });
+
+    match (outer_result, inner_result) {
+        (Ok(symbol_table), Ok(p)) => Ok((p, symbol_table)),
+        (Err(ea), Ok(_)) => Err(ea),
+        (Ok(_), Err(eb)) => Err(eb),
+        (Err(mut ea), Err(eb)) => {
+            ea.sconcat(eb);
+            Err(ea)
+        }
+    }
 }
 
 #[derive(Default)]

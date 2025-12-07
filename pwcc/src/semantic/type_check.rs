@@ -99,7 +99,7 @@ pub enum Error {
 
 #[derive(Default)]
 pub(super) struct TypeChecker {
-    pub symbol_table: SymbolTable,
+    symbol_table: SymbolTable,
     errs: Vec<SemanticError>,
 }
 
@@ -107,10 +107,10 @@ pub(super) fn type_check() -> TypeChecker {
     TypeChecker::default()
 }
 
-impl From<TypeChecker> for Result<(), SemanticErrors> {
+impl From<TypeChecker> for Result<SymbolTable, SemanticErrors> {
     fn from(v: TypeChecker) -> Self {
         if v.errs.is_empty() {
-            Ok(())
+            Ok(v.symbol_table)
         } else {
             Err(SemanticErrors(v.errs))
         }

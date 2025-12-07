@@ -4,6 +4,7 @@ use std::fmt::Display;
 use miette::Diagnostic;
 use thiserror::Error;
 
+use crate::parser::DeclArg;
 use crate::parser::Exp;
 use crate::parser::visit_mut::VisitMut;
 use crate::semantic::SemanticError;
@@ -101,6 +102,7 @@ pub enum Error {
 pub(super) struct TypeChecker {
     symbol_table: SymbolTable,
     errs: Vec<SemanticError>,
+    function_has_body: bool,
 }
 
 pub(super) fn type_check() -> TypeChecker {
@@ -170,19 +172,23 @@ impl VisitMut for TypeChecker {
             },
         );
 
-        if has_body {
-            for arg in decl.args.iter() {
-                let (name, span) = &arg.name;
-                self.symbol_table.add_symbol(
-                    name.clone(),
-                    Declaration {
-                        ty: Type::Int,
-                        defined: true,
-                        span: *span,
-                    },
-                );
-            }
+        self.function_has_body = has_body;
+    }
+
+    fn visit_mut_decl_arg_pre(&mut self, arg: &mut DeclArg) {
+        if !self.function_has_body {
+            return;
         }
+
+        let (name, span) = &arg.name;
+        self.symbol_table.add_symbol(
+            name.clone(),
+            Declaration {
+                ty: Type::Int,
+                defined: true,
+                span: *span,
+            },
+        );
     }
 
     fn visit_mut_exp_pre(&mut self, exp: &mut Exp) {

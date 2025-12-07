@@ -94,9 +94,12 @@ impl<'ast> BodyEmitter<'ast> for Emitter {
                 let #ident = match TryFunctor::<#output_inner>::try_fmap_impl(#ident, f, how) {
                     Ok(v) => ::core::mem::MaybeUninit::new(v),
                     Err(e) => {
-                        let new_err = err.sconcat(Some(e)).unwrap();
-                        if !new_err.cont() { return Err(new_err); }
-                        err = Some(new_err);
+                        err.sconcat(Some(e));
+                        // SAFETY: None.sconcat(Some(e)) is always Some
+                        if !unsafe { err.as_ref().unwrap_unchecked() }.cont() {
+                            // SAFETY: None.sconcat(Some(e)) is always Some
+                            return Err(unsafe { err.unwrap_unchecked() });
+                        }
                         ::core::mem::MaybeUninit::uninit()
                     }
                 }

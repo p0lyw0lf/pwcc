@@ -27,7 +27,10 @@ mod linked_list {
     fn test_begin() {
         let expected: Vec<i32> = vec![1, 2, 3];
         let actual = example().foldl_impl(
-            &mut |acc: Vec<i32>, node| acc.sconcat(vec![node.val]),
+            &mut |mut acc: Vec<i32>, node| {
+                acc.sconcat(vec![node.val]);
+                acc
+            },
             vec![],
             RecursiveCall::Begin,
         );
@@ -38,7 +41,10 @@ mod linked_list {
     fn test_end() {
         let expected: Vec<i32> = vec![3, 2, 1];
         let actual = example().foldl_impl(
-            &mut |acc: Vec<i32>, node| acc.sconcat(vec![node.val]),
+            &mut |mut acc: Vec<i32>, node| {
+                acc.sconcat(vec![node.val]);
+                acc
+            },
             vec![],
             RecursiveCall::End,
         );
@@ -49,7 +55,10 @@ mod linked_list {
     fn test_none() {
         let expected: Vec<i32> = vec![1];
         let actual = example().foldl_impl(
-            &mut |acc: Vec<i32>, node| acc.sconcat(vec![node.val]),
+            &mut |mut acc: Vec<i32>, node| {
+                acc.sconcat(vec![node.val]);
+                acc
+            },
             vec![],
             RecursiveCall::None,
         );
@@ -107,7 +116,10 @@ mod tree {
     fn test_begin() {
         let expected: Vec<i32> = vec![2, 1, 3];
         let actual = example().foldl_impl(
-            &mut |acc: Vec<i32>, node| acc.sconcat(vec![node.val]),
+            &mut |mut acc: Vec<i32>, node| {
+                acc.sconcat(vec![node.val]);
+                acc
+            },
             vec![],
             RecursiveCall::Begin,
         );
@@ -118,7 +130,10 @@ mod tree {
     fn test_end() {
         let expected: Vec<i32> = vec![1, 3, 2];
         let actual = example().foldl_impl(
-            &mut |acc: Vec<i32>, node| acc.sconcat(vec![node.val]),
+            &mut |mut acc: Vec<i32>, node| {
+                acc.sconcat(vec![node.val]);
+                acc
+            },
             vec![],
             RecursiveCall::End,
         );
@@ -129,7 +144,10 @@ mod tree {
     fn test_none() {
         let expected: Vec<i32> = vec![2];
         let actual = example().foldl_impl(
-            &mut |acc: Vec<i32>, node| acc.sconcat(vec![node.val]),
+            &mut |mut acc: Vec<i32>, node| {
+                acc.sconcat(vec![node.val]);
+                acc
+            },
             vec![],
             RecursiveCall::None,
         );

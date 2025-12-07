@@ -8,7 +8,7 @@ macro_rules! expect_token {
                 }),
                 #[allow(clippy::redundant_pattern)]
                 Some(($token$((v @ $pat))?, span)) => {
-                    $span = $span.sconcat(span);
+                    $span.sconcat(span);
                     Ok(($(<$ty>::from(v), span)?))
                 }
                 Some((t, span)) => Err(ParseError::UnexpectedToken {
@@ -113,7 +113,7 @@ macro_rules! nodes {
                         $(expect_token!(iter, span, $m_token);)?
                         $(
                             let $m_sname: $m_subnode = FromTokens::from_tokens(&mut iter)?;
-                            span = span.sconcat($m_sname.span());
+                            span.sconcat($m_sname.span());
                         )?
                         $(let $m_cname = expect_token!(iter, span, $m_ctoken($m_pat): $m_ty);)?
                     )*

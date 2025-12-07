@@ -41,12 +41,12 @@ where
             match x.try_fmap_impl(f, how) {
                 Ok(v) => output.push(v),
                 Err(e) => {
+                    err.sconcat(Some(e));
                     // SAFETY: None.sconcat(Some(e)) is always Some
-                    let new_err = unsafe { err.sconcat(Some(e)).unwrap_unchecked() };
-                    if !new_err.cont() {
-                        return Err(new_err);
+                    if !unsafe { err.as_ref().unwrap_unchecked() }.cont() {
+                        // SAFETY: None.sconcat(Some(e)) is always Some
+                        return Err(unsafe { err.unwrap_unchecked() });
                     }
-                    err = Some(new_err);
                 }
             }
         }

@@ -76,11 +76,11 @@ impl<'a> Emitter<'a> {
         }
     }
 
-    fn generics(&self) -> TokenStream2 {
+    fn generics(&self, extra: impl ToTokens) -> TokenStream2 {
         if self.has_lifetime {
-            quote! { <'ast, FunctionalMacros> }
+            quote! { <'ast, FunctionalMacros, #extra> }
         } else {
-            quote! { <FunctionalMacros> }
+            quote! { <FunctionalMacros, #extra> }
         }
     }
 
@@ -110,7 +110,7 @@ impl<'a> Emitter<'a> {
     fn emit_extension<'ast>(&self, nodes: &Lattice<'ast>) -> TokenStream2 {
         let trait_name = self.trait_name();
         let extension_trait_name = self.extension_trait_name();
-        let generics = self.generics();
+        let generics = self.generics(TokenStream2::new());
 
         let recur_impl = self.emit_extension_recur(nodes);
         let (chain_def, chain_impl) = self.emit_extension_chain(nodes);
@@ -136,7 +136,7 @@ impl<'a> Emitter<'a> {
     fn emit_extension_recur<'ast>(&self, nodes: &Lattice<'ast>) -> TokenStream2 {
         let mut out = TokenStream2::new();
         let extension_trait_name = self.extension_trait_name();
-        let generics = self.generics();
+        let generics = self.generics(TokenStream2::new());
         let ref_ty = &self.ref_ty;
 
         for node in nodes.values() {
@@ -229,16 +229,83 @@ impl<'a> Emitter<'a> {
         (def, r#impl)
     }
 
+    /// It's currently not super ergonomic to write some of these visitors if they end up being
+    /// simple functions like `FnMut(Node) -> Result<Node, Error>`. We'd like to make it so that we
+    /// can write these visitors without having to do the boilerplate of defining a new struct,
+    /// handling error coalescing, etc. Fortunately it is still possible to do this in a macro!
+    ///
+    /// One note: we will still have to make it so that the functions are `FnMut(&Node) ->
+    fn emit_builder<'ast>(&self, nodes: &Lattice<'ast>) -> TokenStream2 {
+        let trait_name = self.trait_name();
+        let builder_ty_name =
+            &Ident::new(&format!("{}Builder", self.trait_name), Span2::call_site());
+        let ref_ty = &self.ref_ty;
+        let generics = self.generics(quote! { FunctionalMacrosFn });
+
+        let mut body = TokenStream2::new();
+        for node in nodes.values() {
+            let ident = &node.ident();
+            // TODO: also do post if we need. Right now though, we only need pre, so might as well
+            // generate less code lol
+            let (pre, _post) = self.to_methods(ident);
+
+            body.append_all(quote! {
+                pub fn #pre #generics (f: FunctionalMacrosFn) -> impl #trait_name + Into<Result<(), FunctionalMacros>>
+                where
+                    // TODO: use #crate_name instead of hard-coding "functional" here
+                    FunctionalMacros: functional::Semigroup,
+                    FunctionalMacrosFn: FnMut(#ref_ty #ident) -> Result<(), FunctionalMacros>,
+                {
+                    struct FunctionalMacrosVisitor<FunctionalMacrosFn, FunctionalMacrosInner> {
+                        f: FunctionalMacrosFn,
+                        inner: Result<(), FunctionalMacrosInner>,
+                    }
+
+                    impl<FunctionalMacrosFn, FunctionalMacrosInner> Into<Result<(), FunctionalMacrosInner>> for FunctionalMacrosVisitor<FunctionalMacrosFn, FunctionalMacrosInner> {
+                        fn into(self) -> Result<(), FunctionalMacrosInner> {
+                            self.inner
+                        }
+                    }
+
+                    impl #generics #trait_name for FunctionalMacrosVisitor<FunctionalMacrosFn, FunctionalMacros>
+                    where
+                        FunctionalMacros: functional::Semigroup,
+                        FunctionalMacrosFn: FnMut(#ref_ty #ident) -> Result<(), FunctionalMacros>,
+                    {
+                        fn #pre(&mut self, node: #ref_ty #ident) {
+                            let out = (self.f)(node);
+                            self.inner.sconcat(out);
+                        }
+                    }
+
+                    FunctionalMacrosVisitor {
+                        f,
+                        inner: Ok(()),
+                    }
+                }
+            });
+        }
+
+        quote! {
+            pub struct #builder_ty_name;
+            impl #builder_ty_name {
+                #body
+            }
+        }
+    }
+
     pub fn emit<'ast>(&self, nodes: &Lattice<'ast>) -> TokenStream2 {
         let prefix = Ident::new(self.prefix, Span2::call_site());
         let def_trait = self.emit_trait(nodes);
         let def_extension = self.emit_extension(nodes);
+        let def_builder = self.emit_builder(nodes);
 
         quote! {
             pub mod #prefix {
                 use super::*;
                 #def_trait
                 #def_extension
+                #def_builder
             }
         }
     }

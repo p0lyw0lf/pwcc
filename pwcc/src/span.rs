@@ -18,16 +18,14 @@ impl Span {
 }
 
 impl Semigroup for Span {
-    fn sconcat(self, other: Self) -> Self {
-        if self == Span::empty() {
-            other
+    fn sconcat(&mut self, other: Self) {
+        if *self == Span::empty() {
+            *self = other;
         } else if other == Span::empty() {
-            self
+            // Do nothing.
         } else {
-            Self {
-                start: std::cmp::min(self.start, other.start),
-                end: std::cmp::max(self.end, other.end),
-            }
+            self.start = std::cmp::min(self.start, other.start);
+            self.end = std::cmp::max(self.end, other.end);
         }
     }
 }
@@ -105,7 +103,7 @@ where
     fn span(&self) -> Span {
         let mut out = Span::empty();
         for v in self.iter() {
-            out = out.sconcat(v.span());
+            out.sconcat(v.span());
         }
         out
     }

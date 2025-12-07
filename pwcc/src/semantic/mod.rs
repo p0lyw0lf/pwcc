@@ -98,8 +98,8 @@ impl<E: Into<SemanticError>> From<E> for SemanticErrors {
 }
 
 impl Semigroup for SemanticErrors {
-    fn sconcat(self, other: Self) -> Self {
-        Self(self.0.sconcat(other.0))
+    fn sconcat(&mut self, other: Self) {
+        self.0.sconcat(other.0)
     }
 }
 

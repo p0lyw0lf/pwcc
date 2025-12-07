@@ -453,7 +453,8 @@ impl FromTokens for Exp {
                 iter = peek_iter;
 
                 // Left-associative
-                let span = op.span().sconcat(exp.span());
+                let mut span = op.span();
+                span.sconcat(exp.span());
                 exp = Exp::Unary {
                     op: UnaryOp::PostfixOp(op),
                     exp: Box::new(exp),
@@ -477,7 +478,8 @@ impl FromTokens for Exp {
                 |iter| {
                     let prefix = PrefixOp::from_tokens(&mut iter)?;
                     let exp = parse_unary(&mut iter)?;
-                    let span = prefix.span().sconcat(exp.span());
+                    let mut span = prefix.span();
+                    span.sconcat(exp.span());
                     Ok(Exp::Unary {
                         op: UnaryOp::PrefixOp(prefix),
                         exp: Box::new(exp),
@@ -509,7 +511,8 @@ impl FromTokens for Exp {
                     BinaryTok::BinaryOp(op) => {
                         // Left-associative
                         let right = parse_exp(&mut iter, prec.next())?;
-                        let span = span.sconcat(left.span()).sconcat(right.span());
+                        span.sconcat(left.span());
+                        span.sconcat(right.span());
                         left = Exp::Binary {
                             lhs: Box::new(left),
                             op,
@@ -520,7 +523,8 @@ impl FromTokens for Exp {
                     BinaryTok::AssignmentOp(op) => {
                         // Right-associative
                         let right = parse_exp(&mut iter, prec)?;
-                        let span = span.sconcat(left.span()).sconcat(right.span());
+                        span.sconcat(left.span());
+                        span.sconcat(right.span());
                         left = Exp::Assignment {
                             lhs: Box::new(left),
                             op,
@@ -532,10 +536,9 @@ impl FromTokens for Exp {
                         let middle = parse_exp(&mut iter, Precedence::lowest())?;
                         expect_token!(iter, span, Colon);
                         let right = parse_exp(&mut iter, prec)?;
-                        let span = span
-                            .sconcat(left.span())
-                            .sconcat(middle.span())
-                            .sconcat(right.span());
+                        span.sconcat(left.span());
+                        span.sconcat(middle.span());
+                        span.sconcat(right.span());
                         left = Exp::Ternary {
                             condition: left.boxed(),
                             true_case: middle.boxed(),

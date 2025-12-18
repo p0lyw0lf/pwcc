@@ -1,21 +1,7 @@
-use core::concat;
-use core::fmt::Debug;
-use core::str::FromStr;
-
-use miette::Diagnostic;
-use regex::Regex;
-use regex::RegexSet;
-use thiserror::Error;
-
-use crate::span::Span;
-
-mod macros;
-use macros::*;
-
 #[cfg(test)]
 mod test;
 
-tokens! {
+pwcc_util::tokens! {
 Tokenizer for Token with TokenError:
     r"break\b": KeywordBreak,
     r"case\b": KeywordCase,
@@ -78,40 +64,7 @@ Tokenizer for Token with TokenError:
     r"~": Tilde,
 }
 
-#[derive(Error, Diagnostic, Debug)]
-#[cfg_attr(test, derive(PartialEq))]
-pub enum LexError {
-    #[error("Invalid token")]
-    #[diagnostic()]
-    InvalidToken {
-        #[label("here")]
-        span: (usize, usize),
-    },
-    #[error(transparent)]
-    #[diagnostic(transparent)]
-    TokenError(#[from] TokenError),
-}
-
-/// Lexes a source file into a list of tokens.
-pub fn lex(mut source: &str) -> Result<Vec<(Token, Span)>, LexError> {
-    let tokenizer = Tokenizer::new();
-    let mut out = Vec::new();
-    let mut offset = 0;
-    while !source.is_empty() {
-        let old_len = source.len();
-        source = source.trim_start();
-        if source.is_empty() {
-            break;
-        }
-
-        let new_len = source.len();
-        offset += old_len - new_len;
-
-        let (token, len) = tokenizer.consume_token(source, offset)?;
-        out.push((token, (offset, len).into()));
-        source = &source[len..];
-        offset += len;
-    }
-
-    Ok(out)
+pub fn lex(source: &str) -> Result<Vec<(Token, Span)>, LexError> {
+    let t = Tokenizer::new();
+    pwcc_util::lexer::lex(source, move |s, i| t.consume_token(s, i))
 }

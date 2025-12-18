@@ -195,6 +195,7 @@ dependencies = [
  "functional",
  "functional_macros",
  "miette",
+ "pwcc_util",
  "regex",
  "thiserror",
 ]
@@ -206,6 +207,16 @@ dependencies = [
  "functional",
  "miette",
  "pwcc",
+]
+
+[[package]]
+name = "pwcc_util"
+version = "0.0.9"
+dependencies = [
+ "functional",
+ "miette",
+ "regex",
+ "thiserror",
 ]
 
 [[package]]

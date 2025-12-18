@@ -1,8 +1,9 @@
 [workspace]
 resolver = "1"
 members = [
-  "pwcc_bin",
-  "pwcc",
   "functional",
   "functional_macros",
+  "pwcc",
+  "pwcc_bin",
+  "pwcc_util",
 ]

@@ -59,12 +59,12 @@ pub fn collect_duplicates() -> impl VisitMut + Into<Result<Labels, SemanticError
         }
     }
 
-    impl Into<Result<Labels, SemanticErrors>> for Duplicates {
-        fn into(self) -> Result<Labels, SemanticErrors> {
-            if self.errs.len() > 0 {
-                Err(SemanticErrors(self.errs))
+    impl From<Duplicates> for Result<Labels, SemanticErrors> {
+        fn from(value: Duplicates) -> Self {
+            if value.errs.is_empty() {
+                Ok(value.labels)
             } else {
-                Ok(self.labels)
+                Err(SemanticErrors(value.errs))
             }
         }
     }

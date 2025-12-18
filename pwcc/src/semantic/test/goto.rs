@@ -1,5 +1,4 @@
 use crate::parser::Program;
-use crate::parser::visit_mut::VisitMutBuilder;
 use crate::parser::visit_mut::VisitMutExt;
 use crate::semantic::SemanticError;
 use crate::semantic::SemanticErrors;
@@ -8,7 +7,11 @@ use crate::semantic::goto::*;
 use super::parse;
 
 fn run_analysis(mut tree: Program) -> Result<(), SemanticErrors> {
-    let mut visitor = VisitMutBuilder::visit_mut_function_decl_pre(analysis);
+    let mut visitor = collect_duplicates();
+    visitor.visit_mut_program(&mut tree);
+    let labels = visitor.into()?;
+
+    let mut visitor = find_missing(labels);
     visitor.visit_mut_program(&mut tree);
     visitor.into()
 }
@@ -65,4 +68,3 @@ fn missing_label() {
         err
     );
 }
-

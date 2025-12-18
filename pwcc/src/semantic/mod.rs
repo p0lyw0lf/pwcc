@@ -42,14 +42,20 @@ pub fn validate(mut p: Program) -> Result<(Program, SymbolTable), SemanticErrors
 
         let function_name = &f.name.0.clone();
         let mut visitor = VisitMutBuilder::visit_mut_exp_pre(operator_types::check_operator_types)
-            .chain(VisitMutBuilder::visit_mut_function_decl_pre(goto::analysis))
             .chain(loop_labeling::labeling(function_name))
-            .chain(switch_case_collection::collect(function_name));
+            .chain(switch_case_collection::collect(function_name))
+            .chain(goto::collect_duplicates());
 
         let mut f = f;
         visitor.visit_mut_function_decl(&mut f);
 
-        visitor.try_coalesce().map(|_| f)
+        let goto_labels = visitor.try_coalesce()?.snd;
+
+        let mut visitor = goto::find_missing(goto_labels);
+        visitor.visit_mut_function_decl(&mut f);
+        let () = visitor.try_coalesce()?;
+
+        Ok(f)
     });
 
     let final_result = tuple!(outer_result, inner_result).try_coalesce()?;

@@ -20,7 +20,6 @@ macro_rules! expect_token {
         }
     };
 }
-pub(super) use expect_token;
 
 /// Tries multiple functions, returning the when the first returns OK, otherwise returning a
 /// default value.
@@ -31,8 +30,9 @@ macro_rules! try_parse {
         {
             $(
             let mut $iter = $ts.clone();
+            let res: Result<_, ParseError> = $tt;
             #[allow(clippy::redundant_closure_call)]
-            if let Ok(out) = (|| -> Result<_, ParseError> $tt)() {
+            if let Ok(out) = res {
                 *$ts = $iter;
                 return Ok(out);
             }
@@ -41,7 +41,6 @@ macro_rules! try_parse {
         }
     };
 }
-pub(super) use try_parse;
 
 /// This is an extremely nasty macro. Unfortunately, it's borne out of necessity: we need to be
 /// able to generate all struct definitions at once if we want to use `#[functional_macros::ast]`

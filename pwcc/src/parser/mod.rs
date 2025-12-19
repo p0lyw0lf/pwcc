@@ -11,12 +11,8 @@ use crate::span::Spanned;
 
 mod errors;
 mod helpers;
-mod macros;
-mod traits;
 
 use errors::ParseError;
-use macros::*;
-pub use traits::*;
 
 #[cfg(test)]
 mod test;

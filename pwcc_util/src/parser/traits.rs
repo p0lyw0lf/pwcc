@@ -1,4 +1,5 @@
 use core::iter::Iterator;
+use std::fmt::Display;
 
 use crate::span::Span;
 use crate::span::Spanned;
@@ -7,13 +8,52 @@ use crate::span::Spanned;
 /// backtracking: we clone the iterator, greedily take values from it until:
 /// + we encounter a parse error, in which case we throw away the new iterator
 /// + we successfully parse the current node, in which case we keep the current iterator.
-trait CloneableIterator: Iterator + Clone {}
+pub trait CloneableIterator: Iterator + Clone {}
 
 /// Creates a CloneableIterator from `Vec<(T, Span)>`, created with `lex()`, for use with the
 /// parser.
-fn as_cloneable<T>(tokens: &Vec<(T, Span)>) -> impl CloneableIterator<Item = (&'_ T, Span)> {
-    todo!()
-}`
+pub fn as_cloneable<T>(tokens: &Vec<(T, Span)>) -> impl CloneableIterator<Item = (&'_ T, Span)> {
+    struct SliceOffset<'a, T> {
+        slice: &'a [(T, Span)],
+        offset: usize,
+    }
+
+    /// Need to write this impl manually, because deriving adds a bount `T: Clone` that we don't
+    /// want.
+    impl<'a, T> Clone for SliceOffset<'a, T> {
+        fn clone(&self) -> Self {
+            Self {
+                slice: self.slice,
+                offset: self.offset,
+            }
+        }
+    }
+
+    impl<'a, T> Iterator for SliceOffset<'a, T> {
+        type Item = (&'a T, Span);
+        fn next(&mut self) -> Option<Self::Item> {
+            if self.offset >= self.slice.len() {
+                return None;
+            }
+
+            let (token, span) = &self.slice[self.offset];
+            self.offset += 1;
+            Some((token, *span))
+        }
+
+        fn size_hint(&self) -> (usize, Option<usize>) {
+            let remaining = self.slice.len().saturating_sub(self.offset);
+            (remaining, Some(remaining))
+        }
+    }
+
+    impl<'a, T> CloneableIterator for SliceOffset<'a, T> {}
+
+    SliceOffset {
+        slice: tokens.as_slice(),
+        offset: 0,
+    }
+}
 
 pub trait FromTokens<Token, Error>: Sized + Spanned {
     /// If this returns Ok(), then `ts` has been advanced past the parsed item.

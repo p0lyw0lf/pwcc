@@ -26,7 +26,7 @@ nodes! {
         use crate::parser::errors::ParseError;
         use crate::parser::helpers::CommaDelimited;
         use crate::parser::macros::expect_token;
-        use crate::parser::macros::try_parse;
+        use crate::parser::macros::parse_choices;
         use crate::parser::traits::FromTokens;
         use crate::parser::traits::ToTokens;
         use crate::span::Span;
@@ -240,7 +240,7 @@ impl FromTokens for CaseLabel {
     fn from_tokens(
         ts: &mut (impl Iterator<Item = (Token, Span)> + Clone),
     ) -> Result<Self, ParseError> {
-        try_parse!(
+        parse_choices!(
             ts,
             Err(ParseError::NoMatches),
             |iter| {
@@ -403,7 +403,7 @@ impl FromTokens for Exp {
         fn parse_primary(
             ts: &mut (impl Iterator<Item = (Token, Span)> + Clone),
         ) -> Result<Exp, ParseError> {
-            try_parse!(
+            parse_choices!(
                 ts,
                 Err(ParseError::NoMatches),
                 |iter| {
@@ -468,7 +468,7 @@ impl FromTokens for Exp {
         fn parse_unary(
             ts: &mut (impl Iterator<Item = (Token, Span)> + Clone),
         ) -> Result<Exp, ParseError> {
-            try_parse!(
+            parse_choices!(
                 ts,
                 Err(ParseError::NoMatches),
                 |iter| {

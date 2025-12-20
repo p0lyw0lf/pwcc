@@ -1,5 +1,4 @@
-use core::iter::Iterator;
-use std::fmt::Display;
+use std::iter::Iterator;
 
 use crate::span::Span;
 use crate::span::Spanned;

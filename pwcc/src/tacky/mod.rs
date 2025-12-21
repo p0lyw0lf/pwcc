@@ -12,9 +12,12 @@ impl From<parser::Program> for Program {
     fn from(program: parser::Program) -> Self {
         Self {
             functions: program
-                .functions
+                .declarations
                 .into_iter()
-                .filter_map(|decl| Function::try_from(decl).ok())
+                .filter_map(|decl| match decl {
+                    parser::Declaration::Function(f) => Function::try_from(f).ok(),
+                    parser::Declaration::Var(_) => None,
+                })
                 .collect(),
         }
     }

@@ -34,7 +34,85 @@ mod ast {
     #[derive(Debug, Spanned)]
     #[cfg_attr(test, derive(PartialEq))]
     pub struct Program {
-        pub functions: Vec<FunctionDecl>,
+        pub declarations: Vec<Declaration>,
+        pub span: Span,
+    }
+
+    #[derive(Debug, Spanned)]
+    #[cfg_attr(test, derive(PartialEq))]
+    pub enum Declaration {
+        Var(VarDecl),
+        Function(FunctionDecl),
+    }
+
+    #[derive(Debug, Spanned)]
+    #[cfg_attr(test, derive(PartialEq))]
+    pub struct VarDecl {
+        pub ty: TypeAndStorage,
+        pub name: (String, Span),
+        pub init: Initializer,
+        pub span: Span,
+    }
+
+    #[derive(Debug, Spanned)]
+    #[cfg_attr(test, derive(PartialEq))]
+    pub enum Initializer {
+        Declared(Span),
+        Defined(Exp, Span),
+    }
+
+    #[derive(Debug, Spanned)]
+    #[cfg_attr(test, derive(PartialEq))]
+    #[include()]
+    pub struct FunctionDecl {
+        pub ty: TypeAndStorage,
+        pub name: (String, Span),
+        pub args: FunctionDeclArgs,
+        pub body: FunctionBody,
+        pub span: Span,
+    }
+
+    #[derive(Debug, Spanned)]
+    #[cfg_attr(test, derive(PartialEq))]
+    pub enum FunctionDeclArgs {
+        Void(Span),
+        DeclArgs(CommaDelimited<DeclArg>),
+    }
+
+    #[derive(Debug, Spanned)]
+    #[cfg_attr(test, derive(PartialEq))]
+    pub struct DeclArg {
+        pub name: (String, Span),
+        pub span: Span,
+    }
+
+    #[derive(Debug, Spanned)]
+    #[cfg_attr(test, derive(PartialEq))]
+    pub enum FunctionBody {
+        Declared(Span),
+        Defined(Block),
+    }
+
+    #[derive(Debug, Spanned)]
+    #[cfg_attr(test, derive(PartialEq))]
+    pub enum StorageClass {
+        Static(Span),
+        Extern(Span),
+    }
+
+    #[derive(Debug, Spanned)]
+    #[cfg_attr(test, derive(PartialEq))]
+    pub enum Specifier {
+        /// Just "int" for now.
+        Type(Span),
+        Storage(StorageClass),
+    }
+
+    /// Just Storage for now, because everything is still int-typed.
+    #[derive(Debug, Spanned)]
+    #[cfg_attr(test, derive(PartialEq))]
+    pub struct TypeAndStorage {
+        pub storage: Option<StorageClass>,
         pub span: Span,
     }
 
@@ -189,59 +267,6 @@ mod ast {
     #[cfg_attr(test, derive(PartialEq))]
     pub struct NullStmt {
         pub span: Span,
-    }
-
-    #[derive(Debug, Spanned)]
-    #[cfg_attr(test, derive(PartialEq))]
-    pub enum Declaration {
-        Function(FunctionDecl),
-        Var(VarDecl),
-    }
-
-    #[derive(Debug, Spanned)]
-    #[cfg_attr(test, derive(PartialEq))]
-    #[include()]
-    pub struct FunctionDecl {
-        pub name: (String, Span),
-        pub args: FunctionDeclArgs,
-        pub body: FunctionBody,
-        pub span: Span,
-    }
-
-    #[derive(Debug, Spanned)]
-    #[cfg_attr(test, derive(PartialEq))]
-    pub enum FunctionDeclArgs {
-        Void(Span),
-        DeclArgs(CommaDelimited<DeclArg>),
-    }
-
-    #[derive(Debug, Spanned)]
-    #[cfg_attr(test, derive(PartialEq))]
-    pub struct DeclArg {
-        pub name: (String, Span),
-        pub span: Span,
-    }
-
-    #[derive(Debug, Spanned)]
-    #[cfg_attr(test, derive(PartialEq))]
-    pub enum FunctionBody {
-        Declared(Span),
-        Defined(Block),
-    }
-
-    #[derive(Debug, Spanned)]
-    #[cfg_attr(test, derive(PartialEq))]
-    pub struct VarDecl {
-        pub name: (String, Span),
-        pub init: Initializer,
-        pub span: Span,
-    }
-
-    #[derive(Debug, Spanned)]
-    #[cfg_attr(test, derive(PartialEq))]
-    pub enum Initializer {
-        Declared(Span),
-        Defined(Exp, Span),
     }
 
     #[derive(Debug, Spanned)]
@@ -403,7 +428,168 @@ macro_rules! unparseable {
         }
     };
 }
-parse_times!(Program: *<functions: Vec<FunctionDecl>>);
+parse_times!(Program: *<declarations: Vec<Declaration>>);
+parse_plus!(Declaration:
+    +<VarDecl>: Var,
+    +<FunctionDecl>: Function,
+);
+parse_times!(VarDecl: *<ty: TypeAndStorage> *{name: Ident(_ = String)} *<init: Initializer>);
+
+impl FromTokens<Token, ParseError> for Initializer {
+    fn from_tokens<'a>(
+        ts: &mut impl pwcc_util::parser::CloneableIterator<Item = (&'a Token, Span)>,
+    ) -> Result<Self, ParseError>
+    where
+        Token: 'a,
+    {
+        parse_choices!(
+            ts,
+            Err(ParseError::NoMatches),
+            |iter| {
+                let mut span = Span::empty();
+                parse_token!(iter, span, Semicolon)?;
+                Ok(Initializer::Declared(span))
+            },
+            |iter| {
+                let mut span = Span::empty();
+                parse_multiple!(&mut iter, span, {
+                    *Equal *<exp: Exp> *Semicolon
+                });
+                Ok(Initializer::Defined(exp, span))
+            },
+        )
+    }
+}
+
+impl ToTokens<Token> for Initializer {
+    fn to_tokens(self) -> impl Iterator<Item = Token> {
+        use Token::*;
+        let out: Box<dyn Iterator<Item = Token>> = match self {
+            Initializer::Declared(_) => Box::new(once(Semicolon)),
+            Initializer::Defined(exp, _) => {
+                Box::new(once(Equal).chain(exp.to_tokens()).chain(once(Semicolon)))
+            }
+        };
+        out
+    }
+}
+
+parse_times!(FunctionDecl:
+    *<ty: TypeAndStorage> *{name: Ident(_ = String)} *OpenParen *<args: FunctionDeclArgs> *CloseParen
+        *<body: FunctionBody>
+);
+parse_plus!(FunctionDeclArgs:
+    +KeywordVoid: Void,
+    +<CommaDelimited<DeclArg>>: DeclArgs,
+);
+
+impl FunctionDeclArgs {
+    pub fn num_args(&self) -> usize {
+        match self {
+            FunctionDeclArgs::Void(_) => 0,
+            FunctionDeclArgs::DeclArgs(args) => args.0.len(),
+        }
+    }
+}
+
+impl IntoIterator for FunctionDeclArgs {
+    type Item = DeclArg;
+    type IntoIter = <Vec<Self::Item> as IntoIterator>::IntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        match self {
+            FunctionDeclArgs::Void(_) => vec![].into_iter(),
+            FunctionDeclArgs::DeclArgs(args) => args.0.into_iter(),
+        }
+    }
+}
+
+impl FunctionDeclArgs {
+    pub fn iter(&self) -> std::slice::Iter<'_, DeclArg> {
+        match self {
+            FunctionDeclArgs::Void(_) => [].iter(),
+            FunctionDeclArgs::DeclArgs(args) => args.0.iter(),
+        }
+    }
+}
+
+parse_times!(DeclArg: *KeywordInt *{name: Ident(_ = String)});
+parse_plus!(FunctionBody:
+    +Semicolon: Declared,
+    +<Block>: Defined,
+);
+parse_plus!(StorageClass:
+    +KeywordStatic: Static,
+    +KeywordExtern: Extern,
+);
+parse_plus!(Specifier:
+    +KeywordInt: Type,
+    +<StorageClass>: Storage,
+);
+
+impl FromTokens<Token, ParseError> for TypeAndStorage {
+    fn from_tokens<'a>(
+        ts: &mut impl pwcc_util::parser::CloneableIterator<Item = (&'a Token, Span)>,
+    ) -> Result<Self, ParseError>
+    where
+        Token: 'a,
+    {
+        let mut iter = ts.clone();
+        let mut span = Span::empty();
+
+        let specifiers = Vec::<Specifier>::from_tokens(&mut iter)?;
+
+        let mut storage: Option<StorageClass> = None;
+        let mut ty: Option<()> = None;
+        for specifier in specifiers.into_iter() {
+            span.sconcat(specifier.span());
+
+            match specifier {
+                Specifier::Type(span) => match ty {
+                    // If we've already seen the type, throw an error upon seeing the second one.
+                    Some(()) => {
+                        return Err(ParseError::ExtraToken {
+                            actual: Token::KeywordInt,
+                            span,
+                        });
+                    }
+                    None => {
+                        ty = Some(());
+                    }
+                },
+                Specifier::Storage(new_storage) => match storage {
+                    Some(_current_storage) => {
+                        return Err(ParseError::ExtraToken {
+                            span: new_storage.span(),
+                            actual: new_storage.to_tokens().next().unwrap(),
+                        });
+                    }
+                    None => {
+                        storage = Some(new_storage);
+                    }
+                },
+            }
+        }
+
+        if ty.is_none() {
+            // TODO: with both these and the previous errors, we probably want distinct error
+            // cases, not having to piggyback off existing ones.
+            return Err(ParseError::MissingToken {
+                expected: Token::KeywordInt,
+            });
+        }
+
+        *ts = iter;
+        Ok(TypeAndStorage { storage, span })
+    }
+}
+
+impl ToTokens<Token> for TypeAndStorage {
+    fn to_tokens(self) -> impl Iterator<Item = Token> {
+        self.storage.to_tokens().chain(once(Token::KeywordInt))
+    }
+}
+
 parse_times!(Block: *OpenBrace *<items: Vec<BlockItem>> *CloseBrace);
 parse_plus!(BlockItem:
     +<Statement>: Statement,
@@ -534,96 +720,6 @@ parse_times!(RawLabel: *{label: Ident(_ = String)});
 parse_times!(GotoStmt: *KeywordGoto *{label: Ident(_ = String)} *Semicolon);
 
 parse_times!(NullStmt: *Semicolon);
-
-parse_plus!(Declaration:
-    +<FunctionDecl>: Function,
-    +<VarDecl>: Var,
-);
-parse_times!(FunctionDecl:
-    *KeywordInt *{name: Ident(_ = String)} *OpenParen *<args: FunctionDeclArgs> *CloseParen
-        *<body: FunctionBody>
-);
-
-parse_plus!(FunctionDeclArgs:
-    +KeywordVoid: Void,
-    +<CommaDelimited<DeclArg>>: DeclArgs,
-);
-
-impl FunctionDeclArgs {
-    pub fn num_args(&self) -> usize {
-        match self {
-            FunctionDeclArgs::Void(_) => 0,
-            FunctionDeclArgs::DeclArgs(args) => args.0.len(),
-        }
-    }
-}
-
-impl IntoIterator for FunctionDeclArgs {
-    type Item = DeclArg;
-    type IntoIter = <Vec<Self::Item> as IntoIterator>::IntoIter;
-
-    fn into_iter(self) -> Self::IntoIter {
-        match self {
-            FunctionDeclArgs::Void(_) => vec![].into_iter(),
-            FunctionDeclArgs::DeclArgs(args) => args.0.into_iter(),
-        }
-    }
-}
-
-impl FunctionDeclArgs {
-    pub fn iter(&self) -> std::slice::Iter<'_, DeclArg> {
-        match self {
-            FunctionDeclArgs::Void(_) => [].iter(),
-            FunctionDeclArgs::DeclArgs(args) => args.0.iter(),
-        }
-    }
-}
-
-parse_times!(DeclArg: *KeywordInt *{name: Ident(_ = String)});
-parse_plus!(FunctionBody:
-    +Semicolon: Declared,
-    +<Block>: Defined,
-);
-parse_times!(VarDecl: *KeywordInt *{name: Ident(_ = String)} *<init: Initializer>);
-
-impl FromTokens<Token, ParseError> for Initializer {
-    fn from_tokens<'a>(
-        ts: &mut impl pwcc_util::parser::CloneableIterator<Item = (&'a Token, Span)>,
-    ) -> Result<Self, ParseError>
-    where
-        Token: 'a,
-    {
-        parse_choices!(
-            ts,
-            Err(ParseError::NoMatches),
-            |iter| {
-                let mut span = Span::empty();
-                parse_token!(iter, span, Semicolon)?;
-                Ok(Initializer::Declared(span))
-            },
-            |iter| {
-                let mut span = Span::empty();
-                parse_multiple!(&mut iter, span, {
-                    *Equal *<exp: Exp> *Semicolon
-                });
-                Ok(Initializer::Defined(exp, span))
-            },
-        )
-    }
-}
-
-impl ToTokens<Token> for Initializer {
-    fn to_tokens(self) -> impl Iterator<Item = Token> {
-        use Token::*;
-        let out: Box<dyn Iterator<Item = Token>> = match self {
-            Initializer::Declared(_) => Box::new(once(Semicolon)),
-            Initializer::Defined(exp, _) => {
-                Box::new(once(Equal).chain(exp.to_tokens()).chain(once(Semicolon)))
-            }
-        };
-        out
-    }
-}
 
 parse_plus!(PrefixOp:
     +Minus: Minus,

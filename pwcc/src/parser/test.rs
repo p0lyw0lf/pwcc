@@ -98,11 +98,19 @@ int main(void) {
     return 2;
 }",
         FunctionDecl {
+            ty: TypeAndStorage {
+                storage: None,
+                span,
+            },
             name: ("main".to_string(), span),
             args: FunctionDeclArgs::Void(span),
             body: FunctionBody::Defined(Block {
                 items: vec![
                     BlockItem::Declaration(Declaration::Var(VarDecl {
+                        ty: TypeAndStorage {
+                            storage: None,
+                            span,
+                        },
                         name: ("x".to_string(), span),
                         init: Initializer::Defined(Exp::Constant { constant: 1, span }, span),
                         span,
@@ -249,6 +257,10 @@ fn decl_no_init() {
     assert_convertible(
         "int x;",
         Declaration::Var(VarDecl {
+            ty: TypeAndStorage {
+                storage: None,
+                span,
+            },
             name: ("x".to_string(), span),
             init: Initializer::Declared(span),
             span,
@@ -261,6 +273,10 @@ fn decl_init() {
     assert_convertible(
         "int x = 5;",
         Declaration::Var(VarDecl {
+            ty: TypeAndStorage {
+                storage: None,
+                span,
+            },
             name: ("x".to_string(), span),
             init: Initializer::Defined(Exp::Constant { constant: 5, span }, span),
             span,
@@ -293,6 +309,10 @@ fn block_item() {
     assert_convertible(
         "int x = 5;",
         BlockItem::Declaration(Declaration::Var(VarDecl {
+            ty: TypeAndStorage {
+                storage: None,
+                span,
+            },
             name: ("x".to_string(), span),
             init: Initializer::Defined(Exp::Constant { constant: 5, span }, span),
             span,
@@ -453,6 +473,10 @@ fn if_statement_naked() {
     assert_forwards(
         &tokens,
         &FunctionDecl {
+            ty: TypeAndStorage {
+                storage: None,
+                span,
+            },
             name: ("main".to_string(), span),
             args: FunctionDeclArgs::Void(span),
             body: FunctionBody::Defined(Block {
@@ -481,6 +505,10 @@ fn function_decl_args() {
     assert_convertible(
         "int incr(int x);",
         FunctionDecl {
+            ty: TypeAndStorage {
+                storage: None,
+                span,
+            },
             name: ("incr".to_string(), span),
             args: FunctionDeclArgs::DeclArgs(CommaDelimited(vec![DeclArg {
                 name: ("x".to_string(), span),
@@ -494,6 +522,10 @@ fn function_decl_args() {
     assert_convertible(
         "int cmp(int a,int b);",
         FunctionDecl {
+            ty: TypeAndStorage {
+                storage: None,
+                span,
+            },
             name: ("cmp".to_string(), span),
             args: FunctionDeclArgs::DeclArgs(CommaDelimited(vec![
                 DeclArg {
@@ -604,9 +636,67 @@ fn empty_args_decl() {
     assert_convertible(
         "int f();",
         FunctionDecl {
+            ty: TypeAndStorage {
+                storage: None,
+                span,
+            },
             name: ("f".to_string(), span),
             args: FunctionDeclArgs::DeclArgs(CommaDelimited(vec![])),
             body: FunctionBody::Declared(span),
+            span,
+        },
+    );
+}
+
+#[test]
+fn type_and_storage_good() {
+    assert_convertible(
+        "int",
+        TypeAndStorage {
+            storage: None,
+            span,
+        },
+    );
+    assert_convertible(
+        "static int",
+        TypeAndStorage {
+            storage: Some(StorageClass::Static(span)),
+            span,
+        },
+    );
+}
+
+#[test]
+#[should_panic]
+fn type_and_storage_empty() {
+    assert_forwards(
+        &lex(""),
+        &TypeAndStorage {
+            storage: None,
+            span,
+        },
+    );
+}
+
+#[test]
+#[should_panic]
+fn type_and_storage_duplicate_type() {
+    assert_forwards(
+        &lex("int int"),
+        &TypeAndStorage {
+            storage: None,
+            span,
+        },
+    );
+}
+
+#[test]
+#[should_panic]
+fn type_and_storage_duplicate_storage() {
+    assert_forwards(
+        &lex("extern int extern"),
+        &TypeAndStorage {
+            storage: Some(StorageClass::Extern(span)),
             span,
         },
     );

@@ -1,4 +1,5 @@
 use crate::parser::BlockItem;
+use crate::parser::Declaration;
 use crate::parser::FunctionBody;
 use crate::parser::Program;
 use crate::parser::Statement;
@@ -33,7 +34,11 @@ fn labels_breaks_in_while_loop() {
         result.unwrap_err()
     );
     let mut tree = result.unwrap();
-    let main = tree.functions.pop().expect("no main function");
+    let main_decl = tree.declarations.pop().expect("no main function");
+    let main = match main_decl {
+        Declaration::Function(f) => f,
+        Declaration::Var(_) => panic!("expected function, got variable"),
+    };
     let mut block = match main.body {
         FunctionBody::Defined(block) => block,
         FunctionBody::Declared(_) => panic!("expected definition, got declaration"),

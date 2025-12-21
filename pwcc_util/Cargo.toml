@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 functional = { path = "../functional" }
+pwcc_util_macros = { path = "../pwcc_util_macros" }
 miette = "7.5"
 regex = "1.11.*"
 thiserror = "2.0"

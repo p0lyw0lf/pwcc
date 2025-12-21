@@ -58,6 +58,7 @@ macro_rules! parse_choices {
 /// use pwcc_util::parser::as_cloneable;
 /// use pwcc_util::lexer::lex;
 /// use pwcc_util::Span;
+/// use pwcc_util::span::Spanned;
 ///
 /// pwcc_util::tokens! {
 /// Tokenizer for Token with TokenError :
@@ -67,13 +68,13 @@ macro_rules! parse_choices {
 ///     r"[0-9]+": N(usize),
 /// }
 ///
-/// #[derive(Debug, PartialEq)]
+/// #[derive(Debug, PartialEq, Spanned)]
 /// struct AB {
 ///     nc: NC,
 ///     span: Span,
 /// }
 ///
-/// #[derive(Debug, PartialEq)]
+/// #[derive(Debug, PartialEq, Spanned)]
 /// struct NC {
 ///     n: (usize, Span),
 ///     span: Span,
@@ -90,18 +91,6 @@ macro_rules! parse_choices {
 ///             Self::C => write!(f, "c"),
 ///             Self::N(n) => write!(f, "{n}"),
 ///         }
-///     }
-/// }
-///
-/// // TODO: derive(Spanned)
-/// impl pwcc_util::span::Spanned for AB {
-///     fn span(&self) -> Span {
-///         self.span
-///     }
-/// }
-/// impl pwcc_util::span::Spanned for NC {
-///     fn span(&self) -> Span {
-///         self.span
 ///     }
 /// }
 ///
@@ -205,6 +194,7 @@ macro_rules! parse_times {
 /// use pwcc_util::parser::as_cloneable;
 /// use pwcc_util::lexer::lex;
 /// use pwcc_util::Span;
+/// use pwcc_util::span::Spanned;
 ///
 /// pwcc_util::tokens! {
 /// Tokenizer for Token with TokenError :
@@ -213,13 +203,13 @@ macro_rules! parse_times {
 ///     r"[0-9]+": C(usize),
 /// }
 ///
-/// #[derive(Debug, PartialEq)]
+/// #[derive(Debug, PartialEq, Spanned)]
 /// enum ABC {
 ///     A(Span),
 ///     BC(BC),
 /// }
 ///
-/// #[derive(Debug, PartialEq)]
+/// #[derive(Debug, PartialEq, Spanned)]
 /// enum BC {
 ///     B(Span),
 ///     C(usize, Span),
@@ -242,24 +232,6 @@ macro_rules! parse_times {
 ///             Self::A => write!(f, "a"),
 ///             Self::B => write!(f, "b"),
 ///             Self::C(n) => write!(f, "{n}"),
-///         }
-///     }
-/// }
-///
-/// // TODO: derive(Spanned)
-/// impl pwcc_util::span::Spanned for ABC {
-///     fn span(&self) -> Span {
-///         match self {
-///             Self::A(span) => *span,
-///             Self::BC(bc) => bc.span(),
-///         }
-///     }
-/// }
-/// impl pwcc_util::span::Spanned for BC {
-///     fn span(&self) -> Span {
-///         match self {
-///             Self::B(span) => *span,
-///             Self::C(_, span) => *span,
 ///         }
 ///     }
 /// }

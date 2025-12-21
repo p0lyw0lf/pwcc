@@ -69,6 +69,9 @@ pub trait Spanned {
     fn span(&self) -> Span;
 }
 
+// Re-export the derive macro for this trait.
+pub use pwcc_util_macros::Spanned;
+
 impl<T> Spanned for (T, Span) {
     fn span(&self) -> Span {
         self.1

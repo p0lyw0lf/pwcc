@@ -6,4 +6,5 @@ members = [
   "pwcc",
   "pwcc_bin",
   "pwcc_util",
+  "pwcc_util_macros",
 ]

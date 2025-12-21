@@ -215,8 +215,18 @@ version = "0.0.9"
 dependencies = [
  "functional",
  "miette",
+ "pwcc_util_macros",
  "regex",
  "thiserror",
+]
+
+[[package]]
+name = "pwcc_util_macros"
+version = "0.0.9"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]

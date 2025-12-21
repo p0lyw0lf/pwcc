@@ -1,19 +1,10 @@
 [package]
-name = "functional_macros"
+name = "pwcc_util_macros"
 version = "0.0.9"
 edition = "2024"
 
 [lib]
 proc-macro = true
-
-[features]
-default = ["foldable", "foldable-mut", "functor", "try-functor", "visit", "visit-mut"]
-foldable = []
-foldable-mut = []
-functor = []
-try-functor = ["functor"]
-visit = ["foldable"]
-visit-mut = ["foldable-mut"]
 
 [dependencies]
 quote = "1.0"

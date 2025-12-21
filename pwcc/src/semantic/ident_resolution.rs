@@ -12,6 +12,7 @@ use crate::parser::Exp;
 use crate::parser::ForStmt;
 use crate::parser::FunctionBody;
 use crate::parser::FunctionDecl;
+use crate::parser::StorageClass;
 use crate::parser::VarDecl;
 use crate::parser::visit_mut::VisitMut;
 use crate::semantic::SemanticError;
@@ -143,7 +144,10 @@ impl IdentMap {
 #[derive(Default)]
 struct IdentResolution {
     ident_map: IdentMap,
-    in_function_scope: bool,
+    /// Used to tell whether we are currently traversing function arguments
+    in_function_args: bool,
+    /// Used to tell whether we are at the top-level file scope or not
+    nesting_level: u32,
     /// Keeps a global counter that ensures all varaibles are unique
     factory: UniqueLabelFactory,
     /// The errors collected so far
@@ -162,21 +166,41 @@ impl From<IdentResolution> for Result<(), SemanticErrors> {
 
 impl VisitMut for IdentResolution {
     fn visit_mut_var_decl_pre(&mut self, decl: &mut VarDecl) {
-        if let Some(existing) = self.ident_map.declared_in_scope(&decl.name.0) {
-            self.errs.push(
-                Error::DuplicateDeclaration {
-                    label: decl.name.0.clone(),
-                    first: existing.ident.1,
-                    second: decl.name.1,
-                }
-                .into(),
-            );
-            return;
-        }
+        if self.nesting_level == 0 {
+            // at file scope
+            // will deal with storage incompatibilities in type-checking pass
+            let _ =
+                self.ident_map
+                    .new_mapping(&mut self.factory, decl.name.clone(), Linkage::External);
+        } else {
+            // not at file scope
+            if let Some(existing) = self.ident_map.declared_in_scope(&decl.name.0)
+                && !matches!(
+                    (existing.linkage, &decl.ty.storage),
+                    (Linkage::External, Some(StorageClass::Extern(_)))
+                )
+            {
+                self.errs.push(
+                    Error::DuplicateDeclaration {
+                        label: decl.name.0.clone(),
+                        first: existing.ident.1,
+                        second: decl.name.1,
+                    }
+                    .into(),
+                );
+                return;
+            }
 
-        decl.name.0 =
-            self.ident_map
-                .new_mapping(&mut self.factory, decl.name.clone(), Linkage::None);
+            decl.name.0 = self.ident_map.new_mapping(
+                &mut self.factory,
+                decl.name.clone(),
+                if matches!(decl.ty.storage, Some(StorageClass::Extern(_))) {
+                    Linkage::External
+                } else {
+                    Linkage::None
+                },
+            );
+        }
     }
 
     fn visit_mut_function_decl_pre(&mut self, fn_decl: &mut FunctionDecl) {
@@ -211,8 +235,8 @@ impl VisitMut for IdentResolution {
             // same scope. There is a check in visit_mut_block_pre to make sure we don't enter another
             // scope if this is set.
             FunctionBody::Defined(_) => {
-                assert!(!self.in_function_scope);
-                self.in_function_scope = true;
+                assert!(!self.in_function_args);
+                self.in_function_args = true;
             }
             // Don't have to handle a block scope, nothing to be done.
             FunctionBody::Declared(_) => {}
@@ -288,8 +312,8 @@ impl VisitMut for IdentResolution {
     }
 
     fn visit_mut_block_pre(&mut self, _block: &mut Block) {
-        if self.in_function_scope {
-            self.in_function_scope = false;
+        if self.in_function_args {
+            self.in_function_args = false;
         } else {
             self.ident_map.enter_scope();
         }

@@ -37,6 +37,7 @@
           # For book tests
           python3
           # For debugging
+          cargo-watch
           vscode-extensions.vadimcn.vscode-lldb.adapter
         ];
       in

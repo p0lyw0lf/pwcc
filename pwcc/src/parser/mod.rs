@@ -32,6 +32,7 @@ mod ast {
     use super::*;
 
     #[derive(Debug, Spanned)]
+    #[cfg_attr(test, derive(PartialEq))]
     pub struct Program {
         pub functions: Vec<FunctionDecl>,
         pub span: Span,
@@ -39,6 +40,7 @@ mod ast {
 
     #[include()]
     #[derive(Debug, Spanned)]
+    #[cfg_attr(test, derive(PartialEq))]
     pub struct Block {
         pub items: Vec<BlockItem>,
         pub span: Span,
@@ -46,6 +48,7 @@ mod ast {
 
     #[include()]
     #[derive(Debug, Spanned)]
+    #[cfg_attr(test, derive(PartialEq))]
     pub enum BlockItem {
         Statement(Statement),
         Declaration(Declaration),
@@ -53,6 +56,7 @@ mod ast {
 
     #[include()]
     #[derive(Debug, Spanned)]
+    #[cfg_attr(test, derive(PartialEq))]
     pub enum Statement {
         ReturnStmt(ReturnStmt),
         ExpressionStmt(ExpressionStmt),
@@ -70,18 +74,21 @@ mod ast {
     }
 
     #[derive(Debug, Spanned)]
+    #[cfg_attr(test, derive(PartialEq))]
     pub struct ReturnStmt {
         pub exp: Exp,
         pub span: Span,
     }
 
     #[derive(Debug, Spanned)]
+    #[cfg_attr(test, derive(PartialEq))]
     pub struct ExpressionStmt {
         pub exp: Exp,
         pub span: Span,
     }
 
     #[derive(Debug, Spanned)]
+    #[cfg_attr(test, derive(PartialEq))]
     pub struct IfStmt {
         pub guard: Exp,
         pub body_true: Box<Statement>,
@@ -90,6 +97,7 @@ mod ast {
     }
 
     #[derive(Debug, Spanned)]
+    #[cfg_attr(test, derive(PartialEq))]
     pub struct SwitchStmt {
         pub ctx: Option<SwitchContext>,
         pub label: Option<LoopLabel>,
@@ -99,18 +107,21 @@ mod ast {
     }
 
     #[derive(Debug, Spanned)]
+    #[cfg_attr(test, derive(PartialEq))]
     pub struct BreakStmt {
         pub label: Option<LoopLabel>,
         pub span: Span,
     }
 
     #[derive(Debug, Spanned)]
+    #[cfg_attr(test, derive(PartialEq))]
     pub struct ContinueStmt {
         pub label: Option<LoopLabel>,
         pub span: Span,
     }
 
     #[derive(Debug, Spanned)]
+    #[cfg_attr(test, derive(PartialEq))]
     pub struct WhileStmt {
         pub label: Option<LoopLabel>,
         pub guard: Exp,
@@ -119,6 +130,7 @@ mod ast {
     }
 
     #[derive(Debug, Spanned)]
+    #[cfg_attr(test, derive(PartialEq))]
     pub struct DoWhileStmt {
         pub body: Box<Statement>,
         pub label: Option<LoopLabel>,
@@ -127,6 +139,7 @@ mod ast {
     }
 
     #[derive(Debug, Spanned)]
+    #[cfg_attr(test, derive(PartialEq))]
     pub struct ForStmt {
         pub label: Option<LoopLabel>,
         pub init: ForInit,
@@ -137,12 +150,14 @@ mod ast {
     }
 
     #[derive(Debug, Spanned)]
+    #[cfg_attr(test, derive(PartialEq))]
     pub enum ForInit {
         Decl(VarDecl),
         Exp(Option<Exp>),
     }
 
     #[derive(Debug, Spanned)]
+    #[cfg_attr(test, derive(PartialEq))]
     pub struct LabelStmt {
         pub label: Label,
         pub stmt: Box<Statement>,
@@ -150,35 +165,41 @@ mod ast {
     }
 
     #[derive(Debug, Spanned)]
+    #[cfg_attr(test, derive(PartialEq))]
     pub enum Label {
         Raw(RawLabel),
         Case(CaseLabel),
     }
 
     #[derive(Debug, Spanned)]
+    #[cfg_attr(test, derive(PartialEq))]
     pub struct RawLabel {
         pub label: (String, Span),
         pub span: Span,
     }
 
     #[derive(Debug, Spanned)]
+    #[cfg_attr(test, derive(PartialEq))]
     pub struct GotoStmt {
         pub label: (String, Span),
         pub span: Span,
     }
 
     #[derive(Debug, Spanned)]
+    #[cfg_attr(test, derive(PartialEq))]
     pub struct NullStmt {
         pub span: Span,
     }
 
     #[derive(Debug, Spanned)]
+    #[cfg_attr(test, derive(PartialEq))]
     pub enum Declaration {
         Function(FunctionDecl),
         Var(VarDecl),
     }
 
     #[derive(Debug, Spanned)]
+    #[cfg_attr(test, derive(PartialEq))]
     #[include()]
     pub struct FunctionDecl {
         pub name: (String, Span),
@@ -188,24 +209,28 @@ mod ast {
     }
 
     #[derive(Debug, Spanned)]
+    #[cfg_attr(test, derive(PartialEq))]
     pub enum FunctionDeclArgs {
         Void(Span),
         DeclArgs(CommaDelimited<DeclArg>),
     }
 
     #[derive(Debug, Spanned)]
+    #[cfg_attr(test, derive(PartialEq))]
     pub struct DeclArg {
         pub name: (String, Span),
         pub span: Span,
     }
 
     #[derive(Debug, Spanned)]
+    #[cfg_attr(test, derive(PartialEq))]
     pub enum FunctionBody {
         Declared(Span),
         Defined(Block),
     }
 
     #[derive(Debug, Spanned)]
+    #[cfg_attr(test, derive(PartialEq))]
     pub struct VarDecl {
         pub name: (String, Span),
         pub init: Initializer,
@@ -213,12 +238,14 @@ mod ast {
     }
 
     #[derive(Debug, Spanned)]
+    #[cfg_attr(test, derive(PartialEq))]
     pub enum Initializer {
         Declared(Span),
         Defined(Exp, Span),
     }
 
     #[derive(Debug, Spanned)]
+    #[cfg_attr(test, derive(PartialEq))]
     pub enum PrefixOp {
         Minus(Span),
         BitNot(Span),
@@ -228,18 +255,21 @@ mod ast {
     }
 
     #[derive(Debug, Spanned)]
+    #[cfg_attr(test, derive(PartialEq))]
     pub enum PostfixOp {
         Increment(Span),
         Decrement(Span),
     }
 
     #[derive(Debug, Spanned)]
+    #[cfg_attr(test, derive(PartialEq))]
     pub enum UnaryOp {
         Prefix(PrefixOp),
         Postfix(PostfixOp),
     }
 
     #[derive(Debug, Spanned)]
+    #[cfg_attr(test, derive(PartialEq))]
     pub enum BinaryOp {
         // Arithmetic operators
         Plus(Span),
@@ -265,6 +295,7 @@ mod ast {
     }
 
     #[derive(Debug, Spanned)]
+    #[cfg_attr(test, derive(PartialEq))]
     pub enum AssignmentOp {
         // Standard assignment
         Equal(Span),
@@ -283,6 +314,7 @@ mod ast {
     }
 
     #[derive(Debug, Spanned)]
+    #[cfg_attr(test, derive(PartialEq))]
     pub enum BinaryTok {
         BinaryOp(BinaryOp),
         AssignmentOp(AssignmentOp),
@@ -292,6 +324,7 @@ mod ast {
     /// Exp is special, since its AST doesn't exactly correspond with the grammar, so we define it
     /// separately
     #[derive(Debug, Spanned)]
+    #[cfg_attr(test, derive(PartialEq))]
     #[include()]
     pub enum Exp {
         Constant {
@@ -337,9 +370,11 @@ mod ast {
     // Similarly for LoopLabel; we don't want to be able to parse them, but we do want to be able
     // to represent them.
     #[derive(Debug)]
+    #[cfg_attr(test, derive(PartialEq))]
     pub struct LoopLabel(pub String);
 
     #[derive(Debug, Spanned)]
+    #[cfg_attr(test, derive(PartialEq))]
     pub enum CaseLabel {
         Case(Exp),
         Default(Span),
@@ -348,6 +383,7 @@ mod ast {
     // Maps the constant-evaluated case value (if applicable) to the case it should jump to if the
     // value matches.
     #[derive(Debug)]
+    #[cfg_attr(test, derive(PartialEq))]
     pub struct SwitchContext(pub BTreeMap<Option<isize>, (String, Span)>);
 }
 pub use ast::*;

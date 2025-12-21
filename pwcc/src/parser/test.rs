@@ -27,23 +27,33 @@ impl<T> Boxed for T {
     }
 }
 
-fn assert_forwards<T: FromTokens + Debug + PartialEq>(tokens: &[Token], expected: &T) {
+fn assert_forwards<T: FromTokens<Token, ParseError> + Debug + PartialEq>(
+    tokens: &[Token],
+    expected: &T,
+) {
     let actual = T::from_raw_tokens(&mut Vec::from(tokens).into_iter());
     assert_eq!(Ok(expected), actual.as_ref());
 }
 
-fn assert_backwards(tree: impl ToTokens + Debug + PartialEq, expected: &[Token]) {
+fn assert_backwards(tree: impl ToTokens<Token> + Debug + PartialEq, expected: &[Token]) {
     let actual = tree.to_tokens().collect::<Vec<_>>();
     assert_eq!(expected, actual);
 }
 
-fn assert_convertible(s: &str, tree: impl ToTokens + FromTokens + Debug + PartialEq) {
+fn assert_convertible(
+    s: &str,
+    tree: impl ToTokens<Token> + FromTokens<Token, ParseError> + Debug + PartialEq,
+) {
     let tokens = lex(s);
     assert_forwards(&tokens, &tree);
     assert_backwards(tree, &tokens);
 }
 
-fn assert_to_from(to: &str, tree: impl ToTokens + FromTokens + Debug + PartialEq, from: &str) {
+fn assert_to_from(
+    to: &str,
+    tree: impl ToTokens<Token> + FromTokens<Token, ParseError> + Debug + PartialEq,
+    from: &str,
+) {
     let to_tokens = lex(to);
     assert_forwards(&to_tokens, &tree);
     let from_tokens = lex(from);
@@ -68,9 +78,11 @@ fn statement() {
 
 #[test]
 fn extra_junk() {
-    let mut tokens = lex("one two three ;")
+    let tokens = lex("one two three ;")
         .into_iter()
-        .map(|token| (token, Span::empty()));
+        .map(|token| (token, Span::empty()))
+        .collect::<Vec<_>>();
+    let mut tokens = as_cloneable(&tokens);
     let labels = Vec::<RawLabel>::from_tokens(&mut tokens).expect("Parse labels");
     println!("{labels:?}");
     let semicolon = NullStmt::from_tokens(&mut tokens).expect("Parse semicolon");
@@ -87,15 +99,12 @@ int main(void) {
 }",
         FunctionDecl {
             name: ("main".to_string(), span),
-            args: FunctionDeclArgs::KeywordVoid(span),
-            body: FunctionBody::Block(Block {
+            args: FunctionDeclArgs::Void(span),
+            body: FunctionBody::Defined(Block {
                 items: vec![
-                    BlockItem::Declaration(Declaration::VarDecl(VarDecl {
+                    BlockItem::Declaration(Declaration::Var(VarDecl {
                         name: ("x".to_string(), span),
-                        init: Initializer::ExpressionInit(ExpressionInit {
-                            exp: Exp::Constant { constant: 1, span },
-                            span,
-                        }),
+                        init: Initializer::Defined(Exp::Constant { constant: 1, span }, span),
                         span,
                     })),
                     BlockItem::Statement(Statement::ReturnStmt(ReturnStmt {
@@ -115,11 +124,11 @@ fn unary() {
     assert_to_from(
         "- -~3",
         Exp::Unary {
-            op: UnaryOp::PrefixOp(PrefixOp::Minus(span)),
+            op: UnaryOp::Prefix(PrefixOp::Minus(span)),
             exp: Exp::Unary {
-                op: UnaryOp::PrefixOp(PrefixOp::Minus(span)),
+                op: UnaryOp::Prefix(PrefixOp::Minus(span)),
                 exp: Exp::Unary {
-                    op: UnaryOp::PrefixOp(PrefixOp::Tilde(span)),
+                    op: UnaryOp::Prefix(PrefixOp::BitNot(span)),
                     exp: Exp::Constant { constant: 3, span }.boxed(),
                     span,
                 }
@@ -145,7 +154,7 @@ fn binary() {
                 span,
             }
             .boxed(),
-            op: BinaryOp::Star(span),
+            op: BinaryOp::Times(span),
             rhs: Exp::Constant { constant: 3, span }.boxed(),
             span,
         },
@@ -160,7 +169,7 @@ fn binary_precedence() {
         &Exp::Binary {
             lhs: Exp::Binary {
                 lhs: Exp::Constant { constant: 1, span }.boxed(),
-                op: BinaryOp::Star(span),
+                op: BinaryOp::Times(span),
                 rhs: Exp::Constant { constant: 2, span }.boxed(),
                 span,
             }
@@ -168,7 +177,7 @@ fn binary_precedence() {
             op: BinaryOp::Minus(span),
             rhs: Exp::Binary {
                 lhs: Exp::Constant { constant: 3, span }.boxed(),
-                op: BinaryOp::Star(span),
+                op: BinaryOp::Times(span),
                 rhs: Exp::Binary {
                     lhs: Exp::Constant { constant: 4, span }.boxed(),
                     op: BinaryOp::Plus(span),
@@ -191,12 +200,12 @@ fn binary_associativity() {
         Exp::Binary {
             lhs: Exp::Binary {
                 lhs: Exp::Constant { constant: 3, span }.boxed(),
-                op: BinaryOp::ForwardSlash(span),
+                op: BinaryOp::Divide(span),
                 rhs: Exp::Constant { constant: 2, span }.boxed(),
                 span,
             }
             .boxed(),
-            op: BinaryOp::ForwardSlash(span),
+            op: BinaryOp::Divide(span),
             rhs: Exp::Constant { constant: 1, span }.boxed(),
             span,
         },
@@ -239,9 +248,9 @@ fn assign_precedence() {
 fn decl_no_init() {
     assert_convertible(
         "int x;",
-        Declaration::VarDecl(VarDecl {
+        Declaration::Var(VarDecl {
             name: ("x".to_string(), span),
-            init: Initializer::NoInit(NoInit { span }),
+            init: Initializer::Declared(span),
             span,
         }),
     );
@@ -251,12 +260,9 @@ fn decl_no_init() {
 fn decl_init() {
     assert_convertible(
         "int x = 5;",
-        Declaration::VarDecl(VarDecl {
+        Declaration::Var(VarDecl {
             name: ("x".to_string(), span),
-            init: Initializer::ExpressionInit(ExpressionInit {
-                exp: Exp::Constant { constant: 5, span },
-                span,
-            }),
+            init: Initializer::Defined(Exp::Constant { constant: 5, span }, span),
             span,
         }),
     );
@@ -286,12 +292,9 @@ fn assign_statement() {
 fn block_item() {
     assert_convertible(
         "int x = 5;",
-        BlockItem::Declaration(Declaration::VarDecl(VarDecl {
+        BlockItem::Declaration(Declaration::Var(VarDecl {
             name: ("x".to_string(), span),
-            init: Initializer::ExpressionInit(ExpressionInit {
-                exp: Exp::Constant { constant: 5, span },
-                span,
-            }),
+            init: Initializer::Defined(Exp::Constant { constant: 5, span }, span),
             span,
         })),
     );
@@ -319,9 +322,9 @@ fn postfix_precedence() {
     assert_to_from(
         "x--++",
         Exp::Unary {
-            op: UnaryOp::PostfixOp(PostfixOp::Increment(span)),
+            op: UnaryOp::Postfix(PostfixOp::Increment(span)),
             exp: Exp::Unary {
-                op: UnaryOp::PostfixOp(PostfixOp::Decrement(span)),
+                op: UnaryOp::Postfix(PostfixOp::Decrement(span)),
                 exp: Exp::Var {
                     ident: "x".to_string(),
                     span,
@@ -341,9 +344,9 @@ fn prefix_precedence() {
     assert_to_from(
         "--++x",
         Exp::Unary {
-            op: UnaryOp::PrefixOp(PrefixOp::Decrement(span)),
+            op: UnaryOp::Prefix(PrefixOp::Decrement(span)),
             exp: Exp::Unary {
-                op: UnaryOp::PrefixOp(PrefixOp::Increment(span)),
+                op: UnaryOp::Prefix(PrefixOp::Increment(span)),
                 exp: Exp::Var {
                     ident: "x".to_string(),
                     span,
@@ -363,13 +366,13 @@ fn prefix_postfix_precedence() {
     assert_to_from(
         "--++x--++",
         Exp::Unary {
-            op: UnaryOp::PrefixOp(PrefixOp::Decrement(span)),
+            op: UnaryOp::Prefix(PrefixOp::Decrement(span)),
             exp: Exp::Unary {
-                op: UnaryOp::PrefixOp(PrefixOp::Increment(span)),
+                op: UnaryOp::Prefix(PrefixOp::Increment(span)),
                 exp: Exp::Unary {
-                    op: UnaryOp::PostfixOp(PostfixOp::Increment(span)),
+                    op: UnaryOp::Postfix(PostfixOp::Increment(span)),
                     exp: Exp::Unary {
-                        op: UnaryOp::PostfixOp(PostfixOp::Decrement(span)),
+                        op: UnaryOp::Postfix(PostfixOp::Decrement(span)),
                         exp: Exp::Var {
                             ident: "x".to_string(),
                             span,
@@ -400,7 +403,7 @@ fn if_statement() {
                 ident: "a".to_string(),
                 span,
             },
-            body: Statement::IfStmt(IfStmt {
+            body_true: Statement::IfStmt(IfStmt {
                 guard: Exp::Binary {
                     lhs: Exp::Var {
                         ident: "a".to_string(),
@@ -411,7 +414,7 @@ fn if_statement() {
                     rhs: Exp::Constant { constant: 10, span }.boxed(),
                     span,
                 },
-                body: Statement::ReturnStmt(ReturnStmt {
+                body_true: Statement::ReturnStmt(ReturnStmt {
                     exp: Exp::Var {
                         ident: "a".to_string(),
                         span,
@@ -419,8 +422,8 @@ fn if_statement() {
                     span,
                 })
                 .boxed(),
-                else_stmt: Some(ElseStmt {
-                    body: Statement::ReturnStmt(ReturnStmt {
+                body_false: Some(
+                    Statement::ReturnStmt(ReturnStmt {
                         exp: Exp::Binary {
                             lhs: Exp::Constant { constant: 10, span }.boxed(),
                             op: BinaryOp::Minus(span),
@@ -434,12 +437,11 @@ fn if_statement() {
                         span,
                     })
                     .boxed(),
-                    span,
-                }),
+                ),
                 span,
             })
             .boxed(),
-            else_stmt: None,
+            body_false: None,
             span,
         }),
     );
@@ -452,11 +454,11 @@ fn if_statement_naked() {
         &tokens,
         &FunctionDecl {
             name: ("main".to_string(), span),
-            args: FunctionDeclArgs::KeywordVoid(span),
-            body: FunctionBody::Block(Block {
+            args: FunctionDeclArgs::Void(span),
+            body: FunctionBody::Defined(Block {
                 items: vec![BlockItem::Statement(Statement::IfStmt(IfStmt {
                     guard: Exp::Constant { constant: 0, span },
-                    body: Statement::ReturnStmt(ReturnStmt {
+                    body_true: Statement::ReturnStmt(ReturnStmt {
                         exp: Exp::Var {
                             ident: "a".to_string(),
                             span,
@@ -464,7 +466,7 @@ fn if_statement_naked() {
                         span,
                     })
                     .boxed(),
-                    else_stmt: None,
+                    body_false: None,
                     span,
                 }))],
                 span,
@@ -480,14 +482,11 @@ fn function_decl_args() {
         "int incr(int x);",
         FunctionDecl {
             name: ("incr".to_string(), span),
-            args: FunctionDeclArgs::DeclArgs(DeclArgs {
-                args: CommaDelimited(vec![DeclArg {
-                    name: ("x".to_string(), span),
-                    span,
-                }]),
+            args: FunctionDeclArgs::DeclArgs(CommaDelimited(vec![DeclArg {
+                name: ("x".to_string(), span),
                 span,
-            }),
-            body: FunctionBody::Semicolon(span),
+            }])),
+            body: FunctionBody::Declared(span),
             span,
         },
     );
@@ -496,20 +495,17 @@ fn function_decl_args() {
         "int cmp(int a,int b);",
         FunctionDecl {
             name: ("cmp".to_string(), span),
-            args: FunctionDeclArgs::DeclArgs(DeclArgs {
-                args: CommaDelimited(vec![
-                    DeclArg {
-                        name: ("a".to_string(), span),
-                        span,
-                    },
-                    DeclArg {
-                        name: ("b".to_string(), span),
-                        span,
-                    },
-                ]),
-                span,
-            }),
-            body: FunctionBody::Semicolon(span),
+            args: FunctionDeclArgs::DeclArgs(CommaDelimited(vec![
+                DeclArg {
+                    name: ("a".to_string(), span),
+                    span,
+                },
+                DeclArg {
+                    name: ("b".to_string(), span),
+                    span,
+                },
+            ])),
+            body: FunctionBody::Declared(span),
             span,
         },
     );
@@ -550,10 +546,10 @@ fn binary_assignment_op() {
                     span,
                 }
                 .boxed(),
-                op: AssignmentOp::AmpersandEqual(span),
+                op: AssignmentOp::BitAndEqual(span),
                 rhs: Exp::Binary {
                     lhs: Exp::Constant { constant: 0, span }.boxed(),
-                    op: BinaryOp::DoublePipe(span),
+                    op: BinaryOp::LogicOr(span),
                     rhs: Exp::Var {
                         ident: "b".to_string(),
                         span,
@@ -576,10 +572,10 @@ fn trailing_comma_exp() {
         .into_iter()
         .map(|token| (token, Span::empty()))
         .collect::<Vec<_>>();
-    let iter = &mut tokens.into_iter();
-    let _ = Exp::from_tokens(iter).expect("parse succeeds"); // because it can parse f as ident
+    let mut iter = as_cloneable(&tokens);
+    let _ = Exp::from_tokens(&mut iter).expect("parse succeeds"); // because it can parse f as ident
     assert_eq!(
-        Some(Token::OpenParen),
+        Some(&Token::OpenParen),
         iter.clone().next().map(|(token, _)| token)
     );
 }
@@ -609,11 +605,8 @@ fn empty_args_decl() {
         "int f();",
         FunctionDecl {
             name: ("f".to_string(), span),
-            args: FunctionDeclArgs::DeclArgs(DeclArgs {
-                args: CommaDelimited(vec![]),
-                span,
-            }),
-            body: FunctionBody::Semicolon(span),
+            args: FunctionDeclArgs::DeclArgs(CommaDelimited(vec![])),
+            body: FunctionBody::Declared(span),
             span,
         },
     );

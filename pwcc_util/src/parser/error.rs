@@ -39,7 +39,6 @@ pub enum ParseError<Token: Debug + Display> {
     },
 }
 
-#[cfg(test)]
 impl<Token: Debug + Display + PartialEq> PartialEq for ParseError<Token> {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {

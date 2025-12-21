@@ -1,5 +1,6 @@
+use pwcc_util::parser::{FromTokens, as_cloneable};
+
 use crate::lexer::lex;
-use crate::parser::FromTokens;
 use crate::parser::Program;
 
 mod goto;
@@ -8,5 +9,7 @@ mod loop_labeling;
 mod type_check;
 
 fn parse(source: &str) -> Program {
-    Program::from_tokens(&mut lex(source).expect("lex failed").into_iter()).expect("parse failed")
+    let tokens = lex(source).expect("lex failed");
+    let mut iter = as_cloneable(&tokens);
+    Program::from_tokens(&mut iter).expect("parse failed")
 }

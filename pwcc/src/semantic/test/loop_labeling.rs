@@ -35,8 +35,8 @@ fn labels_breaks_in_while_loop() {
     let mut tree = result.unwrap();
     let main = tree.functions.pop().expect("no main function");
     let mut block = match main.body {
-        FunctionBody::Block(block) => block,
-        FunctionBody::Semicolon(_) => panic!("expected Block, got Semicolon"),
+        FunctionBody::Defined(block) => block,
+        FunctionBody::Declared(_) => panic!("expected definition, got declaration"),
     };
     let _ = block.items.pop().expect("no return statement");
     let while_stmt = match block.items.pop().expect("no while statement") {

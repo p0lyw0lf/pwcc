@@ -28,7 +28,7 @@ macro_rules! parse_token {
 /// `Result<_, ParseError<_>>` context.
 #[macro_export]
 macro_rules! parse_multiple {
-    ($ts:ident, $span:ident, { $(
+    ($ts:expr, $span:ident, { $(
         *
         $($m_token:ident)?
         $(<$m_sname:ident : $m_subnode:ty>)?
@@ -332,7 +332,7 @@ macro_rules! parse_plus {
             fn to_tokens(self) -> impl Iterator<Item = Token> {
                 let out: Box<dyn Iterator<Item = Token>> = match self {$(
                     $($node::$case(_) => Box::new(::core::iter::once(Token::$a_token)),)?
-                    $($node::$case(s) => Box::new(<$a_subnode as $crate::parser::ToTokens>::to_tokens(s)),)?
+                    $($node::$case(s) => Box::new(<$a_subnode as $crate::parser::ToTokens<Token>>::to_tokens(s)),)?
                     $($node::$case(c, _) => Box::new(::core::iter::once(Token::$a_ctoken(c.into()))),)?
                 )*};
                 out

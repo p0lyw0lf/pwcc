@@ -3,6 +3,9 @@ use std::collections::HashMap;
 use miette::Diagnostic;
 use thiserror::Error;
 
+use pwcc_util::span::Span;
+use pwcc_util::span::Spanned;
+
 use crate::parser::Block;
 use crate::parser::DeclArg;
 use crate::parser::Exp;
@@ -14,8 +17,6 @@ use crate::parser::visit_mut::VisitMut;
 use crate::semantic::SemanticError;
 use crate::semantic::SemanticErrors;
 use crate::semantic::UniqueLabelFactory;
-use crate::span::Span;
-use crate::span::Spanned;
 
 #[derive(Error, Diagnostic, Debug)]
 pub enum Error {
@@ -179,7 +180,7 @@ impl VisitMut for IdentResolution {
     }
 
     fn visit_mut_function_decl_pre(&mut self, fn_decl: &mut FunctionDecl) {
-        if self.ident_map.parent.is_some() && !matches!(fn_decl.body, FunctionBody::Semicolon(_)) {
+        if self.ident_map.parent.is_some() && !matches!(fn_decl.body, FunctionBody::Declared(_)) {
             self.errs
                 .push(Error::LocalFunctionDefinition(fn_decl.span()).into());
             return;
@@ -209,21 +210,21 @@ impl VisitMut for IdentResolution {
             // This is required to make sure the function arguments and the function block count as the
             // same scope. There is a check in visit_mut_block_pre to make sure we don't enter another
             // scope if this is set.
-            FunctionBody::Block(_) => {
+            FunctionBody::Defined(_) => {
                 assert!(!self.in_function_scope);
                 self.in_function_scope = true;
             }
             // Don't have to handle a block scope, nothing to be done.
-            FunctionBody::Semicolon(_) => {}
+            FunctionBody::Declared(_) => {}
         }
     }
 
     fn visit_mut_function_decl_post(&mut self, fn_decl: &mut FunctionDecl) {
         match fn_decl.body {
             // There was already an exit_scope() called from exiting the body.
-            FunctionBody::Block(_) => {}
+            FunctionBody::Defined(_) => {}
             // There was no body, so no exit_scope() called yet, so we need to close it here.
-            FunctionBody::Semicolon(_) => self.ident_map.exit_scope(),
+            FunctionBody::Declared(_) => self.ident_map.exit_scope(),
         }
     }
 

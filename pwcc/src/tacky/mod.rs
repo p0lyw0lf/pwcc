@@ -35,8 +35,8 @@ impl TryFrom<parser::FunctionDecl> for Function {
     type Error = ();
     fn try_from(function: parser::FunctionDecl) -> Result<Self, Self::Error> {
         let body = match function.body {
-            block @ parser::FunctionBody::Block(_) => block,
-            parser::FunctionBody::Semicolon(_) => return Err(()),
+            block @ parser::FunctionBody::Defined(_) => block,
+            parser::FunctionBody::Declared(_) => return Err(()),
         };
 
         let name = Identifier(function.name.0);
@@ -229,8 +229,8 @@ impl Chompable for parser::BlockItem {
         use parser::BlockItem::*;
         use parser::Declaration::*;
         match self {
-            Declaration(VarDecl(decl)) => decl.chomp(ctx),
-            Declaration(FunctionDecl(decl)) => decl.body.chomp(ctx),
+            Declaration(Var(decl)) => decl.chomp(ctx),
+            Declaration(Function(decl)) => decl.body.chomp(ctx),
             Statement(statement) => statement.chomp(ctx),
         }
     }
@@ -241,9 +241,9 @@ impl Chompable for parser::VarDecl {
     fn chomp<'a>(self, ctx: &mut ChompContext<'a>) -> Self::Output {
         use parser::Initializer::*;
         match self.init {
-            NoInit(_) => {}
-            ExpressionInit(expression_init) => {
-                let src = expression_init.exp.chomp(ctx);
+            Declared(_) => {}
+            Defined(expression, _) => {
+                let src = expression.chomp(ctx);
                 let dst = ctx.tf.var(&self.name.0);
                 ctx.push(Instruction::Copy { src, dst });
             }
@@ -256,8 +256,8 @@ impl Chompable for parser::FunctionBody {
     fn chomp<'a>(self, ctx: &mut ChompContext<'a>) -> Self::Output {
         use parser::FunctionBody::*;
         match self {
-            Semicolon(_) => {}
-            Block(block) => {
+            Declared(_) => {}
+            Defined(block) => {
                 block.items.chomp(ctx);
 
                 // See page 113; This will do nothing if the function is well-formed, and guarantees we
@@ -290,10 +290,10 @@ impl Chompable for parser::Statement {
                 span: _span,
             }) => {
                 match label {
-                    parser::Label::RawLabel(parser::RawLabel { label, span: _span }) => {
+                    parser::Label::Raw(parser::RawLabel { label, span: _span }) => {
                         ctx.push(Instruction::Label(ctx.goto_label(&label.0)));
                     }
-                    parser::Label::CaseLabel(case_label) => match case_label {
+                    parser::Label::Case(case_label) => match case_label {
                         parser::CaseLabel::Labeled(label, _) => {
                             ctx.push(Instruction::Label(ctx.case_label(&label)));
                         }
@@ -309,8 +309,8 @@ impl Chompable for parser::Statement {
             }
             IfStmt(parser::IfStmt {
                 guard,
-                body,
-                else_stmt: None,
+                body_true,
+                body_false: None,
                 span: _span,
             }) => {
                 let condition = guard.chomp(ctx).chomp(ctx);
@@ -319,13 +319,13 @@ impl Chompable for parser::Statement {
                     condition,
                     target: end.clone(),
                 });
-                body.chomp(ctx);
+                body_true.chomp(ctx);
                 ctx.push(Instruction::Label(end));
             }
             IfStmt(parser::IfStmt {
                 guard,
-                body,
-                else_stmt: Some(else_stmt),
+                body_true,
+                body_false: Some(body_false),
                 span: _span,
             }) => {
                 let condition = guard.chomp(ctx).chomp(ctx);
@@ -335,12 +335,12 @@ impl Chompable for parser::Statement {
                     condition,
                     target: else_label.clone(),
                 });
-                body.chomp(ctx);
+                body_true.chomp(ctx);
                 ctx.push(Instruction::Jump {
                     target: end.clone(),
                 });
                 ctx.push(Instruction::Label(else_label));
-                else_stmt.body.chomp(ctx);
+                body_false.chomp(ctx);
                 ctx.push(Instruction::Label(end));
             }
             SwitchStmt(switch_stmt) => {
@@ -350,7 +350,7 @@ impl Chompable for parser::Statement {
                         .as_ref()
                         .expect("switch statement without loop label"),
                 );
-                let lhs = switch_stmt.exp.chomp(ctx).chomp(ctx);
+                let lhs = switch_stmt.case.chomp(ctx).chomp(ctx);
 
                 let mut labels = switch_stmt.ctx.expect("switch satement without context").0;
                 let default_case = labels.remove(&None);
@@ -444,9 +444,9 @@ impl Chompable for parser::Statement {
             }
             ForStmt(for_stmt) => {
                 match for_stmt.init {
-                    parser::ForInit::VarDecl(decl) => decl.chomp(ctx),
-                    parser::ForInit::ForInitExp(parser::ForInitExp { exp, span: _span }) => {
-                        exp.map(|exp| exp.chomp(ctx));
+                    parser::ForInit::Decl(decl) => decl.chomp(ctx),
+                    parser::ForInit::Exp(maybe_exp) => {
+                        maybe_exp.map(|exp| exp.chomp(ctx));
                     }
                 };
                 let start = ctx.tf.next_label("start");
@@ -489,10 +489,10 @@ impl Chompable for parser::Exp {
             } => Val::Constant(constant),
             parser::Exp::Unary {
                 op:
-                    parser::UnaryOp::PrefixOp(
+                    parser::UnaryOp::Prefix(
                         op @ (parser::PrefixOp::Minus(_)
-                        | parser::PrefixOp::Tilde(_)
-                        | parser::PrefixOp::Exclamation(_)),
+                        | parser::PrefixOp::BitNot(_)
+                        | parser::PrefixOp::LogicNot(_)),
                     ),
                 exp,
                 span: _span,
@@ -502,8 +502,8 @@ impl Chompable for parser::Exp {
                 use parser::PrefixOp::*;
                 let op = match op {
                     Minus(_) => UnaryOp::Negate,
-                    Tilde(_) => UnaryOp::Complement,
-                    Exclamation(_) => UnaryOp::Not,
+                    BitNot(_) => UnaryOp::Complement,
+                    LogicNot(_) => UnaryOp::Not,
                     _ => unreachable!(),
                 };
                 ctx.push(Unary { op, src, dst });
@@ -512,7 +512,7 @@ impl Chompable for parser::Exp {
             }
             parser::Exp::Unary {
                 op:
-                    parser::UnaryOp::PrefixOp(
+                    parser::UnaryOp::Prefix(
                         op @ (parser::PrefixOp::Increment(_) | parser::PrefixOp::Decrement(_)),
                     ),
                 exp,
@@ -540,7 +540,7 @@ impl Chompable for parser::Exp {
                 }
             },
             parser::Exp::Unary {
-                op: parser::UnaryOp::PostfixOp(op),
+                op: parser::UnaryOp::Postfix(op),
                 exp,
                 span: _span,
             } => match *exp {
@@ -570,11 +570,11 @@ impl Chompable for parser::Exp {
             },
             parser::Exp::Binary {
                 lhs,
-                op: op @ (parser::BinaryOp::DoubleAmpersand(_) | parser::BinaryOp::DoublePipe(_)),
+                op: op @ (parser::BinaryOp::LogicAnd(_) | parser::BinaryOp::LogicOr(_)),
                 rhs,
                 span: _span,
             } => {
-                let is_and = matches!(op, parser::BinaryOp::DoubleAmpersand(_));
+                let is_and = matches!(op, parser::BinaryOp::LogicAnd(_));
 
                 let shortcut_label = ctx.tf.next_label(if is_and { "false" } else { "true" });
 
@@ -635,24 +635,24 @@ impl Chompable for parser::Exp {
                 let dst = ctx.tf.next_temp();
                 use parser::BinaryOp::*;
                 let op = match op {
-                    Ampersand(_) => BinaryOp::BitAnd,
-                    Caret(_) => BinaryOp::BitXor,
-                    DoubleAmpersand(_) => unreachable!(),
-                    DoubleEqual(_) => BinaryOp::Equal,
-                    DoublePipe(_) => unreachable!(),
-                    ForwardSlash(_) => BinaryOp::Divide,
+                    BitAnd(_) => BinaryOp::BitAnd,
+                    BitOr(_) => BinaryOp::BitOr,
+                    BitXor(_) => BinaryOp::BitXor,
+                    Divide(_) => BinaryOp::Divide,
+                    Equal(_) => BinaryOp::Equal,
                     GreaterThan(_) => BinaryOp::GreaterThan,
                     GreaterThanEqual(_) => BinaryOp::GreaterThanEqual,
                     LeftShift(_) => BinaryOp::BitLeftShift,
                     LessThan(_) => BinaryOp::LessThan,
                     LessThanEqual(_) => BinaryOp::LessThanEqual,
+                    LogicAnd(_) => unreachable!(),
+                    LogicOr(_) => unreachable!(),
                     Minus(_) => BinaryOp::Subtract,
+                    Mod(_) => BinaryOp::Remainder,
                     NotEqual(_) => BinaryOp::NotEqual,
-                    Percent(_) => BinaryOp::Remainder,
-                    Pipe(_) => BinaryOp::BitOr,
                     Plus(_) => BinaryOp::Add,
                     RightShift(_) => BinaryOp::BitRightShift,
-                    Star(_) => BinaryOp::Multiply,
+                    Times(_) => BinaryOp::Multiply,
                 };
                 ctx.push(Binary {
                     op,

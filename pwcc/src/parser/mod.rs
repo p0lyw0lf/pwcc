@@ -9,6 +9,7 @@ use pwcc_util::parse_times;
 use pwcc_util::parse_token;
 use pwcc_util::parser::FromTokens;
 use pwcc_util::parser::ToTokens;
+use pwcc_util::parser::as_cloneable;
 use pwcc_util::span::Span;
 use pwcc_util::span::Spanned;
 use pwcc_util::spanned_empty;
@@ -156,13 +157,13 @@ mod ast {
 
     #[derive(Debug, Spanned)]
     pub struct RawLabel {
-        pub label: String,
+        pub label: (String, Span),
         pub span: Span,
     }
 
     #[derive(Debug, Spanned)]
     pub struct GotoStmt {
-        pub label: String,
+        pub label: (String, Span),
         pub span: Span,
     }
 
@@ -180,7 +181,7 @@ mod ast {
     #[derive(Debug, Spanned)]
     #[include()]
     pub struct FunctionDecl {
-        pub name: String,
+        pub name: (String, Span),
         pub args: FunctionDeclArgs,
         pub body: FunctionBody,
         pub span: Span,
@@ -194,7 +195,7 @@ mod ast {
 
     #[derive(Debug, Spanned)]
     pub struct DeclArg {
-        pub name: String,
+        pub name: (String, Span),
         pub span: Span,
     }
 
@@ -206,7 +207,7 @@ mod ast {
 
     #[derive(Debug, Spanned)]
     pub struct VarDecl {
-        pub name: String,
+        pub name: (String, Span),
         pub init: Initializer,
         pub span: Span,
     }
@@ -356,7 +357,7 @@ macro_rules! unparseable {
     ($node: ident) => {
         impl FromTokens<Token, ParseError> for $node {
             fn from_tokens<'a>(
-                ts: &mut impl pwcc_util::parser::CloneableIterator<Item = (&'a Token, Span)>,
+                _ts: &mut impl pwcc_util::parser::CloneableIterator<Item = (&'a Token, Span)>,
             ) -> Result<Self, ParseError>
             where
                 Token: 'a,
@@ -403,8 +404,8 @@ impl FromTokens<Token, ParseError> for IfStmt {
         });
 
         let mut iter = ts.clone();
-        let body_false = (|| -> Result<_, ParseError<_>> {
-            parse_multiple!(iter, span, {
+        let body_false = (|| -> Result<_, ParseError> {
+            parse_multiple!(&mut iter, span, {
                 *KeywordElse *<body_false: Box<Statement>>
             });
             *ts = iter;
@@ -435,9 +436,12 @@ impl ToTokens<Token> for IfStmt {
             .chain(guard.to_tokens())
             .chain(once(CloseParen))
             .chain(body_true.to_tokens())
-            .chain(match body_false {
-                Some(body) => Box::<dyn Iterator<Item = Token>>::new(body.to_tokens()),
-                None => Box::new(std::iter::empty()),
+            .chain({
+                let out: Box<dyn Iterator<Item = Token>> = match body_false {
+                    Some(body) => Box::new(once(KeywordElse).chain(body.to_tokens())),
+                    None => Box::new(std::iter::empty()),
+                };
+                out
             })
     }
 }
@@ -460,15 +464,15 @@ impl FromTokens<Token, ParseError> for ForInit {
             ts,
             Err(ParseError::NoMatches),
             |iter| {
-                let decl = VarDecl::from_tokens(iter)?;
+                let decl = VarDecl::from_tokens(&mut iter)?;
                 Ok(ForInit::Decl(decl))
             },
             |iter| {
                 let mut _span = Span::empty();
-                parse_multiple!(iter, _span, {
+                parse_multiple!(&mut iter, _span, {
                     *<exp: Option<Exp>> *Semicolon
                 });
-                Ok(ForInit::Init(exp))
+                Ok(ForInit::Exp(exp))
             },
         )
     }
@@ -476,10 +480,11 @@ impl FromTokens<Token, ParseError> for ForInit {
 
 impl ToTokens<Token> for ForInit {
     fn to_tokens(self) -> impl Iterator<Item = Token> {
-        match self {
-            ForInit::Decl(decl) => Box::<dyn Iterator<Item = Token>>::new(decl.to_tokens()),
+        let out: Box<dyn Iterator<Item = Token>> = match self {
+            ForInit::Decl(decl) => Box::new(decl.to_tokens()),
             ForInit::Exp(exp) => Box::new(exp.to_tokens().chain(once(Token::Semicolon))),
-        }
+        };
+        out
     }
 }
 
@@ -562,7 +567,7 @@ impl FromTokens<Token, ParseError> for Initializer {
             },
             |iter| {
                 let mut span = Span::empty();
-                parse_multiple!(iter, span, {
+                parse_multiple!(&mut iter, span, {
                     *Equal *<exp: Exp> *Semicolon
                 });
                 Ok(Initializer::Defined(exp, span))
@@ -574,12 +579,13 @@ impl FromTokens<Token, ParseError> for Initializer {
 impl ToTokens<Token> for Initializer {
     fn to_tokens(self) -> impl Iterator<Item = Token> {
         use Token::*;
-        match self {
-            Initializer::Declared(_) => Box::<dyn Iterator<Item = Token>>::new(once(Semicolon)),
+        let out: Box<dyn Iterator<Item = Token>> = match self {
+            Initializer::Declared(_) => Box::new(once(Semicolon)),
             Initializer::Defined(exp, _) => {
                 Box::new(once(Equal).chain(exp.to_tokens()).chain(once(Semicolon)))
             }
-        }
+        };
+        out
     }
 }
 
@@ -753,12 +759,12 @@ impl FromTokens<Token, ParseError> for Exp {
                 Err(ParseError::NoMatches),
                 |iter| {
                     let mut span = Span::empty();
-                    let (constant, _) = parse_token!(iter, span, Constant(_): isize);
+                    let (constant, _) = parse_token!(iter, span, Constant(_): isize)?;
                     Ok(Exp::Constant { constant, span })
                 },
                 |iter| {
                     let mut span = Span::empty();
-                    parse_multiple!(iter, span, {
+                    parse_multiple!(&mut iter, span, {
                         *{ident: Ident(_ = String)}
                         *OpenParen
                         *<args: CommaDelimited<Exp>>
@@ -769,14 +775,14 @@ impl FromTokens<Token, ParseError> for Exp {
                 },
                 |iter| {
                     let mut span = Span::empty();
-                    let (ident, _) = parse_token!(iter, span, Ident(_): String);
+                    let (ident, _) = parse_token!(iter, span, Ident(_): String)?;
                     Ok(Exp::Var { ident, span })
                 },
                 |iter| {
                     let mut _span = Span::empty();
-                    parse_token!(iter, _span, OpenParen);
+                    parse_token!(iter, _span, OpenParen)?;
                     let exp = parse_exp(&mut iter, Precedence::lowest())?;
-                    parse_token!(iter, _span, CloseParen);
+                    parse_token!(iter, _span, CloseParen)?;
                     // Don't include parenthesis in expression span
                     Ok(exp)
                 },
@@ -786,10 +792,10 @@ impl FromTokens<Token, ParseError> for Exp {
         fn parse_postfix<'a>(
             ts: &mut impl pwcc_util::parser::CloneableIterator<Item = (&'a Token, Span)>,
         ) -> Result<Exp, ParseError> {
-            let mut iter = ts.clonce();
+            let mut iter = ts.clone();
             let mut exp = parse_primary(&mut iter)?;
 
-            let mut peek_iter = iter.clonce();
+            let mut peek_iter = iter.clone();
             let mut next_token = PostfixOp::from_tokens(&mut peek_iter);
             while let Ok(op) = next_token {
                 iter = peek_iter;
@@ -798,12 +804,12 @@ impl FromTokens<Token, ParseError> for Exp {
                 let mut span = op.span();
                 span.sconcat(exp.span());
                 exp = Exp::Unary {
-                    op: UnaryOp::PostfixOp(op),
+                    op: UnaryOp::Postfix(op),
                     exp: Box::new(exp),
                     span,
                 };
 
-                peek_iter = iter.clonce();
+                peek_iter = iter.clone();
                 next_token = PostfixOp::from_tokens(&mut peek_iter);
             }
 
@@ -823,7 +829,7 @@ impl FromTokens<Token, ParseError> for Exp {
                     let mut span = prefix.span();
                     span.sconcat(exp.span());
                     Ok(Exp::Unary {
-                        op: UnaryOp::PrefixOp(prefix),
+                        op: UnaryOp::Prefix(prefix),
                         exp: Box::new(exp),
                         span,
                     })
@@ -836,10 +842,10 @@ impl FromTokens<Token, ParseError> for Exp {
             ts: &mut impl pwcc_util::parser::CloneableIterator<Item = (&'a Token, Span)>,
             min_prec: Precedence,
         ) -> Result<Exp, ParseError> {
-            let mut iter = ts.clonce();
+            let mut iter = ts.clone();
             let mut left = parse_unary(&mut iter)?;
 
-            let mut peek_iter = iter.clonce();
+            let mut peek_iter = iter.clone();
             let mut next_token = BinaryTok::from_tokens(&mut peek_iter);
             while let Ok(op) = next_token {
                 let prec = op.precedence();
@@ -874,9 +880,9 @@ impl FromTokens<Token, ParseError> for Exp {
                             span,
                         };
                     }
-                    BinaryTok::Question(_) => {
+                    BinaryTok::TernaryQuestion(_) => {
                         let middle = parse_exp(&mut iter, Precedence::lowest())?;
-                        parse_token!(iter, span, Colon);
+                        parse_token!(iter, span, Colon)?;
                         let right = parse_exp(&mut iter, prec)?;
                         span.sconcat(left.span());
                         span.sconcat(middle.span());
@@ -890,7 +896,7 @@ impl FromTokens<Token, ParseError> for Exp {
                     }
                 }
 
-                peek_iter = iter.clonce();
+                peek_iter = iter.clone();
                 next_token = BinaryTok::from_tokens(&mut peek_iter);
             }
 
@@ -920,13 +926,13 @@ impl ToTokens<Token> for Exp {
                 exp,
                 span: _span,
             } => match op {
-                UnaryOp::PrefixOp(op) => Box::new(
+                UnaryOp::Prefix(op) => Box::new(
                     op.to_tokens()
                         .chain(once(OpenParen))
                         .chain(exp.to_tokens())
                         .chain(once(CloseParen)),
                 ),
-                UnaryOp::PostfixOp(op) => Box::new(
+                UnaryOp::Postfix(op) => Box::new(
                     once(OpenParen)
                         .chain(exp.to_tokens())
                         .chain(once(CloseParen))
@@ -1002,13 +1008,13 @@ impl FromTokens<Token, ParseError> for CaseLabel {
             Err(ParseError::NoMatches),
             |iter| {
                 let mut _span = Span::empty();
-                parse_token!(iter, _span, KeywordCase);
+                parse_token!(iter, _span, KeywordCase)?;
                 let exp = Exp::from_tokens(&mut iter)?;
                 Ok(CaseLabel::Case(exp))
             },
             |iter| {
                 let mut span = Span::empty();
-                parse_token!(iter, span, KeywordDefault);
+                parse_token!(iter, span, KeywordDefault)?;
                 Ok(CaseLabel::Default(span))
             },
         )
@@ -1034,15 +1040,11 @@ impl ToTokens<Token> for SwitchContext {
     }
 }
 
-pub fn parse<TS>(tokens: TS) -> Result<Program, ParseError>
-where
-    TS: IntoIterator<Item = (Token, Span)>,
-    TS::IntoIter: Clone,
-{
-    let mut iter = tokens.into_iter();
-    Program::from_tokens(&mut iter).and_then(|p| match iter.next() {
+pub fn parse(tokens: &Vec<(Token, Span)>) -> Result<Program, ParseError> {
+    let mut ts = as_cloneable(tokens);
+    Program::from_tokens(&mut ts).and_then(|p| match ts.next() {
         Some((token, span)) => Err(ParseError::ExtraToken {
-            actual: token,
+            actual: token.clone(),
             span,
         }),
         None => Ok(p),

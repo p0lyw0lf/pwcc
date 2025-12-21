@@ -3,13 +3,14 @@ use std::collections::HashMap;
 use miette::Diagnostic;
 use thiserror::Error;
 
+use pwcc_util::span::Span;
+
 use crate::parser::GotoStmt;
 use crate::parser::RawLabel;
 use crate::parser::visit_mut::VisitMut;
 use crate::parser::visit_mut::VisitMutBuilder;
 use crate::semantic::SemanticError;
 use crate::semantic::SemanticErrors;
-use crate::span::Span;
 
 #[derive(Error, Diagnostic, Debug)]
 pub enum Error {

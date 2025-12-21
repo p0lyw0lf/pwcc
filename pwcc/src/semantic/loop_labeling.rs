@@ -1,6 +1,9 @@
 use miette::Diagnostic;
 use thiserror::Error;
 
+use pwcc_util::span::Span;
+use pwcc_util::span::Spanned;
+
 use crate::parser::BreakStmt;
 use crate::parser::ContinueStmt;
 use crate::parser::DoWhileStmt;
@@ -11,8 +14,6 @@ use crate::parser::WhileStmt;
 use crate::parser::visit_mut::VisitMut;
 use crate::semantic::SemanticErrors;
 use crate::semantic::UniqueLabelFactory;
-use crate::span::Span;
-use crate::span::Spanned;
 
 #[derive(Error, Diagnostic, Debug)]
 pub enum Error {

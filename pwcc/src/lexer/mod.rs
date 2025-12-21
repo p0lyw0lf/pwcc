@@ -1,8 +1,10 @@
+use pwcc_util::span::Span;
+
 #[cfg(test)]
 mod test;
 
 pwcc_util::tokens! {
-Tokenizer for Token with TokenError:
+Tokenizer for Token with LexError:
     r"break\b": KeywordBreak,
     r"case\b": KeywordCase,
     r"continue\b": KeywordContinue,

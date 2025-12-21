@@ -36,7 +36,7 @@ pub fn validate(mut p: Program) -> Result<(Program, SymbolTable), SemanticErrors
     };
 
     let inner_result = p.try_fmap(|f: FunctionDecl| -> Result<_, SemanticErrors> {
-        if matches!(f.body, FunctionBody::Semicolon(_)) {
+        if matches!(f.body, FunctionBody::Declared(_)) {
             return Ok(f);
         }
 

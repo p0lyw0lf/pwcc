@@ -88,7 +88,7 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    let tree = parser::parse(tokens).map_err(|e| {
+    let tree = parser::parse(&tokens).map_err(|e| {
         Report::from(e)
             .with_source_code(source.clone())
             .wrap_err("Error parsing")

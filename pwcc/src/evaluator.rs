@@ -1,12 +1,13 @@
 use miette::Diagnostic;
 use thiserror::Error;
 
+use pwcc_util::span::Span;
+
 use crate::parser::BinaryOp;
 use crate::parser::Exp;
 use crate::parser::PostfixOp;
 use crate::parser::PrefixOp;
 use crate::parser::UnaryOp;
-use crate::span::Span;
 
 #[derive(Error, Diagnostic, Debug)]
 pub enum Error {
@@ -39,13 +40,13 @@ pub fn evaluate(exp: Exp) -> Result<isize, Error> {
         Exp::Unary { op, exp, span } => {
             let v = evaluate(*exp)?;
             match op {
-                UnaryOp::PrefixOp(PrefixOp::Minus(_)) => Ok(-v),
-                UnaryOp::PrefixOp(PrefixOp::Tilde(_)) => Ok(!v),
-                UnaryOp::PrefixOp(PrefixOp::Exclamation(_)) => Ok((v == 0) as isize),
-                UnaryOp::PrefixOp(PrefixOp::Increment(_) | PrefixOp::Decrement(_)) => {
+                UnaryOp::Prefix(PrefixOp::Minus(_)) => Ok(-v),
+                UnaryOp::Prefix(PrefixOp::BitNot(_)) => Ok(!v),
+                UnaryOp::Prefix(PrefixOp::LogicNot(_)) => Ok((v == 0) as isize),
+                UnaryOp::Prefix(PrefixOp::Increment(_) | PrefixOp::Decrement(_)) => {
                     Err(Error::InvalidOperator(span))
                 }
-                UnaryOp::PostfixOp(PostfixOp::Increment(_) | PostfixOp::Decrement(_)) => {
+                UnaryOp::Postfix(PostfixOp::Increment(_) | PostfixOp::Decrement(_)) => {
                     Err(Error::InvalidOperator(span))
                 }
             }
@@ -61,17 +62,17 @@ pub fn evaluate(exp: Exp) -> Result<isize, Error> {
             match op {
                 BinaryOp::Plus(_) => Ok(l + r),
                 BinaryOp::Minus(_) => Ok(l - r),
-                BinaryOp::Star(_) => Ok(l * r),
-                BinaryOp::ForwardSlash(_) => Ok(l / r),
-                BinaryOp::Percent(_) => Ok(l % r),
+                BinaryOp::Times(_) => Ok(l * r),
+                BinaryOp::Divide(_) => Ok(l / r),
+                BinaryOp::Mod(_) => Ok(l % r),
                 BinaryOp::LeftShift(_) => Ok(l << r),
                 BinaryOp::RightShift(_) => Ok(l >> r),
-                BinaryOp::Ampersand(_) => Ok(l & r),
-                BinaryOp::Caret(_) => Ok(l ^ r),
-                BinaryOp::Pipe(_) => Ok(l | r),
-                BinaryOp::DoubleAmpersand(_) => Ok((l != 0 && r != 0) as isize),
-                BinaryOp::DoublePipe(_) => Ok((l != 0 || r != 0) as isize),
-                BinaryOp::DoubleEqual(_) => Ok((l == r) as isize),
+                BinaryOp::BitAnd(_) => Ok(l & r),
+                BinaryOp::BitOr(_) => Ok(l | r),
+                BinaryOp::BitXor(_) => Ok(l ^ r),
+                BinaryOp::LogicAnd(_) => Ok((l != 0 && r != 0) as isize),
+                BinaryOp::LogicOr(_) => Ok((l != 0 || r != 0) as isize),
+                BinaryOp::Equal(_) => Ok((l == r) as isize),
                 BinaryOp::NotEqual(_) => Ok((l != r) as isize),
                 BinaryOp::LessThan(_) => Ok((l < r) as isize),
                 BinaryOp::LessThanEqual(_) => Ok((l <= r) as isize),

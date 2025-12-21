@@ -1,20 +1,21 @@
 use miette::Diagnostic;
 use thiserror::Error;
 
+use pwcc_util::span::Span;
+use pwcc_util::span::Spanned;
+
 use crate::parser::Exp;
 use crate::parser::PostfixOp;
 use crate::parser::PrefixOp;
 use crate::parser::UnaryOp;
 use crate::semantic::SemanticErrors;
-use crate::span::Span;
-use crate::span::Spanned;
 
 pub(super) fn check_operator_types(exp: &mut Exp) -> Result<(), SemanticErrors> {
     match exp {
         Exp::Unary {
             op:
-                op @ (UnaryOp::PrefixOp(PrefixOp::Increment(_) | PrefixOp::Decrement(_))
-                | UnaryOp::PostfixOp(PostfixOp::Increment(_) | PostfixOp::Decrement(_))),
+                op @ (UnaryOp::Prefix(PrefixOp::Increment(_) | PrefixOp::Decrement(_))
+                | UnaryOp::Postfix(PostfixOp::Increment(_) | PostfixOp::Decrement(_))),
             exp,
             span: _span,
         } => {

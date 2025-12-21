@@ -1,7 +1,8 @@
 use std::fmt::Display;
 
+use pwcc_util::parser::ToTokens;
+
 use crate::lexer::Token;
-use crate::parser::ToTokens;
 
 impl Display for Token {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -138,6 +139,6 @@ impl Display for Printable {
     }
 }
 
-pub fn printable(tree: impl ToTokens) -> impl Display {
+pub fn printable(tree: impl ToTokens<Token>) -> impl Display {
     Printable(tree.to_tokens().collect())
 }

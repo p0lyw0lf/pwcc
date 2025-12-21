@@ -4,12 +4,13 @@ use std::fmt::Display;
 use miette::Diagnostic;
 use thiserror::Error;
 
+use pwcc_util::span::Span;
+
 use crate::parser::DeclArg;
 use crate::parser::Exp;
 use crate::parser::visit_mut::VisitMut;
 use crate::semantic::SemanticError;
 use crate::semantic::SemanticErrors;
-use crate::span::Span;
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum Type {
@@ -125,7 +126,7 @@ impl VisitMut for TypeChecker {
             decl.name.0.clone(),
             Declaration {
                 ty: Type::Int,
-                defined: matches!(decl.init, crate::parser::Initializer::ExpressionInit(_)),
+                defined: matches!(decl.init, crate::parser::Initializer::Defined(_, _)),
                 span: decl.name.1,
             },
         );
@@ -133,7 +134,7 @@ impl VisitMut for TypeChecker {
 
     fn visit_mut_function_decl_pre(&mut self, decl: &mut crate::parser::FunctionDecl) {
         let fun_type = Type::Function(decl.args.num_args());
-        let has_body = matches!(decl.body, crate::parser::FunctionBody::Block(_));
+        let has_body = matches!(decl.body, crate::parser::FunctionBody::Defined(_));
         let mut already_defined = false;
         let name = decl.name.0.clone();
 

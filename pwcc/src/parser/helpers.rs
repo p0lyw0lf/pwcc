@@ -1,25 +1,26 @@
-use core::iter::once as one;
-
 use functional::Foldable;
 use functional::FoldableMut;
 use functional::Functor;
 use functional::TryFunctor;
+use pwcc_util::parser::FromTokens;
+use pwcc_util::parser::ToTokens;
+use pwcc_util::span::Span;
+use pwcc_util::span::Spanned;
 
 use crate::lexer::Token;
-use crate::parser::errors::ParseError;
-use crate::parser::traits::FromTokens;
-use crate::parser::traits::ToTokens;
-use crate::span::Span;
-use crate::span::Spanned;
+use crate::parser::ParseError;
 
 #[derive(Debug)]
 #[cfg_attr(test, derive(PartialEq))]
 pub struct CommaDelimited<T>(pub Vec<T>);
 
-impl<T: FromTokens> FromTokens for CommaDelimited<T> {
-    fn from_tokens(
-        ts: &mut (impl Iterator<Item = (Token, Span)> + Clone),
-    ) -> Result<Self, ParseError> {
+impl<T: FromTokens<Token, ParseError>> FromTokens<Token, ParseError> for CommaDelimited<T> {
+    fn from_tokens<'a>(
+        ts: &mut impl pwcc_util::parser::CloneableIterator<Item = (&'a Token, Span)>,
+    ) -> Result<Self, ParseError>
+    where
+        Token: 'a,
+    {
         let mut iter = ts.clone();
         let mut args = Vec::new();
 
@@ -55,11 +56,11 @@ impl<T: FromTokens> FromTokens for CommaDelimited<T> {
     }
 }
 
-impl<T: ToTokens> ToTokens for CommaDelimited<T> {
+impl<T: ToTokens<Token>> ToTokens<Token> for CommaDelimited<T> {
     fn to_tokens(self) -> impl Iterator<Item = Token> {
         self.0
             .into_iter()
-            .flat_map(|arg| one(Token::Comma).chain(arg.to_tokens()))
+            .flat_map(|arg| std::iter::once(Token::Comma).chain(arg.to_tokens()))
             .skip(1)
     }
 }

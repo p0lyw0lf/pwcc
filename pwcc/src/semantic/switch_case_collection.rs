@@ -4,6 +4,9 @@ use std::collections::btree_map;
 use miette::Diagnostic;
 use thiserror::Error;
 
+use pwcc_util::span::Span;
+use pwcc_util::span::Spanned;
+
 use crate::evaluator;
 use crate::evaluator::evaluate;
 use crate::parser::CaseLabel;
@@ -12,8 +15,6 @@ use crate::parser::SwitchStmt;
 use crate::parser::visit_mut::VisitMut;
 use crate::semantic::SemanticErrors;
 use crate::semantic::UniqueLabelFactory;
-use crate::span::Span;
-use crate::span::Spanned;
 
 #[derive(Error, Diagnostic, Debug)]
 pub enum Error {

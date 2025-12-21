@@ -35,7 +35,7 @@ pub enum ParseError<Token: Debug + Display> {
         // of `ParseError<Token>: Error` (outer) only if `ParseError<Token>: Error` (inner, this
         // source). Instead, we are forced to type-erase.
         #[source]
-        err: Box<dyn Diagnostic>,
+        err: Box<dyn Diagnostic + Send + Sync>,
     },
 }
 

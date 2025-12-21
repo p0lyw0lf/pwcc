@@ -24,6 +24,40 @@ macro_rules! parse_token {
     }
 }
 
+/// Tries to parse multiple tokens in a row, binding to the specified names. MUST be run inside a
+/// `Result<_, ParseError<_>>` context.
+#[macro_export]
+macro_rules! parse_multiple {
+    ($ts:ident, $span:ident, { $(
+        *
+        $($m_token:ident)?
+        $(<$m_sname:ident : $m_subnode:ty>)?
+        $({$m_cname:ident : $m_ctoken:ident ($m_pat:pat = $m_ty:ty) })?
+        $(,)?
+    )* }) => {
+        let ( $(
+            $($m_sname,)?
+            $($m_cname,)?
+        )* ) = (|| -> Result<_, $crate::parser::error::ParseError<_>> {
+            let mut iter = $ts.clone();
+            $(
+                $($crate::parse_token!(iter, $span, $m_token)?;)?
+                $(
+                    let $m_sname: $m_subnode = $crate::parser::FromTokens::from_tokens(&mut iter)?;
+                    functional::Semigroup::sconcat(&mut $span, $crate::span::Spanned::span(&$m_sname));
+                )?
+                $(let $m_cname = $crate::parse_token!(iter, $span, $m_ctoken($m_pat): $m_ty)?;)?
+            )*
+
+            *$ts = iter;
+            Ok(( $(
+                $($m_sname,)?
+                $($m_cname,)?
+            )* ))
+        })()?;
+    }
+}
+
 /// Tries multiple functions, returning the when the first returns OK, otherwise returning a
 /// default value.
 #[macro_export]
@@ -133,20 +167,13 @@ macro_rules! parse_times {
                 where
                     Token: 'a,
                 {
-                    #[allow(unused_import)]
-                    use functional::Semigroup;
-
-                    let mut iter = ts.clone();
                     let mut span = Span::empty();
-                    $(
-                        $($crate::parse_token!(iter, span, $m_token)?;)?
-                        $(
-                            let $m_sname: $m_subnode = $crate::parser::FromTokens::from_tokens(&mut iter)?;
-                            span.sconcat($crate::span::Spanned::span(&$m_sname));
-                        )?
-                        $(let $m_cname = $crate::parse_token!(iter, span, $m_ctoken($m_pat): $m_ty)?;)?
-                    )*
-                    *ts = iter;
+                    $crate::parse_multiple!(ts, span, { $(
+                        *
+                        $($m_token)?
+                        $(<$m_sname: $m_subnode>)?
+                        $({$m_cname: $m_ctoken ($m_pat = $m_ty) })?
+                    )* });
                     Ok($node {$(
                         $($m_sname,)?
                         $($m_cname,)?

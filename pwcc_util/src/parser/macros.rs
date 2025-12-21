@@ -283,7 +283,7 @@ macro_rules! parse_plus {
     ($node:ident : $(
         +
         $($a_token:ident)?
-        $(<$a_subnode:ident>)?
+        $(<$a_subnode:ty>)?
         $({$a_ctoken:ident ($a_pat:pat = $a_ty:ty) })?
         : $case:ident $(,)?
     )* ) => {
@@ -332,7 +332,7 @@ macro_rules! parse_plus {
             fn to_tokens(self) -> impl Iterator<Item = Token> {
                 let out: Box<dyn Iterator<Item = Token>> = match self {$(
                     $($node::$case(_) => Box::new(::core::iter::once(Token::$a_token)),)?
-                    $($node::$case(s) => Box::new($a_subnode::to_tokens(s)),)?
+                    $($node::$case(s) => Box::new(<$a_subnode as $crate::parser::ToTokens>::to_tokens(s)),)?
                     $($node::$case(c, _) => Box::new(::core::iter::once(Token::$a_ctoken(c.into()))),)?
                 )*};
                 out

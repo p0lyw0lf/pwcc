@@ -1,18 +1,24 @@
-use core::convert::From;
-use core::iter::Iterator;
-use core::iter::once as one;
+use std::collections::BTreeMap;
+use std::iter::once;
 
 use functional::Semigroup;
+use pwcc_util::parse_choices;
+use pwcc_util::parse_multiple;
+use pwcc_util::parse_plus;
+use pwcc_util::parse_times;
+use pwcc_util::parse_token;
+use pwcc_util::parser::FromTokens;
+use pwcc_util::parser::ToTokens;
+use pwcc_util::span::Span;
+use pwcc_util::span::Spanned;
+use pwcc_util::spanned_empty;
 
 use crate::lexer::Token;
 use crate::parser::helpers::CommaDelimited;
-use crate::span::Span;
-use crate::span::Spanned;
 
-mod errors;
 mod helpers;
 
-use errors::ParseError;
+pub type ParseError = pwcc_util::parser::error::ParseError<Token>;
 
 #[cfg(test)]
 mod test;
@@ -20,107 +26,273 @@ mod test;
 mod test_errors;
 
 // TODO: I probably should make it so the enums are not so huge sometimes...
-nodes! {
-    {
-        use crate::lexer::Token;
-        use crate::parser::errors::ParseError;
-        use crate::parser::helpers::CommaDelimited;
-        use crate::parser::macros::expect_token;
-        use crate::parser::macros::parse_choices;
-        use crate::parser::traits::FromTokens;
-        use crate::parser::traits::ToTokens;
-        use crate::span::Span;
-        use crate::span::Spanned;
-        use std::collections::BTreeMap;
+#[functional_macros::ast(typeclasses = [Functor, TryFunctor, VisitMut])]
+mod ast {
+    use super::*;
+
+    #[derive(Debug, Spanned)]
+    pub struct Program {
+        pub functions: Vec<FunctionDecl>,
+        pub span: Span,
     }
-    Program(*<functions: Vec<FunctionDecl>>);
-    Block(*OpenBrace *<items: Vec<BlockItem>> *CloseBrace) [include];
-    BlockItem(+<Statement> +<Declaration>) [include];
-    Statement(
-        +<ReturnStmt>
-        +<ExpressionStmt>
-        +<IfStmt>
-        +<BreakStmt>
-        +<ContinueStmt>
-        +<WhileStmt>
-        +<DoWhileStmt>
-        +<ForStmt>
-        +<SwitchStmt>
-        +<Block>
-        +<LabelStmt>
-        +<GotoStmt>
-        +<NullStmt>
-    ) [include];
-    ReturnStmt(*KeywordReturn *<exp: Exp> *Semicolon);
-    ExpressionStmt(*<exp: Exp> *Semicolon);
 
-    IfStmt(*KeywordIf *OpenParen *<guard: Exp> *CloseParen *<body: Box<Statement>> *<else_stmt: Option<ElseStmt>>);
-    ElseStmt(*KeywordElse *<body: Box<Statement>>);
-    SwitchStmt(*KeywordSwitch *<ctx: Option<SwitchContext>> *<label: Option<LoopLabel>> *OpenParen *<exp: Exp> *CloseParen *<body: Box<Statement>>);
+    #[include()]
+    #[derive(Debug, Spanned)]
+    pub struct Block {
+        pub items: Vec<BlockItem>,
+        pub span: Span,
+    }
 
-    BreakStmt(*KeywordBreak *<label: Option<LoopLabel>> *Semicolon);
-    ContinueStmt(*KeywordContinue *<label: Option<LoopLabel>> *Semicolon);
-    WhileStmt(*KeywordWhile *<label: Option<LoopLabel>> *OpenParen *<guard: Exp> *CloseParen *<body: Box<Statement>>);
-    DoWhileStmt(*KeywordDo *<body: Box<Statement>> *KeywordWhile *<label: Option<LoopLabel>> *OpenParen *<guard: Exp> *CloseParen *Semicolon);
-    ForStmt(*KeywordFor *<label: Option<LoopLabel>> *OpenParen *<init: ForInit> *<exp1: Option<Exp>> *Semicolon *<exp2: Option<Exp>> *CloseParen *<body: Box<Statement>>);
-    ForInit(+<VarDecl> +<ForInitExp>);
-    ForInitExp(*<exp: Option<Exp>> *Semicolon);
+    #[include()]
+    #[derive(Debug, Spanned)]
+    pub enum BlockItem {
+        Statement(Statement),
+        Declaration(Declaration),
+    }
 
-    LabelStmt(*<label: Label> *Colon *<stmt: Box<Statement>>);
-    Label(
-        +<RawLabel>
-        +<CaseLabel>
-    );
-    RawLabel(*{label: Ident(_ = String)}) [include];
+    #[include()]
+    #[derive(Debug, Spanned)]
+    pub enum Statement {
+        ReturnStmt(ReturnStmt),
+        ExpressionStmt(ExpressionStmt),
+        IfStmt(IfStmt),
+        BreakStmt(BreakStmt),
+        ContinueStmt(ContinueStmt),
+        WhileStmt(WhileStmt),
+        DoWhileStmt(DoWhileStmt),
+        ForStmt(ForStmt),
+        SwitchStmt(SwitchStmt),
+        Block(Block),
+        LabelStmt(LabelStmt),
+        GotoStmt(GotoStmt),
+        NullStmt(NullStmt),
+    }
 
-    GotoStmt(*KeywordGoto *{label: Ident(_ = String)} *Semicolon) [include];
+    #[derive(Debug, Spanned)]
+    pub struct ReturnStmt {
+        pub exp: Exp,
+        pub span: Span,
+    }
 
-    NullStmt(*Semicolon);
+    #[derive(Debug, Spanned)]
+    pub struct ExpressionStmt {
+        pub exp: Exp,
+        pub span: Span,
+    }
 
-    Declaration(+<FunctionDecl> +<VarDecl>);
-    FunctionDecl(
-        *KeywordInt *{name: Ident(_ = String)} *OpenParen *<args: FunctionDeclArgs> *CloseParen
-            *<body: FunctionBody>
-    ) [include];
-    FunctionDeclArgs(+KeywordVoid +<DeclArgs>);
-    DeclArgs(*<args: CommaDelimited<DeclArg>>);
-    DeclArg(*KeywordInt *{name: Ident(_ = String)});
-    FunctionBody(+Semicolon +<Block>);
-    VarDecl(*KeywordInt *{name: Ident(_ = String)} *<init: Initializer>);
-    Initializer(+<NoInit> +<ExpressionInit>);
-    NoInit(*Semicolon);
-    ExpressionInit(*Equal *<exp: Exp> *Semicolon);
-    PrefixOp(+Minus +Tilde +Exclamation +Increment +Decrement);
-    PostfixOp(+Increment +Decrement);
-    UnaryOp(+<PrefixOp> +<PostfixOp>);
-    BinaryOp(
+    #[derive(Debug, Spanned)]
+    pub struct IfStmt {
+        pub guard: Exp,
+        pub body_true: Box<Statement>,
+        pub body_false: Option<Box<Statement>>,
+        pub span: Span,
+    }
+
+    #[derive(Debug, Spanned)]
+    pub struct SwitchStmt {
+        pub ctx: Option<SwitchContext>,
+        pub label: Option<LoopLabel>,
+        pub case: Exp,
+        pub body: Box<Statement>,
+        pub span: Span,
+    }
+
+    #[derive(Debug, Spanned)]
+    pub struct BreakStmt {
+        pub label: Option<LoopLabel>,
+        pub span: Span,
+    }
+
+    #[derive(Debug, Spanned)]
+    pub struct ContinueStmt {
+        pub label: Option<LoopLabel>,
+        pub span: Span,
+    }
+
+    #[derive(Debug, Spanned)]
+    pub struct WhileStmt {
+        pub label: Option<LoopLabel>,
+        pub guard: Exp,
+        pub body: Box<Statement>,
+        pub span: Span,
+    }
+
+    #[derive(Debug, Spanned)]
+    pub struct DoWhileStmt {
+        pub body: Box<Statement>,
+        pub label: Option<LoopLabel>,
+        pub guard: Exp,
+        pub span: Span,
+    }
+
+    #[derive(Debug, Spanned)]
+    pub struct ForStmt {
+        pub label: Option<LoopLabel>,
+        pub init: ForInit,
+        pub exp1: Option<Exp>,
+        pub exp2: Option<Exp>,
+        pub body: Box<Statement>,
+        pub span: Span,
+    }
+
+    #[derive(Debug, Spanned)]
+    pub enum ForInit {
+        Decl(VarDecl),
+        Exp(Option<Exp>),
+    }
+
+    #[derive(Debug, Spanned)]
+    pub struct LabelStmt {
+        pub label: Label,
+        pub stmt: Box<Statement>,
+        pub span: Span,
+    }
+
+    #[derive(Debug, Spanned)]
+    pub enum Label {
+        Raw(RawLabel),
+        Case(CaseLabel),
+    }
+
+    #[derive(Debug, Spanned)]
+    pub struct RawLabel {
+        pub label: String,
+        pub span: Span,
+    }
+
+    #[derive(Debug, Spanned)]
+    pub struct GotoStmt {
+        pub label: String,
+        pub span: Span,
+    }
+
+    #[derive(Debug, Spanned)]
+    pub struct NullStmt {
+        pub span: Span,
+    }
+
+    #[derive(Debug, Spanned)]
+    pub enum Declaration {
+        Function(FunctionDecl),
+        Var(VarDecl),
+    }
+
+    #[derive(Debug, Spanned)]
+    #[include()]
+    pub struct FunctionDecl {
+        pub name: String,
+        pub args: FunctionDeclArgs,
+        pub body: FunctionBody,
+        pub span: Span,
+    }
+
+    #[derive(Debug, Spanned)]
+    pub enum FunctionDeclArgs {
+        Void(Span),
+        DeclArgs(CommaDelimited<DeclArg>),
+    }
+
+    #[derive(Debug, Spanned)]
+    pub struct DeclArg {
+        pub name: String,
+        pub span: Span,
+    }
+
+    #[derive(Debug, Spanned)]
+    pub enum FunctionBody {
+        Declared(Span),
+        Defined(Block),
+    }
+
+    #[derive(Debug, Spanned)]
+    pub struct VarDecl {
+        pub name: String,
+        pub init: Initializer,
+        pub span: Span,
+    }
+
+    #[derive(Debug, Spanned)]
+    pub enum Initializer {
+        Declared(Span),
+        Defined(Exp, Span),
+    }
+
+    #[derive(Debug, Spanned)]
+    pub enum PrefixOp {
+        Minus(Span),
+        BitNot(Span),
+        LogicNot(Span),
+        Increment(Span),
+        Decrement(Span),
+    }
+
+    #[derive(Debug, Spanned)]
+    pub enum PostfixOp {
+        Increment(Span),
+        Decrement(Span),
+    }
+
+    #[derive(Debug, Spanned)]
+    pub enum UnaryOp {
+        Prefix(PrefixOp),
+        Postfix(PostfixOp),
+    }
+
+    #[derive(Debug, Spanned)]
+    pub enum BinaryOp {
         // Arithmetic operators
-        +Plus +Minus +Star +ForwardSlash +Percent
+        Plus(Span),
+        Minus(Span),
+        Times(Span),
+        Divide(Span),
+        Mod(Span),
         // Bitwise operators
-        +LeftShift +RightShift +Ampersand +Caret +Pipe
+        LeftShift(Span),
+        RightShift(Span),
+        BitAnd(Span),
+        BitOr(Span),
+        BitXor(Span),
         // Logical operators
-        +DoubleAmpersand +DoublePipe +DoubleEqual +NotEqual +LessThan +LessThanEqual +GreaterThan +GreaterThanEqual
-    );
-    AssignmentOp(
-        // Standard assignment
-        +Equal
-        // Arithmetic assignment
-        +PlusEqual +MinusEqual +StarEqual +ForwardSlashEqual +PercentEqual
-        // Bitwise assignment
-        +LeftShiftEqual +RightShiftEqual +AmpersandEqual +CaretEqual +PipeEqual
-    );
-    // Not used in grammar, only for parsing Exp
-    BinaryTok(
-        +<BinaryOp>
-        +<AssignmentOp>
-        // Not a "true" binary operator, but we do parse it like one. This will result in trying to
-// parse a ternary expression.
-        +Question
-    );
+        LogicAnd(Span),
+        LogicOr(Span),
+        Equal(Span),
+        NotEqual(Span),
+        LessThan(Span),
+        LessThanEqual(Span),
+        GreaterThan(Span),
+        GreaterThanEqual(Span),
+    }
 
-    // Exp is special, since its AST doesn't exactly correspond with the grammar, so we define it
-    // separately
-    Exp enum {
+    #[derive(Debug, Spanned)]
+    pub enum AssignmentOp {
+        // Standard assignment
+        Equal(Span),
+        // Arithmetic assignment
+        PlusEqual(Span),
+        MinusEqual(Span),
+        TimesEqual(Span),
+        DivideEqual(Span),
+        ModEqual(Span),
+        // Bitwise assignment
+        LeftShiftEqual(Span),
+        RightShiftEqual(Span),
+        BitAndEqual(Span),
+        BitOrEqual(Span),
+        BitXorEqual(Span),
+    }
+
+    #[derive(Debug, Spanned)]
+    pub enum BinaryTok {
+        BinaryOp(BinaryOp),
+        AssignmentOp(AssignmentOp),
+        TernaryQuestion(Span),
+    }
+
+    /// Exp is special, since its AST doesn't exactly correspond with the grammar, so we define it
+    /// separately
+    #[derive(Debug, Spanned)]
+    #[include()]
+    pub enum Exp {
         Constant {
             constant: isize,
             span: Span,
@@ -159,27 +331,188 @@ nodes! {
             args: CommaDelimited<Exp>,
             span: Span,
         },
-    } [include];
+    }
 
     // Similarly for LoopLabel; we don't want to be able to parse them, but we do want to be able
     // to represent them.
-    LoopLabel struct (pub String);
+    #[derive(Debug)]
+    pub struct LoopLabel(pub String);
 
-    CaseLabel enum {
+    #[derive(Debug, Spanned)]
+    pub enum CaseLabel {
         Case(Exp),
         Default(Span),
         Labeled(String, Span),
-    };
+    }
     // Maps the constant-evaluated case value (if applicable) to the case it should jump to if the
     // value matches.
-    SwitchContext struct (pub BTreeMap<Option<isize>, (String, Span)>);
+    #[derive(Debug)]
+    pub struct SwitchContext(pub BTreeMap<Option<isize>, (String, Span)>);
 }
+pub use ast::*;
+
+/// Helper to define nodes that should not be parsed normally.
+macro_rules! unparseable {
+    ($node: ident) => {
+        impl FromTokens<Token, ParseError> for $node {
+            fn from_tokens<'a>(
+                ts: &mut impl pwcc_util::parser::CloneableIterator<Item = (&'a Token, Span)>,
+            ) -> Result<Self, ParseError>
+            where
+                Token: 'a,
+            {
+                Err(ParseError::NoMatches)
+            }
+        }
+    };
+}
+parse_times!(Program: *<functions: Vec<FunctionDecl>>);
+parse_times!(Block: *OpenBrace *<items: Vec<BlockItem>> *CloseBrace);
+parse_plus!(BlockItem:
+    +<Statement>: Statement,
+    +<Declaration>: Declaration,
+);
+parse_plus!(Statement:
+    +<ReturnStmt>: ReturnStmt,
+    +<ExpressionStmt>: ExpressionStmt,
+    +<IfStmt>: IfStmt,
+    +<BreakStmt>: BreakStmt,
+    +<ContinueStmt>: ContinueStmt,
+    +<WhileStmt>: WhileStmt,
+    +<DoWhileStmt>: DoWhileStmt,
+    +<ForStmt>: ForStmt,
+    +<SwitchStmt>: SwitchStmt,
+    +<Block>: Block,
+    +<LabelStmt>: LabelStmt,
+    +<GotoStmt>: GotoStmt,
+    +<NullStmt>: NullStmt,
+);
+parse_times!(ReturnStmt: *KeywordReturn *<exp: Exp> *Semicolon);
+parse_times!(ExpressionStmt: *<exp: Exp> *Semicolon);
+
+impl FromTokens<Token, ParseError> for IfStmt {
+    fn from_tokens<'a>(
+        ts: &mut impl pwcc_util::parser::CloneableIterator<Item = (&'a Token, Span)>,
+    ) -> Result<Self, ParseError>
+    where
+        Token: 'a,
+    {
+        let mut span = Span::empty();
+        parse_multiple!(ts, span, {
+            *KeywordIf *OpenParen *<guard: Exp> *CloseParen *<body_true: Box<Statement>>
+        });
+
+        let mut iter = ts.clone();
+        let body_false = (|| -> Result<_, ParseError<_>> {
+            parse_multiple!(iter, span, {
+                *KeywordElse *<body_false: Box<Statement>>
+            });
+            *ts = iter;
+            Ok(body_false)
+        })()
+        .ok();
+
+        Ok(IfStmt {
+            guard,
+            body_true,
+            body_false,
+            span,
+        })
+    }
+}
+
+impl ToTokens<Token> for IfStmt {
+    fn to_tokens(self) -> impl Iterator<Item = Token> {
+        use Token::*;
+        let IfStmt {
+            guard,
+            body_true,
+            body_false,
+            span: _,
+        } = self;
+        once(KeywordIf)
+            .chain(once(OpenParen))
+            .chain(guard.to_tokens())
+            .chain(once(CloseParen))
+            .chain(body_true.to_tokens())
+            .chain(match body_false {
+                Some(body) => Box::<dyn Iterator<Item = Token>>::new(body.to_tokens()),
+                None => Box::new(std::iter::empty()),
+            })
+    }
+}
+
+parse_times!(SwitchStmt: *KeywordSwitch *<ctx: Option<SwitchContext>> *<label: Option<LoopLabel>> *OpenParen *<case: Exp> *CloseParen *<body: Box<Statement>>);
+parse_times!(BreakStmt: *KeywordBreak *<label: Option<LoopLabel>> *Semicolon);
+parse_times!(ContinueStmt: *KeywordContinue *<label: Option<LoopLabel>> *Semicolon);
+parse_times!(WhileStmt: *KeywordWhile *<label: Option<LoopLabel>> *OpenParen *<guard: Exp> *CloseParen *<body: Box<Statement>>);
+parse_times!(DoWhileStmt: *KeywordDo *<body: Box<Statement>> *KeywordWhile *<label: Option<LoopLabel>> *OpenParen *<guard: Exp> *CloseParen *Semicolon);
+parse_times!(ForStmt: *KeywordFor *<label: Option<LoopLabel>> *OpenParen *<init: ForInit> *<exp1: Option<Exp>> *Semicolon *<exp2: Option<Exp>> *CloseParen *<body: Box<Statement>>);
+
+impl FromTokens<Token, ParseError> for ForInit {
+    fn from_tokens<'a>(
+        ts: &mut impl pwcc_util::parser::CloneableIterator<Item = (&'a Token, Span)>,
+    ) -> Result<Self, ParseError>
+    where
+        Token: 'a,
+    {
+        parse_choices!(
+            ts,
+            Err(ParseError::NoMatches),
+            |iter| {
+                let decl = VarDecl::from_tokens(iter)?;
+                Ok(ForInit::Decl(decl))
+            },
+            |iter| {
+                let mut _span = Span::empty();
+                parse_multiple!(iter, _span, {
+                    *<exp: Option<Exp>> *Semicolon
+                });
+                Ok(ForInit::Init(exp))
+            },
+        )
+    }
+}
+
+impl ToTokens<Token> for ForInit {
+    fn to_tokens(self) -> impl Iterator<Item = Token> {
+        match self {
+            ForInit::Decl(decl) => Box::<dyn Iterator<Item = Token>>::new(decl.to_tokens()),
+            ForInit::Exp(exp) => Box::new(exp.to_tokens().chain(once(Token::Semicolon))),
+        }
+    }
+}
+
+parse_times!(LabelStmt: *<label: Label> *Colon *<stmt: Box<Statement>>);
+parse_plus!(Label:
+    +<RawLabel>: Raw,
+    +<CaseLabel>: Case,
+);
+parse_times!(RawLabel: *{label: Ident(_ = String)});
+
+parse_times!(GotoStmt: *KeywordGoto *{label: Ident(_ = String)} *Semicolon);
+
+parse_times!(NullStmt: *Semicolon);
+
+parse_plus!(Declaration:
+    +<FunctionDecl>: Function,
+    +<VarDecl>: Var,
+);
+parse_times!(FunctionDecl:
+    *KeywordInt *{name: Ident(_ = String)} *OpenParen *<args: FunctionDeclArgs> *CloseParen
+        *<body: FunctionBody>
+);
+
+parse_plus!(FunctionDeclArgs:
+    +KeywordVoid: Void,
+    +<CommaDelimited<DeclArg>>: DeclArgs,
+);
 
 impl FunctionDeclArgs {
     pub fn num_args(&self) -> usize {
         match self {
-            FunctionDeclArgs::KeywordVoid(_) => 0,
-            FunctionDeclArgs::DeclArgs(DeclArgs { args, span: _ }) => args.0.len(),
+            FunctionDeclArgs::Void(_) => 0,
+            FunctionDeclArgs::DeclArgs(args) => args.0.len(),
         }
     }
 }
@@ -190,8 +523,8 @@ impl IntoIterator for FunctionDeclArgs {
 
     fn into_iter(self) -> Self::IntoIter {
         match self {
-            FunctionDeclArgs::KeywordVoid(_) => vec![].into_iter(),
-            FunctionDeclArgs::DeclArgs(DeclArgs { args, span: _ }) => args.0.into_iter(),
+            FunctionDeclArgs::Void(_) => vec![].into_iter(),
+            FunctionDeclArgs::DeclArgs(args) => args.0.into_iter(),
         }
     }
 }
@@ -199,95 +532,119 @@ impl IntoIterator for FunctionDeclArgs {
 impl FunctionDeclArgs {
     pub fn iter(&self) -> std::slice::Iter<'_, DeclArg> {
         match self {
-            FunctionDeclArgs::KeywordVoid(_) => [].iter(),
-            FunctionDeclArgs::DeclArgs(DeclArgs { args, span: _ }) => args.0.iter(),
+            FunctionDeclArgs::Void(_) => [].iter(),
+            FunctionDeclArgs::DeclArgs(args) => args.0.iter(),
         }
     }
 }
 
-impl Spanned for LoopLabel {
-    fn span(&self) -> Span {
-        Span::empty()
-    }
-}
+parse_times!(DeclArg: *KeywordInt *{name: Ident(_ = String)});
+parse_plus!(FunctionBody:
+    +Semicolon: Declared,
+    +<Block>: Defined,
+);
+parse_times!(VarDecl: *KeywordInt *{name: Ident(_ = String)} *<init: Initializer>);
 
-impl FromTokens for LoopLabel {
-    fn from_tokens(
-        _ts: &mut (impl Iterator<Item = (Token, Span)> + Clone),
-    ) -> Result<Self, ParseError> {
-        Err(ParseError::NoMatches)
-    }
-}
-
-impl ToTokens for LoopLabel {
-    fn to_tokens(self) -> impl Iterator<Item = Token> {
-        one(Token::Ident(self.0))
-    }
-}
-
-impl Spanned for CaseLabel {
-    fn span(&self) -> Span {
-        use CaseLabel::*;
-        match self {
-            Case(exp) => exp.span(),
-            Default(span) => *span,
-            Labeled(_, span) => *span,
-        }
-    }
-}
-
-impl FromTokens for CaseLabel {
-    fn from_tokens(
-        ts: &mut (impl Iterator<Item = (Token, Span)> + Clone),
-    ) -> Result<Self, ParseError> {
+impl FromTokens<Token, ParseError> for Initializer {
+    fn from_tokens<'a>(
+        ts: &mut impl pwcc_util::parser::CloneableIterator<Item = (&'a Token, Span)>,
+    ) -> Result<Self, ParseError>
+    where
+        Token: 'a,
+    {
         parse_choices!(
             ts,
             Err(ParseError::NoMatches),
             |iter| {
-                let mut _span = Span::empty();
-                expect_token!(iter, _span, KeywordCase);
-                let exp = Exp::from_tokens(&mut iter)?;
-                Ok(CaseLabel::Case(exp))
+                let mut span = Span::empty();
+                parse_token!(iter, span, Semicolon)?;
+                Ok(Initializer::Declared(span))
             },
             |iter| {
                 let mut span = Span::empty();
-                expect_token!(iter, span, KeywordDefault);
-                Ok(CaseLabel::Default(span))
+                parse_multiple!(iter, span, {
+                    *Equal *<exp: Exp> *Semicolon
+                });
+                Ok(Initializer::Defined(exp, span))
             },
         )
     }
 }
 
-impl ToTokens for CaseLabel {
+impl ToTokens<Token> for Initializer {
     fn to_tokens(self) -> impl Iterator<Item = Token> {
-        let out: Box<dyn Iterator<Item = Token>> = match self {
-            CaseLabel::Case(exp) => Box::new(one(Token::KeywordCase).chain(exp.to_tokens())),
-            CaseLabel::Default(_) => Box::new(one(Token::KeywordDefault)),
-            CaseLabel::Labeled(label, _) => Box::new(one(Token::Ident(label))),
-        };
-        out
+        use Token::*;
+        match self {
+            Initializer::Declared(_) => Box::<dyn Iterator<Item = Token>>::new(once(Semicolon)),
+            Initializer::Defined(exp, _) => {
+                Box::new(once(Equal).chain(exp.to_tokens()).chain(once(Semicolon)))
+            }
+        }
     }
 }
 
-impl Spanned for SwitchContext {
-    fn span(&self) -> Span {
-        Span::empty()
-    }
-}
-
-impl FromTokens for SwitchContext {
-    fn from_tokens(
-        _ts: &mut (impl Iterator<Item = (Token, Span)> + Clone),
-    ) -> Result<Self, ParseError> {
-        Err(ParseError::NoMatches)
-    }
-}
-
-impl ToTokens for SwitchContext {
-    fn to_tokens(self) -> impl Iterator<Item = Token> {
-        core::iter::empty()
-    }
-}
+parse_plus!(PrefixOp:
+    +Minus: Minus,
+    +Tilde: BitNot,
+    +Exclamation: LogicNot,
+    +Increment: Increment,
+    +Decrement: Decrement,
+);
+parse_plus!(PostfixOp:
+    +Increment: Increment,
+    +Decrement: Decrement,
+);
+parse_plus!(UnaryOp:
+    +<PrefixOp>: Prefix,
+    +<PostfixOp>: Postfix,
+);
+parse_plus!(BinaryOp:
+    // Arithmetic operators
+    +Plus: Plus,
+    +Minus: Minus,
+    +Star: Times,
+    +ForwardSlash: Divide,
+    +Percent: Mod,
+    // Bitwise operators
+    +LeftShift: LeftShift,
+    +RightShift: RightShift,
+    +Ampersand: BitAnd,
+    +Pipe: BitOr,
+    +Caret: BitXor,
+    // Logical operators
+    +DoubleAmpersand: LogicAnd,
+    +DoublePipe: LogicOr,
+    +DoubleEqual: Equal,
+    +NotEqual: NotEqual,
+    +LessThan: LessThan,
+    +LessThanEqual: LessThanEqual,
+    +GreaterThan: GreaterThan,
+    +GreaterThanEqual: GreaterThanEqual,
+);
+parse_plus!(AssignmentOp:
+    // Standard assignment
+    +Equal: Equal,
+    // Arithmetic assignment
+    +PlusEqual: PlusEqual,
+    +MinusEqual: MinusEqual,
+    +StarEqual: TimesEqual,
+    +ForwardSlashEqual: DivideEqual,
+    +PercentEqual: ModEqual,
+    // Bitwise assignment
+    +LeftShiftEqual: LeftShiftEqual,
+    +RightShiftEqual: RightShiftEqual,
+    +AmpersandEqual: BitAndEqual,
+    +PipeEqual: BitOrEqual,
+    +CaretEqual: BitXorEqual,
+);
+// Not used in grammar, only for parsing Exp
+parse_plus!(BinaryTok:
+    +<BinaryOp>: BinaryOp,
+    +<AssignmentOp>: AssignmentOp,
+    // Not a "true" binary operator, but we do parse it like one. This will result in trying to
+// parse a ternary expression.
+    +Question: TernaryQuestion,
+);
 
 impl AssignmentOp {
     pub fn to_binary_op(self) -> Option<BinaryOp> {
@@ -299,14 +656,14 @@ impl AssignmentOp {
             Equal(_) => unreachable!(),
             PlusEqual(span) => BinaryOp::Plus(span),
             MinusEqual(span) => BinaryOp::Minus(span),
-            StarEqual(span) => BinaryOp::Star(span),
-            ForwardSlashEqual(span) => BinaryOp::ForwardSlash(span),
-            PercentEqual(span) => BinaryOp::Percent(span),
+            TimesEqual(span) => BinaryOp::Times(span),
+            DivideEqual(span) => BinaryOp::Divide(span),
+            ModEqual(span) => BinaryOp::Mod(span),
             LeftShiftEqual(span) => BinaryOp::LeftShift(span),
             RightShiftEqual(span) => BinaryOp::RightShift(span),
-            AmpersandEqual(span) => BinaryOp::Ampersand(span),
-            CaretEqual(span) => BinaryOp::Caret(span),
-            PipeEqual(span) => BinaryOp::Pipe(span),
+            BitAndEqual(span) => BinaryOp::BitAnd(span),
+            BitOrEqual(span) => BinaryOp::BitOr(span),
+            BitXorEqual(span) => BinaryOp::BitXor(span),
         })
     }
 }
@@ -355,20 +712,20 @@ impl BinaryTok {
         use BinaryOp::*;
         match self {
             BinaryTok::BinaryOp(op) => match op {
-                Star(_) | ForwardSlash(_) | Percent(_) => Precedence::Multiplication,
+                Times(_) | Divide(_) | Mod(_) => Precedence::Multiplication,
                 Plus(_) | Minus(_) => Precedence::Addition,
                 LeftShift(_) | RightShift(_) => Precedence::Shift,
                 LessThan(_) | LessThanEqual(_) | GreaterThan(_) | GreaterThanEqual(_) => {
                     Precedence::Compare
                 }
-                DoubleEqual(_) | NotEqual(_) => Precedence::Equal,
-                Ampersand(_) => Precedence::BitwiseAnd,
-                Caret(_) => Precedence::BitwiseXor,
-                Pipe(_) => Precedence::BitwiseOr,
-                DoubleAmpersand(_) => Precedence::LogicalAnd,
-                DoublePipe(_) => Precedence::LogicalOr,
+                Equal(_) | NotEqual(_) => Precedence::Equal,
+                BitAnd(_) => Precedence::BitwiseAnd,
+                BitOr(_) => Precedence::BitwiseOr,
+                BitXor(_) => Precedence::BitwiseXor,
+                LogicAnd(_) => Precedence::LogicalAnd,
+                LogicOr(_) => Precedence::LogicalOr,
             },
-            BinaryTok::Question(_) => Precedence::Ternary,
+            BinaryTok::TernaryQuestion(_) => Precedence::Ternary,
             BinaryTok::AssignmentOp(_) => Precedence::Assignment,
         }
     }
@@ -381,69 +738,58 @@ impl Exp {
     }
 }
 
-impl Spanned for Exp {
-    fn span(&self) -> Span {
-        use Exp::*;
-        match self {
-            Constant { span, .. } => *span,
-            Var { span, .. } => *span,
-            Unary { span, .. } => *span,
-            Binary { span, .. } => *span,
-            Assignment { span, .. } => *span,
-            Ternary { span, .. } => *span,
-            FunctionCall { span, .. } => *span,
-        }
-    }
-}
-
-impl FromTokens for Exp {
-    fn from_tokens(
-        ts: &mut (impl Iterator<Item = (Token, Span)> + Clone),
-    ) -> Result<Self, ParseError> {
-        fn parse_primary(
-            ts: &mut (impl Iterator<Item = (Token, Span)> + Clone),
+impl FromTokens<Token, ParseError> for Exp {
+    fn from_tokens<'a>(
+        ts: &mut impl pwcc_util::parser::CloneableIterator<Item = (&'a Token, Span)>,
+    ) -> Result<Self, ParseError>
+    where
+        Token: 'a,
+    {
+        fn parse_primary<'a>(
+            ts: &mut impl pwcc_util::parser::CloneableIterator<Item = (&'a Token, Span)>,
         ) -> Result<Exp, ParseError> {
             parse_choices!(
                 ts,
                 Err(ParseError::NoMatches),
                 |iter| {
                     let mut span = Span::empty();
-                    let (constant, _) = expect_token!(iter, span, Constant(_): isize);
+                    let (constant, _) = parse_token!(iter, span, Constant(_): isize);
                     Ok(Exp::Constant { constant, span })
                 },
                 |iter| {
                     let mut span = Span::empty();
-                    let ident = expect_token!(iter, span, Ident(_): String);
-
-                    expect_token!(iter, span, OpenParen);
-                    let args = CommaDelimited::<Exp>::from_tokens(&mut iter)?;
-                    expect_token!(iter, span, CloseParen);
+                    parse_multiple!(iter, span, {
+                        *{ident: Ident(_ = String)}
+                        *OpenParen
+                        *<args: CommaDelimited<Exp>>
+                        *CloseParen
+                    });
 
                     Ok(Exp::FunctionCall { ident, args, span })
                 },
                 |iter| {
                     let mut span = Span::empty();
-                    let (ident, _) = expect_token!(iter, span, Ident(_): String);
+                    let (ident, _) = parse_token!(iter, span, Ident(_): String);
                     Ok(Exp::Var { ident, span })
                 },
                 |iter| {
                     let mut _span = Span::empty();
-                    expect_token!(iter, _span, OpenParen);
+                    parse_token!(iter, _span, OpenParen);
                     let exp = parse_exp(&mut iter, Precedence::lowest())?;
-                    expect_token!(iter, _span, CloseParen);
+                    parse_token!(iter, _span, CloseParen);
                     // Don't include parenthesis in expression span
                     Ok(exp)
                 },
             )
         }
 
-        fn parse_postfix(
-            ts: &mut (impl Iterator<Item = (Token, Span)> + Clone),
+        fn parse_postfix<'a>(
+            ts: &mut impl pwcc_util::parser::CloneableIterator<Item = (&'a Token, Span)>,
         ) -> Result<Exp, ParseError> {
-            let mut iter = ts.clone();
+            let mut iter = ts.clonce();
             let mut exp = parse_primary(&mut iter)?;
 
-            let mut peek_iter = iter.clone();
+            let mut peek_iter = iter.clonce();
             let mut next_token = PostfixOp::from_tokens(&mut peek_iter);
             while let Ok(op) = next_token {
                 iter = peek_iter;
@@ -457,7 +803,7 @@ impl FromTokens for Exp {
                     span,
                 };
 
-                peek_iter = iter.clone();
+                peek_iter = iter.clonce();
                 next_token = PostfixOp::from_tokens(&mut peek_iter);
             }
 
@@ -465,8 +811,8 @@ impl FromTokens for Exp {
             Ok(exp)
         }
 
-        fn parse_unary(
-            ts: &mut (impl Iterator<Item = (Token, Span)> + Clone),
+        fn parse_unary<'a>(
+            ts: &mut impl pwcc_util::parser::CloneableIterator<Item = (&'a Token, Span)>,
         ) -> Result<Exp, ParseError> {
             parse_choices!(
                 ts,
@@ -486,14 +832,14 @@ impl FromTokens for Exp {
             )
         }
 
-        fn parse_exp(
-            ts: &mut (impl Iterator<Item = (Token, Span)> + Clone),
+        fn parse_exp<'a>(
+            ts: &mut impl pwcc_util::parser::CloneableIterator<Item = (&'a Token, Span)>,
             min_prec: Precedence,
         ) -> Result<Exp, ParseError> {
-            let mut iter = ts.clone();
+            let mut iter = ts.clonce();
             let mut left = parse_unary(&mut iter)?;
 
-            let mut peek_iter = iter.clone();
+            let mut peek_iter = iter.clonce();
             let mut next_token = BinaryTok::from_tokens(&mut peek_iter);
             while let Ok(op) = next_token {
                 let prec = op.precedence();
@@ -530,7 +876,7 @@ impl FromTokens for Exp {
                     }
                     BinaryTok::Question(_) => {
                         let middle = parse_exp(&mut iter, Precedence::lowest())?;
-                        expect_token!(iter, span, Colon);
+                        parse_token!(iter, span, Colon);
                         let right = parse_exp(&mut iter, prec)?;
                         span.sconcat(left.span());
                         span.sconcat(middle.span());
@@ -544,7 +890,7 @@ impl FromTokens for Exp {
                     }
                 }
 
-                peek_iter = iter.clone();
+                peek_iter = iter.clonce();
                 next_token = BinaryTok::from_tokens(&mut peek_iter);
             }
 
@@ -559,7 +905,7 @@ impl FromTokens for Exp {
     }
 }
 
-impl ToTokens for Exp {
+impl ToTokens<Token> for Exp {
     fn to_tokens(self) -> impl Iterator<Item = Token> {
         use Exp::*;
         use Token::*;
@@ -567,8 +913,8 @@ impl ToTokens for Exp {
             Exp::Constant {
                 constant,
                 span: _span,
-            } => Box::new(one(Token::Constant(constant))),
-            Var { ident, span: _span } => Box::new(one(Ident(ident))),
+            } => Box::new(once(Token::Constant(constant))),
+            Var { ident, span: _span } => Box::new(once(Ident(ident))),
             Unary {
                 op,
                 exp,
@@ -576,14 +922,14 @@ impl ToTokens for Exp {
             } => match op {
                 UnaryOp::PrefixOp(op) => Box::new(
                     op.to_tokens()
-                        .chain(one(OpenParen))
+                        .chain(once(OpenParen))
                         .chain(exp.to_tokens())
-                        .chain(one(CloseParen)),
+                        .chain(once(CloseParen)),
                 ),
                 UnaryOp::PostfixOp(op) => Box::new(
-                    one(OpenParen)
+                    once(OpenParen)
                         .chain(exp.to_tokens())
-                        .chain(one(CloseParen))
+                        .chain(once(CloseParen))
                         .chain(op.to_tokens()),
                 ),
             },
@@ -593,13 +939,13 @@ impl ToTokens for Exp {
                 rhs,
                 span: _span,
             } => Box::new(
-                one(OpenParen)
+                once(OpenParen)
                     .chain(lhs.to_tokens())
-                    .chain(one(CloseParen))
+                    .chain(once(CloseParen))
                     .chain(op.to_tokens())
-                    .chain(one(OpenParen))
+                    .chain(once(OpenParen))
                     .chain(rhs.to_tokens())
-                    .chain(one(CloseParen)),
+                    .chain(once(CloseParen)),
             ),
             Assignment {
                 lhs,
@@ -613,26 +959,78 @@ impl ToTokens for Exp {
                 false_case,
                 span: _span,
             } => Box::new(
-                one(OpenParen)
+                once(OpenParen)
                     .chain(condition.to_tokens())
                     .chain([CloseParen, Question, OpenParen])
                     .chain(true_case.to_tokens())
                     .chain([CloseParen, Colon, OpenParen])
                     .chain(false_case.to_tokens())
-                    .chain(one(CloseParen)),
+                    .chain(once(CloseParen)),
             ),
             FunctionCall {
                 ident,
                 args,
                 span: _span,
             } => Box::new(
-                one(Ident(ident.0))
-                    .chain(one(OpenParen))
+                once(Ident(ident.0))
+                    .chain(once(OpenParen))
                     .chain(args.to_tokens())
-                    .chain(one(CloseParen)),
+                    .chain(once(CloseParen)),
             ),
         };
         out
+    }
+}
+
+spanned_empty!(LoopLabel);
+unparseable!(LoopLabel);
+impl ToTokens<Token> for LoopLabel {
+    fn to_tokens(self) -> impl Iterator<Item = Token> {
+        once(Token::Ident(self.0))
+    }
+}
+
+impl FromTokens<Token, ParseError> for CaseLabel {
+    fn from_tokens<'a>(
+        ts: &mut impl pwcc_util::parser::CloneableIterator<Item = (&'a Token, Span)>,
+    ) -> Result<Self, ParseError>
+    where
+        Token: 'a,
+    {
+        parse_choices!(
+            ts,
+            Err(ParseError::NoMatches),
+            |iter| {
+                let mut _span = Span::empty();
+                parse_token!(iter, _span, KeywordCase);
+                let exp = Exp::from_tokens(&mut iter)?;
+                Ok(CaseLabel::Case(exp))
+            },
+            |iter| {
+                let mut span = Span::empty();
+                parse_token!(iter, span, KeywordDefault);
+                Ok(CaseLabel::Default(span))
+            },
+        )
+    }
+}
+
+impl ToTokens<Token> for CaseLabel {
+    fn to_tokens(self) -> impl Iterator<Item = Token> {
+        let out: Box<dyn Iterator<Item = Token>> = match self {
+            CaseLabel::Case(exp) => Box::new(once(Token::KeywordCase).chain(exp.to_tokens())),
+            CaseLabel::Default(_) => Box::new(once(Token::KeywordDefault)),
+            CaseLabel::Labeled(label, _) => Box::new(once(Token::Ident(label))),
+        };
+        out
+    }
+}
+
+spanned_empty!(SwitchContext);
+unparseable!(SwitchContext);
+impl ToTokens<Token> for SwitchContext {
+    fn to_tokens(self) -> impl Iterator<Item = Token> {
+        core::iter::empty()
     }
 }
 

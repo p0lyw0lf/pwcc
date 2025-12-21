@@ -148,7 +148,7 @@ macro_rules! tokens {
             }
         }
         }
-        use tokens::*;
+        pub use tokens::*;
     };
 }
 

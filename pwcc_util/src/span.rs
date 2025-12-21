@@ -72,6 +72,18 @@ pub trait Spanned {
 // Re-export the derive macro for this trait.
 pub use pwcc_util_macros::Spanned;
 
+/// A macro for deriving trivial implementations of `Spanned`, for placeholder nodes and such.
+#[macro_export]
+macro_rules! spanned_empty {
+    ($node:ident) => {
+        impl $crate::span::Spanned for $node {
+            fn span(&self) -> $crate::span::Span {
+                $crate::span::Span::empty()
+            }
+        }
+    };
+}
+
 impl<T> Spanned for (T, Span) {
     fn span(&self) -> Span {
         self.1

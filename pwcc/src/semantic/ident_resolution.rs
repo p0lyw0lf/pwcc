@@ -312,6 +312,7 @@ impl VisitMut for IdentResolution {
     }
 
     fn visit_mut_block_pre(&mut self, _block: &mut Block) {
+        self.nesting_level += 1;
         if self.in_function_args {
             self.in_function_args = false;
         } else {
@@ -320,6 +321,7 @@ impl VisitMut for IdentResolution {
     }
 
     fn visit_mut_block_post(&mut self, _block: &mut Block) {
+        self.nesting_level -= 1;
         self.ident_map.exit_scope();
     }
 }

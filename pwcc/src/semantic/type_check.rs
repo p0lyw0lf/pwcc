@@ -8,22 +8,28 @@ use pwcc_util::span::Span;
 
 use crate::parser::DeclArg;
 use crate::parser::Exp;
+use crate::parser::Initializer;
+use crate::parser::StorageClass;
 use crate::parser::visit_mut::VisitMut;
 use crate::semantic::SemanticError;
 use crate::semantic::SemanticErrors;
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub enum Type {
-    Int,
-    Function(/** parameter count */ usize),
+    Var(VarAttr),
+    Function(FunctionAttr),
 }
 
 impl Display for Type {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Type::Int => write!(f, "int"),
-            Type::Function(0) => write!(f, "int function(void)"),
-            Type::Function(n) => {
+            Type::Var(_) => write!(f, "int"),
+            Type::Function(FunctionAttr {
+                parameter_count: 0, ..
+            }) => write!(f, "int function(void)"),
+            Type::Function(FunctionAttr {
+                parameter_count: n, ..
+            }) => {
                 write!(f, "int function(")?;
                 for _ in 0..n - 1 {
                     write!(f, "int, ")?;
@@ -34,9 +40,51 @@ impl Display for Type {
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum VarAttr {
+    Static {
+        initial_value: VarInit,
+        global: bool,
+    },
+    Local,
+}
+
+impl VarAttr {
+    fn global(&self) -> bool {
+        match self {
+            Self::Static {
+                initial_value: _,
+                global,
+            } => *global,
+            Self::Local => false,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum VarInit {
+    Tentative,
+    Initial(isize),
+    None,
+}
+
+#[derive(PartialEq, Debug, Clone)]
+pub struct FunctionAttr {
+    pub parameter_count: usize,
+    pub defined: bool,
+    pub global: bool,
+}
+
+fn is_static(storage: &Option<StorageClass>) -> bool {
+    matches!(storage, Some(StorageClass::Static(_)))
+}
+
+fn is_extern(storage: &Option<StorageClass>) -> bool {
+    matches!(storage, Some(StorageClass::Extern(_)))
+}
+
 pub struct Declaration {
     ty: Type,
-    defined: bool,
     span: Span,
 }
 
@@ -54,8 +102,15 @@ impl SymbolTable {
 
     pub fn is_internal_symbol(&self, name: &str) -> bool {
         match self.get_symbol(name) {
-            Some(Declaration { defined, .. }) => *defined,
-            None => false,
+            Some(Declaration {
+                ty: Type::Function(attr),
+                ..
+            }) => attr.defined,
+            // TODO: do we need to do this for variables too?
+            Some(Declaration {
+                ty: Type::Var(_), ..
+            })
+            | None => false,
         }
     }
 }
@@ -80,6 +135,31 @@ pub enum Error {
         second: Span,
     },
 
+    #[error("Static function declaration follows non-static for {ident}")]
+    StaticFollowsNonStatic {
+        ident: String,
+        #[label("first declared here")]
+        first: Span,
+        #[label("later declared as static here")]
+        second: Span,
+    },
+
+    #[error("File scope initializer must be constant for {ident}")]
+    NonConstantInitializer {
+        ident: String,
+        #[label]
+        span: Span,
+        #[source]
+        cause: crate::evaluator::Error,
+    },
+
+    #[error("Cannot have initializer on local extern variable declaration for {ident}")]
+    LocalExternInitializer {
+        ident: String,
+        #[label]
+        span: Span,
+    },
+
     #[error("Expression cannot be called")]
     UncallableExpression(#[label] Span),
 
@@ -102,6 +182,7 @@ pub enum Error {
 #[derive(Default)]
 pub(super) struct TypeChecker {
     symbol_table: SymbolTable,
+    nesting_level: usize,
     errs: Vec<SemanticError>,
     function_has_body: bool,
 }
@@ -121,27 +202,222 @@ impl From<TypeChecker> for Result<SymbolTable, SemanticErrors> {
 }
 
 impl VisitMut for TypeChecker {
+    fn visit_mut_block_pre(&mut self, _block: &mut crate::parser::Block) {
+        self.nesting_level += 1;
+    }
+
+    fn visit_mut_block_post(&mut self, _block: &mut crate::parser::Block) {
+        self.nesting_level -= 1;
+    }
+
     fn visit_mut_var_decl_pre(&mut self, decl: &mut crate::parser::VarDecl) {
-        self.symbol_table.add_symbol(
-            decl.name.0.clone(),
-            Declaration {
-                ty: Type::Int,
-                defined: matches!(decl.init, crate::parser::Initializer::Defined(_, _)),
-                span: decl.name.1,
-            },
-        );
+        let name = decl.name.0.clone();
+
+        // Extracts a VarAttr from an existing declaration, or returns with an error.
+        macro_rules! var_attrs {
+            ($decl:expr) => {
+                match &$decl.ty {
+                    Type::Var(attrs) => attrs,
+                    Type::Function(_) => {
+                        self.errs.push(
+                            Error::ConflictingDeclaration {
+                                ident: name,
+                                first: $decl.span,
+                                second: decl.name.1,
+                            }
+                            .into(),
+                        );
+                        return;
+                    }
+                }
+            };
+        }
+
+        // Evaluates an initializer, returning an error if it's non-constant.
+        macro_rules! evaluate {
+            ($exp:expr) => {
+                match crate::evaluator::evaluate($exp) {
+                    Ok(v) => v,
+                    Err(err) => {
+                        self.errs.push(
+                            Error::NonConstantInitializer {
+                                ident: name.clone(),
+                                span: decl.name.1,
+                                cause: err,
+                            }
+                            .into(),
+                        );
+
+                        // Continue on to catch other errors. Return a default value so we can.
+                        0
+                    }
+                }
+            };
+        }
+
+        if self.nesting_level == 0 {
+            // at file scope
+            let mut initial_value = match &decl.init {
+                Initializer::Defined(exp, _) => VarInit::Initial(evaluate!(exp)),
+                Initializer::Declared(_) => match decl.ty.storage {
+                    Some(StorageClass::Extern(_)) => VarInit::None,
+                    Some(StorageClass::Static(_)) | None => VarInit::Tentative,
+                },
+            };
+
+            let mut global = !is_static(&decl.ty.storage);
+
+            if let Some(old_decl) = self.symbol_table.get_symbol(&name) {
+                let attrs = var_attrs!(old_decl);
+
+                if is_extern(&decl.ty.storage) {
+                    global = attrs.global();
+                } else if attrs.global() != global {
+                    self.errs.push(
+                        Error::ConflictingDeclaration {
+                            ident: name,
+                            first: old_decl.span,
+                            second: decl.name.1,
+                        }
+                        .into(),
+                    );
+                    return;
+                }
+
+                if let VarAttr::Static {
+                    initial_value: old_initial_value,
+                    global: _,
+                } = &attrs
+                {
+                    match (old_initial_value, &decl.init) {
+                        (VarInit::Initial(_), Initializer::Defined(_, _)) => {
+                            self.errs.push(
+                                Error::ConflictingDeclaration {
+                                    ident: name,
+                                    first: old_decl.span,
+                                    second: decl.name.1,
+                                }
+                                .into(),
+                            );
+                            return;
+                        }
+                        (old_initial_value @ VarInit::Initial(_), Initializer::Declared(_)) => {
+                            initial_value = old_initial_value.clone();
+                        }
+                        (VarInit::Tentative, Initializer::Defined(_, _)) => {}
+                        (VarInit::Tentative, Initializer::Declared(_)) => {
+                            initial_value = VarInit::Tentative;
+                        }
+                        (VarInit::None, _) => {}
+                    }
+                }
+            }
+
+            let attrs = VarAttr::Static {
+                initial_value,
+                global,
+            };
+            self.symbol_table.add_symbol(
+                name,
+                Declaration {
+                    ty: Type::Var(attrs),
+                    span: decl.name.1,
+                },
+            );
+        } else {
+            // not at file scope
+            match &decl.ty.storage {
+                Some(StorageClass::Extern(_)) => {
+                    match &decl.init {
+                        Initializer::Declared(_) => {}
+                        Initializer::Defined(_, _) => {
+                            self.errs.push(
+                                Error::LocalExternInitializer {
+                                    ident: name,
+                                    span: decl.name.1,
+                                }
+                                .into(),
+                            );
+                            return;
+                        }
+                    }
+
+                    if let Some(old_decl) = self.symbol_table.get_symbol(&name) {
+                        let _ = var_attrs!(old_decl);
+                        // Duplicate declaration. That is OK, keep the existing declaration.
+                    } else {
+                        self.symbol_table.add_symbol(
+                            name,
+                            Declaration {
+                                ty: Type::Var(VarAttr::Static {
+                                    initial_value: VarInit::None,
+                                    global: true,
+                                }),
+                                span: decl.name.1,
+                            },
+                        );
+                    }
+                }
+                Some(StorageClass::Static(_)) => {
+                    let initial_value = match &decl.init {
+                        Initializer::Defined(exp, _) => VarInit::Initial(evaluate!(exp)),
+                        Initializer::Declared(_) => VarInit::Initial(0),
+                    };
+                    self.symbol_table.add_symbol(
+                        name,
+                        Declaration {
+                            ty: Type::Var(VarAttr::Static {
+                                initial_value,
+                                global: false,
+                            }),
+                            span: decl.name.1,
+                        },
+                    );
+                }
+                None => {
+                    self.symbol_table.add_symbol(
+                        decl.name.0.clone(),
+                        Declaration {
+                            ty: Type::Var(VarAttr::Local),
+                            span: decl.name.1,
+                        },
+                    );
+                }
+            }
+        }
     }
 
     fn visit_mut_function_decl_pre(&mut self, decl: &mut crate::parser::FunctionDecl) {
-        let fun_type = Type::Function(decl.args.num_args());
         let has_body = matches!(decl.body, crate::parser::FunctionBody::Defined(_));
         let mut already_defined = false;
+        let global = !is_static(&decl.ty.storage);
         let name = decl.name.0.clone();
 
         if let Some(old_decl) = self.symbol_table.get_symbol(&name) {
-            if old_decl.ty != fun_type {
+            let attrs = match &old_decl.ty {
+                Type::Function(
+                    attrs @ FunctionAttr {
+                        parameter_count,
+                        defined: _,
+                        global: _,
+                    },
+                ) if *parameter_count == decl.args.num_args() => attrs,
+                _ => {
+                    self.errs.push(
+                        Error::ConflictingDeclaration {
+                            ident: name,
+                            first: old_decl.span,
+                            second: decl.name.1,
+                        }
+                        .into(),
+                    );
+                    return;
+                }
+            };
+            already_defined = attrs.defined;
+            if already_defined && has_body {
                 self.errs.push(
-                    Error::ConflictingDeclaration {
+                    Error::DuplicateDefinition {
                         ident: name,
                         first: old_decl.span,
                         second: decl.name.1,
@@ -150,10 +426,10 @@ impl VisitMut for TypeChecker {
                 );
                 return;
             }
-            already_defined = old_decl.defined;
-            if already_defined && has_body {
+
+            if attrs.global && is_static(&decl.ty.storage) {
                 self.errs.push(
-                    Error::DuplicateDefinition {
+                    Error::StaticFollowsNonStatic {
                         ident: name,
                         first: old_decl.span,
                         second: decl.name.1,
@@ -167,8 +443,11 @@ impl VisitMut for TypeChecker {
         self.symbol_table.add_symbol(
             name,
             Declaration {
-                ty: fun_type,
-                defined: already_defined || has_body,
+                ty: Type::Function(FunctionAttr {
+                    parameter_count: decl.args.num_args(),
+                    defined: already_defined || has_body,
+                    global,
+                }),
                 span: decl.name.1,
             },
         );
@@ -185,8 +464,7 @@ impl VisitMut for TypeChecker {
         self.symbol_table.add_symbol(
             name.clone(),
             Declaration {
-                ty: Type::Int,
-                defined: true,
+                ty: Type::Var(VarAttr::Local),
                 span: *span,
             },
         );
@@ -214,12 +492,16 @@ impl VisitMut for TypeChecker {
                 };
 
                 match ty {
-                    Type::Function(n) => {
-                        if *n != args.0.len() {
+                    Type::Function(attrs) => {
+                        if attrs.parameter_count != args.0.len() {
                             self.errs.push(
                                 Error::InvalidType {
                                     span: ident.1,
-                                    expected: Type::Function(args.0.len()),
+                                    expected: Type::Function(FunctionAttr {
+                                        parameter_count: args.0.len(),
+                                        defined: false,
+                                        global: false,
+                                    }),
                                     actual: ty.clone(),
                                 }
                                 .into(),
@@ -247,13 +529,13 @@ impl VisitMut for TypeChecker {
                 };
 
                 match ty {
-                    Type::Int => {}
-                    otherwise => {
+                    Type::Var(_) => {}
+                    _ => {
                         self.errs.push(
                             Error::InvalidType {
                                 span: *span,
-                                expected: Type::Int,
-                                actual: otherwise.clone(),
+                                expected: Type::Var(VarAttr::Local),
+                                actual: ty.clone(),
                             }
                             .into(),
                         );

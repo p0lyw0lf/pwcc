@@ -105,7 +105,7 @@ impl VisitMut for Collector {
             CaseLabel::Case(exp) => match self.labels.last_mut() {
                 Some(labels) => {
                     let span = exp.span();
-                    match evaluate(exp) {
+                    match evaluate(&exp) {
                         Ok(v) => match labels.entry(Some(v)) {
                             btree_map::Entry::Vacant(e) => {
                                 e.insert((label, span));

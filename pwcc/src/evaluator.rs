@@ -23,31 +23,31 @@ pub enum Error {
 
 /// Evaluates a constant expression at compile-time. Returns an error describing why it cannot, if
 /// applicable.
-pub fn evaluate(exp: Exp) -> Result<isize, Error> {
+pub fn evaluate(exp: &Exp) -> Result<isize, Error> {
     match exp {
         Exp::Constant {
             constant,
             span: _span,
-        } => Ok(constant),
+        } => Ok(*constant),
         Exp::Var {
             ident: _ident,
             span,
         } => {
             // Eventually, these might be able to be resolved at compile time, but for now they are
             // not.
-            Err(Error::Variable(span))
+            Err(Error::Variable(*span))
         }
         Exp::Unary { op, exp, span } => {
-            let v = evaluate(*exp)?;
+            let v = evaluate(exp)?;
             match op {
                 UnaryOp::Prefix(PrefixOp::Minus(_)) => Ok(-v),
                 UnaryOp::Prefix(PrefixOp::BitNot(_)) => Ok(!v),
                 UnaryOp::Prefix(PrefixOp::LogicNot(_)) => Ok((v == 0) as isize),
                 UnaryOp::Prefix(PrefixOp::Increment(_) | PrefixOp::Decrement(_)) => {
-                    Err(Error::InvalidOperator(span))
+                    Err(Error::InvalidOperator(*span))
                 }
                 UnaryOp::Postfix(PostfixOp::Increment(_) | PostfixOp::Decrement(_)) => {
-                    Err(Error::InvalidOperator(span))
+                    Err(Error::InvalidOperator(*span))
                 }
             }
         }
@@ -57,8 +57,8 @@ pub fn evaluate(exp: Exp) -> Result<isize, Error> {
             rhs,
             span: _span,
         } => {
-            let l = evaluate(*lhs)?;
-            let r = evaluate(*rhs)?;
+            let l = evaluate(lhs)?;
+            let r = evaluate(rhs)?;
             match op {
                 BinaryOp::Plus(_) => Ok(l + r),
                 BinaryOp::Minus(_) => Ok(l - r),
@@ -86,12 +86,12 @@ pub fn evaluate(exp: Exp) -> Result<isize, Error> {
             false_case,
             span: _span,
         } => {
-            let c = evaluate(*condition)?;
-            let t = evaluate(*true_case)?;
-            let f = evaluate(*false_case)?;
+            let c = evaluate(condition)?;
+            let t = evaluate(true_case)?;
+            let f = evaluate(false_case)?;
             Ok(if c != 0 { t } else { f })
         }
-        Exp::Assignment { span, .. } => Err(Error::InvalidOperator(span)),
-        Exp::FunctionCall { span, .. } => Err(Error::InvalidFunctionCall(span)),
+        Exp::Assignment { span, .. } => Err(Error::InvalidOperator(*span)),
+        Exp::FunctionCall { span, .. } => Err(Error::InvalidFunctionCall(*span)),
     }
 }

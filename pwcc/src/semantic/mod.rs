@@ -19,6 +19,7 @@ mod goto;
 mod ident_resolution;
 mod loop_labeling;
 mod operator_types;
+mod storage_check;
 mod switch_case_collection;
 mod type_check;
 
@@ -29,20 +30,27 @@ pub use type_check::SymbolTable;
 
 pub fn validate(mut p: Program) -> Result<(Program, SymbolTable), SemanticErrors> {
     let outer_result = {
-        let mut visitor = ident_resolution::resolve_idents().chain(type_check::type_check());
+        let mut visitor = VisitMutBuilder::visit_mut_for_init_pre(storage_check::check_for_init)
+            .chain(VisitMutBuilder::visit_mut_exp_pre(
+                operator_types::check_operator_types,
+            ))
+            .chain(storage_check::check_function_decl_storage())
+            .chain(ident_resolution::resolve_idents())
+            .chain(type_check::type_check());
         visitor.visit_mut_program(&mut p);
 
         visitor.try_coalesce()
     };
 
+    // TODO: make these passes work alongside the rest, by resetting state when going into a new
+    // function.
     let inner_result = p.try_fmap(|f: FunctionDecl| -> Result<_, SemanticErrors> {
         if matches!(f.body, FunctionBody::Declared(_)) {
             return Ok(f);
         }
 
         let function_name = &f.name.0.clone();
-        let mut visitor = VisitMutBuilder::visit_mut_exp_pre(operator_types::check_operator_types)
-            .chain(loop_labeling::labeling(function_name))
+        let mut visitor = loop_labeling::labeling(function_name)
             .chain(switch_case_collection::collect(function_name))
             .chain(goto::collect_duplicates());
 
@@ -95,6 +103,9 @@ pub enum SemanticError {
     #[error(transparent)]
     #[diagnostic(transparent)]
     SwitchCaseError(#[from] switch_case_collection::Error),
+    #[error(transparent)]
+    #[diagnostic(transparent)]
+    StorageError(#[from] storage_check::Error),
 }
 
 #[derive(Error, Diagnostic, Debug)]

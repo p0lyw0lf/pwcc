@@ -6,6 +6,7 @@ use crate::parser::Program;
 mod goto;
 mod ident_resolution;
 mod loop_labeling;
+mod storage_check;
 mod type_check;
 
 fn parse(source: &str) -> Program {

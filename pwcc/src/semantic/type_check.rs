@@ -390,7 +390,7 @@ impl VisitMut for TypeChecker {
     fn visit_mut_function_decl_pre(&mut self, decl: &mut crate::parser::FunctionDecl) {
         let has_body = matches!(decl.body, crate::parser::FunctionBody::Defined(_));
         let mut already_defined = false;
-        let global = !is_static(&decl.ty.storage);
+        let mut global = !is_static(&decl.ty.storage);
         let name = decl.name.0.clone();
 
         if let Some(old_decl) = self.symbol_table.get_symbol(&name) {
@@ -438,6 +438,8 @@ impl VisitMut for TypeChecker {
                 );
                 return;
             }
+
+            global = attrs.global;
         }
 
         self.symbol_table.add_symbol(

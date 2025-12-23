@@ -1,23 +1,37 @@
 use core::convert::From;
 use std::collections::HashMap;
 
+mod with_symbol_table;
+pub use with_symbol_table::WithSymbolTable;
+
 use crate::parser;
+use crate::semantic::type_check;
 
 #[derive(Debug)]
 pub struct Program {
-    pub functions: Vec<Function>,
+    pub declarations: Vec<Declaration>,
 }
 
-impl From<parser::Program> for Program {
-    fn from(program: parser::Program) -> Self {
+impl From<WithSymbolTable<'_, parser::Program>> for Program {
+    fn from(v: WithSymbolTable<'_, parser::Program>) -> Self {
+        let WithSymbolTable {
+            symbol_table,
+            value: program,
+        } = v;
         Self {
-            functions: program
+            declarations: program
                 .declarations
                 .into_iter()
                 .filter_map(|decl| match decl {
-                    parser::Declaration::Function(f) => Function::try_from(f).ok(),
+                    parser::Declaration::Function(f) => Function::try_from(WithSymbolTable {
+                        symbol_table,
+                        value: f,
+                    })
+                    .ok(),
                     parser::Declaration::Var(_) => None,
                 })
+                .map(Declaration::Function)
+                .chain(convert_symbols_to_tacky(symbol_table).map(Declaration::StaticVariable))
                 .collect(),
         }
     }
@@ -28,18 +42,78 @@ impl From<parser::Program> for Program {
 pub struct Identifier(pub String);
 
 #[derive(Debug)]
+pub enum Declaration {
+    Function(Function),
+    StaticVariable(StaticVariable),
+}
+
+#[derive(Debug)]
+pub struct StaticVariable {
+    pub name: Identifier,
+    pub global: bool,
+    pub initial_value: isize,
+}
+
+fn convert_symbols_to_tacky(
+    symbol_table: &type_check::SymbolTable,
+) -> impl Iterator<Item = StaticVariable> {
+    symbol_table
+        .into_iter()
+        .filter_map(|(name, entry)| match &entry.ty {
+            type_check::Type::Var(type_check::VarAttr::Static {
+                initial_value,
+                global,
+            }) => match initial_value {
+                type_check::VarInit::Initial(i) => Some(StaticVariable {
+                    name: Identifier(name.clone()),
+                    global: *global,
+                    initial_value: *i,
+                }),
+                type_check::VarInit::Tentative => Some(StaticVariable {
+                    name: Identifier(name.clone()),
+                    global: *global,
+                    initial_value: 0,
+                }),
+                type_check::VarInit::None => None,
+            },
+            type_check::Type::Var(type_check::VarAttr::Local) => None,
+            type_check::Type::Function(_) => None,
+        })
+}
+
+#[derive(Debug)]
 pub struct Function {
     pub name: Identifier,
+    pub global: bool,
     pub args: Vec<Temporary>,
     pub body: Instructions,
 }
 
-impl TryFrom<parser::FunctionDecl> for Function {
+impl TryFrom<WithSymbolTable<'_, parser::FunctionDecl>> for Function {
     type Error = ();
-    fn try_from(function: parser::FunctionDecl) -> Result<Self, Self::Error> {
+    fn try_from(v: WithSymbolTable<'_, parser::FunctionDecl>) -> Result<Self, Self::Error> {
+        let WithSymbolTable {
+            symbol_table,
+            value: function,
+        } = v;
+
         let body = match function.body {
             block @ parser::FunctionBody::Defined(_) => block,
             parser::FunctionBody::Declared(_) => return Err(()),
+        };
+
+        let global = match symbol_table.get_symbol(&function.name.0) {
+            Some(decl) => match &decl.ty {
+                type_check::Type::Function(attrs) => attrs.global,
+                type_check::Type::Var(_) => {
+                    // Should have been caught by an earlier step
+                    panic!("function is typed as var {:?}", function.name);
+                }
+            },
+            None => {
+                // Should have been caught by an earlier step
+                panic!("missing symbol table entry for {:?}", function.name);
+            }
         };
 
         let name = Identifier(function.name.0);
@@ -52,6 +126,7 @@ impl TryFrom<parser::FunctionDecl> for Function {
 
         Ok(Self {
             body: Instructions::from_function(tf, body),
+            global,
             name,
             args,
         })

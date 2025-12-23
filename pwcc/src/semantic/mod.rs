@@ -21,14 +21,12 @@ mod loop_labeling;
 mod operator_types;
 mod storage_check;
 mod switch_case_collection;
-mod type_check;
+pub mod type_check;
 
 #[cfg(test)]
 mod test;
 
-pub use type_check::SymbolTable;
-
-pub fn validate(mut p: Program) -> Result<(Program, SymbolTable), SemanticErrors> {
+pub fn validate(mut p: Program) -> Result<(Program, type_check::SymbolTable), SemanticErrors> {
     let outer_result = {
         let mut visitor = VisitMutBuilder::visit_mut_for_init_pre(storage_check::check_for_init)
             .chain(VisitMutBuilder::visit_mut_exp_pre(

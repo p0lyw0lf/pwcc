@@ -31,7 +31,14 @@ const ARG_REGISTERS: [hardware::Reg; 6] = {
 impl From<tacky::Program> for Program<State> {
     fn from(program: tacky::Program) -> Self {
         Self {
-            functions: program.functions.into_iter().map(Into::into).collect(),
+            functions: program
+                .declarations
+                .into_iter()
+                .filter_map(|decl| match decl {
+                    tacky::Declaration::Function(f) => Some(f.into()),
+                    tacky::Declaration::StaticVariable(_) => None,
+                })
+                .collect(),
         }
     }
 }

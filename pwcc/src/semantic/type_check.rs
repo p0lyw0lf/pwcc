@@ -84,8 +84,8 @@ fn is_extern(storage: &Option<StorageClass>) -> bool {
 }
 
 pub struct Declaration {
-    ty: Type,
-    span: Span,
+    pub ty: Type,
+    pub span: Span,
 }
 
 #[derive(Default)]
@@ -99,19 +99,13 @@ impl SymbolTable {
     pub fn get_symbol(&self, name: &str) -> Option<&Declaration> {
         self.0.get(name)
     }
+}
 
-    pub fn is_internal_symbol(&self, name: &str) -> bool {
-        match self.get_symbol(name) {
-            Some(Declaration {
-                ty: Type::Function(attr),
-                ..
-            }) => attr.defined,
-            // TODO: do we need to do this for variables too?
-            Some(Declaration {
-                ty: Type::Var(_), ..
-            })
-            | None => false,
-        }
+impl<'a> IntoIterator for &'a SymbolTable {
+    type Item = <&'a HashMap<String, Declaration> as IntoIterator>::Item;
+    type IntoIter = <&'a HashMap<String, Declaration> as IntoIterator>::IntoIter;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
     }
 }
 

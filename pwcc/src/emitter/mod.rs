@@ -2,8 +2,10 @@ use core::fmt::Display;
 use core::fmt::Formatter;
 
 use crate::codegen::*;
-use crate::semantic::SymbolTable;
+use crate::semantic::type_check;
+use crate::semantic::type_check::SymbolTable;
 use crate::tacky::Identifier;
+use crate::tacky::WithSymbolTable;
 
 pub fn emit(
     mut f: impl std::io::Write,
@@ -20,21 +22,7 @@ pub fn emit(
     )
 }
 
-struct WithSymbolTable<'a, T> {
-    symbol_table: &'a SymbolTable,
-    value: &'a T,
-}
-
-impl<'a, T> WithSymbolTable<'a, T> {
-    fn wrap<'b, O>(&'b self, value: &'b O) -> WithSymbolTable<'b, O> {
-        WithSymbolTable {
-            symbol_table: self.symbol_table,
-            value,
-        }
-    }
-}
-
-impl Display for WithSymbolTable<'_, Program<hardware::Pass>> {
+impl Display for WithSymbolTable<'_, &'_ Program<hardware::Pass>> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         for function in &self.value.functions {
             write!(f, "{}", self.wrap(function))?;
@@ -47,7 +35,7 @@ impl Display for WithSymbolTable<'_, Program<hardware::Pass>> {
     }
 }
 
-impl Display for WithSymbolTable<'_, Function<hardware::Pass>> {
+impl Display for WithSymbolTable<'_, &'_ Function<hardware::Pass>> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let value = self.value;
         writeln!(f, "\t.globl {}", value.name)?;
@@ -61,7 +49,7 @@ impl Display for WithSymbolTable<'_, Function<hardware::Pass>> {
     }
 }
 
-impl Display for WithSymbolTable<'_, Instruction<hardware::Pass>> {
+impl Display for WithSymbolTable<'_, &'_ Instruction<hardware::Pass>> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use Instruction::*;
         match &self.value {
@@ -90,10 +78,16 @@ impl Display for WithSymbolTable<'_, Instruction<hardware::Pass>> {
                     writeln!(f, "\tcall\t_{identifier}")
                 }
                 #[cfg(target_os = "linux")]
-                if self.symbol_table.is_internal_symbol(&identifier.0) {
-                    writeln!(f, "\tcall\t{identifier}")
-                } else {
+                if matches!(
+                    self.symbol_table
+                        .get_symbol(&identifier.0)
+                        .expect("undefined symbol")
+                        .ty,
+                    type_check::Type::Function(type_check::FunctionAttr { global: true, .. })
+                ) {
                     writeln!(f, "\tcall\t{identifier}@PLT")
+                } else {
+                    writeln!(f, "\tcall\t{identifier}")
                 }
                 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
                 {

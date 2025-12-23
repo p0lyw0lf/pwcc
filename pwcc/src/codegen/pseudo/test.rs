@@ -5,6 +5,7 @@ fn function_with_arg() {
     let arg0 = tacky::Temporary(0);
     let f = tacky::Function {
         name: Identifier("function_with_arg".to_string()),
+        global: false,
         args: vec![arg0],
         body: tacky::Instructions(vec![tacky::Instruction::Return {
             val: tacky::Val::Var(arg0),
@@ -39,6 +40,7 @@ fn function_with_arg() {
 fn function_with_call() {
     let f = tacky::Function {
         name: Identifier("function_with_call".to_string()),
+        global: false,
         args: vec![],
         body: tacky::Instructions(vec![
             tacky::Instruction::Call {

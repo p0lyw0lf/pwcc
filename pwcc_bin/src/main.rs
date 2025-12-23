@@ -107,10 +107,7 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    let ir = tacky::Program::from(tacky::WithSymbolTable {
-        symbol_table: &symbol_table,
-        value: tree,
-    });
+    let ir = tacky::Program::new(&symbol_table, tree);
 
     if stage == Tacky {
         println!("{ir:?}");
@@ -143,7 +140,7 @@ fn main() -> Result<()> {
         .into_diagnostic()
         .wrap_err("Error opening output file")?;
 
-    emitter::emit(&mut output, &code, &symbol_table)
+    emitter::emit(&mut output, &symbol_table, &code)
         .into_diagnostic()
         .wrap_err("Error writing to output file")?;
 

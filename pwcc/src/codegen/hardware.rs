@@ -13,6 +13,8 @@ pub enum Location {
     Reg(Reg),
     /// offset is relative to %rbp
     Stack(isize),
+    /// Present in .data or .bss, accessed relative to %rip
+    Data(Identifier),
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -51,8 +53,8 @@ pub fn pass<S: State<Location = Location>>(instructions: Instructions<S>) -> Ins
         l: &super::Location<S>,
     ) -> isize {
         match l.as_ref() {
-            Location::Reg(_) => prev_min,
             Location::Stack(s) => core::cmp::min(*s, prev_min),
+            Location::Reg(_) | Location::Data(_) => prev_min,
         }
     }
     let min_stack_addr = instructions.foldl(min_stack_addr, 0);

@@ -9,8 +9,8 @@ use crate::tacky::WithSymbolTable;
 
 pub fn emit(
     mut f: impl std::io::Write,
-    program: &Program<hardware::Pass>,
     symbol_table: &SymbolTable,
+    program: &Program<hardware::Pass>,
 ) -> std::io::Result<()> {
     write!(
         f,
@@ -156,6 +156,7 @@ impl Display for hardware::Location {
         match self {
             Reg(reg) => write!(f, "{:w$}", reg),
             Stack(i) => write!(f, "{i}(%rbp)"),
+            Data(label) => write!(f, "{label}(%rip)"),
         }
     }
 }

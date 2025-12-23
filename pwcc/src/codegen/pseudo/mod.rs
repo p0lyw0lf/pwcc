@@ -1,4 +1,4 @@
-use core::convert::From;
+use std::convert::From;
 use std::iter;
 
 use super::*;
@@ -43,6 +43,25 @@ impl From<tacky::Program> for Program<State> {
     }
 }
 
+impl From<tacky::Declaration> for Declaration<State> {
+    fn from(decl: tacky::Declaration) -> Self {
+        match decl {
+            tacky::Declaration::Function(f) => Declaration::Function(f.into()),
+            tacky::Declaration::StaticVariable(s) => Declaration::StaticVariable(s.into()),
+        }
+    }
+}
+
+impl From<tacky::StaticVariable> for StaticVariable {
+    fn from(var: tacky::StaticVariable) -> Self {
+        Self {
+            name: var.name,
+            global: var.global,
+            initial_value: var.initial_value,
+        }
+    }
+}
+
 impl From<tacky::Function> for Function<State> {
     fn from(function: tacky::Function) -> Self {
         let caller_args = ARG_REGISTERS
@@ -65,7 +84,8 @@ impl From<tacky::Function> for Function<State> {
         let body: Instructions<State> = function.body.into();
 
         Self {
-            name: function.name.0,
+            name: function.name,
+            global: function.global,
             instructions: Instructions(preamble.chain(body.0).collect()),
         }
     }
@@ -338,6 +358,7 @@ impl From<tacky::Val> for Operand<State> {
         match val {
             Constant(i) => Operand::Imm(i),
             Var(t) => Operand::Location(wrap(t.into())),
+            Data(d) => Operand::Location(wrap(d.into())),
         }
     }
 }
@@ -345,5 +366,11 @@ impl From<tacky::Val> for Operand<State> {
 impl From<tacky::Temporary> for Location {
     fn from(tmp: tacky::Temporary) -> Self {
         Location::Pseudo(tmp.0)
+    }
+}
+
+impl From<tacky::Identifier> for Location {
+    fn from(label: tacky::Identifier) -> Self {
+        Location::Concrete(hardware::Location::Data(label))
     }
 }

@@ -35,10 +35,24 @@ mod ast {
     }
 
     #[derive(Debug)]
+    pub enum Declaration<S: State> {
+        Function(Function<S>),
+        StaticVariable(StaticVariable),
+    }
+
+    #[derive(Debug)]
     #[cfg_attr(test, derive(PartialEq))]
     pub struct Function<S: State> {
-        pub name: String,
+        pub name: Identifier,
+        pub global: bool,
         pub instructions: Instructions<S>,
+    }
+
+    #[derive(Debug)]
+    pub struct StaticVariable {
+        pub name: Identifier,
+        pub global: bool,
+        pub initial_value: isize,
     }
 
     /// We separate this out into a newtype struct so that we can map over it as well as individual

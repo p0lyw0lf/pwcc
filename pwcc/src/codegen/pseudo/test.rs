@@ -15,7 +15,8 @@ fn function_with_arg() {
     let f: Function<State> = f.into();
     assert_eq!(
         Function {
-            name: "function_with_arg".to_string(),
+            name: Identifier("function_with_arg".to_string()),
+            global: false,
             instructions: Instructions(vec![
                 Instruction::Mov {
                     src: Operand::Location(Location(Location::Concrete(hardware::Location::Reg(
@@ -57,7 +58,8 @@ fn function_with_call() {
     let f: Function<State> = f.into();
     assert_eq!(
         Function {
-            name: "function_with_call".to_string(),
+            name: Identifier("function_with_call".to_string()),
+            global: false,
             instructions: Instructions(vec![
                 Instruction::Mov {
                     src: Operand::Imm(2),

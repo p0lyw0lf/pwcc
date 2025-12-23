@@ -12,6 +12,15 @@ pub struct Program {
     pub declarations: Vec<Declaration>,
 }
 
+impl Program {
+    pub fn new(symbol_table: &type_check::SymbolTable, program: parser::Program) -> Self {
+        Self::from(WithSymbolTable {
+            symbol_table,
+            value: program,
+        })
+    }
+}
+
 impl From<WithSymbolTable<'_, parser::Program>> for Program {
     fn from(v: WithSymbolTable<'_, parser::Program>) -> Self {
         let WithSymbolTable {
@@ -125,7 +134,7 @@ impl TryFrom<WithSymbolTable<'_, parser::FunctionDecl>> for Function {
             .collect::<Vec<_>>();
 
         Ok(Self {
-            body: Instructions::from_function(tf, body),
+            body: Instructions::from_function(symbol_table, tf, body),
             global,
             name,
             args,
@@ -205,18 +214,20 @@ pub enum BinaryOp {
 pub enum Val {
     Constant(isize),
     Var(Temporary),
+    Data(Identifier),
 }
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Temporary(pub usize);
 
 /// Context needed for emitting instructions
-struct ChompContext<'a> {
+struct ChompContext<'s, 't> {
+    symbol_table: &'s type_check::SymbolTable,
     instructions: Vec<Instruction>,
-    tf: TemporaryFactory<'a>,
+    tf: TemporaryFactory<'t>,
 }
 
-impl<'a> ChompContext<'a> {
+impl<'s, 't> ChompContext<'s, 't> {
     fn push(&mut self, i: Instruction) {
         self.instructions.push(i)
     }
@@ -241,16 +252,16 @@ impl<'a> ChompContext<'a> {
 /// Represents a type that can be used to emit instructions
 trait Chompable {
     type Output;
-    fn chomp<'a>(self, ctx: &mut ChompContext<'a>) -> Self::Output;
+    fn chomp<'s, 't>(self, ctx: &mut ChompContext<'s, 't>) -> Self::Output;
 }
 
 /// Makes a new temporary from the value
 impl Chompable for Val {
     type Output = Temporary;
-    fn chomp<'a>(self, ctx: &mut ChompContext<'a>) -> Self::Output {
+    fn chomp<'s, 't>(self, ctx: &mut ChompContext<'s, 't>) -> Self::Output {
         match self {
             Self::Var(t) => t,
-            src @ Val::Constant(_) => {
+            src @ (Val::Constant(_) | Val::Data(_)) => {
                 let dst = ctx.tf.next_temp();
                 ctx.push(Instruction::Copy { src, dst });
                 dst
@@ -260,9 +271,17 @@ impl Chompable for Val {
 }
 
 impl Instructions {
-    fn from_function(tf: TemporaryFactory, body: parser::FunctionBody) -> Self {
+    fn from_function(
+        symbol_table: &type_check::SymbolTable,
+        tf: TemporaryFactory,
+        body: parser::FunctionBody,
+    ) -> Self {
         let instructions = Vec::<Instruction>::new();
-        let mut ctx = ChompContext { instructions, tf };
+        let mut ctx = ChompContext {
+            symbol_table,
+            instructions,
+            tf,
+        };
         body.chomp(&mut ctx);
 
         Self(ctx.instructions)
@@ -274,7 +293,7 @@ where
     T: Chompable,
 {
     type Output = T::Output;
-    fn chomp<'a>(self, ctx: &mut ChompContext<'a>) -> Self::Output {
+    fn chomp<'s, 't>(self, ctx: &mut ChompContext<'s, 't>) -> Self::Output {
         (*self).chomp(ctx)
     }
 }
@@ -284,7 +303,7 @@ where
     T: Chompable<Output = ()>,
 {
     type Output = ();
-    fn chomp<'a>(self, ctx: &mut ChompContext<'a>) -> Self::Output {
+    fn chomp<'s, 't>(self, ctx: &mut ChompContext<'s, 't>) -> Self::Output {
         self.map(|v| v.chomp(ctx)).unwrap_or_default()
     }
 }
@@ -294,7 +313,7 @@ where
     T: Chompable<Output = ()>,
 {
     type Output = ();
-    fn chomp<'a>(self, ctx: &mut ChompContext<'a>) -> Self::Output {
+    fn chomp<'s, 't>(self, ctx: &mut ChompContext<'s, 't>) -> Self::Output {
         for t in self {
             t.chomp(ctx);
         }
@@ -303,7 +322,7 @@ where
 
 impl Chompable for parser::BlockItem {
     type Output = ();
-    fn chomp<'a>(self, ctx: &mut ChompContext<'a>) -> Self::Output {
+    fn chomp<'s, 't>(self, ctx: &mut ChompContext<'s, 't>) -> Self::Output {
         use parser::BlockItem::*;
         use parser::Declaration::*;
         match self {
@@ -316,7 +335,7 @@ impl Chompable for parser::BlockItem {
 
 impl Chompable for parser::VarDecl {
     type Output = ();
-    fn chomp<'a>(self, ctx: &mut ChompContext<'a>) -> Self::Output {
+    fn chomp<'s, 't>(self, ctx: &mut ChompContext<'s, 't>) -> Self::Output {
         use parser::Initializer::*;
         match self.init {
             Declared(_) => {}
@@ -331,7 +350,7 @@ impl Chompable for parser::VarDecl {
 
 impl Chompable for parser::FunctionBody {
     type Output = ();
-    fn chomp<'a>(self, ctx: &mut ChompContext<'a>) -> Self::Output {
+    fn chomp<'s, 't>(self, ctx: &mut ChompContext<'s, 't>) -> Self::Output {
         use parser::FunctionBody::*;
         match self {
             Declared(_) => {}
@@ -350,7 +369,7 @@ impl Chompable for parser::FunctionBody {
 
 impl Chompable for parser::Statement {
     type Output = ();
-    fn chomp<'a>(self, ctx: &mut ChompContext<'a>) -> Self::Output {
+    fn chomp<'s, 't>(self, ctx: &mut ChompContext<'s, 't>) -> Self::Output {
         use parser::Statement::*;
         match self {
             NullStmt(_) => {}
@@ -558,7 +577,7 @@ impl Chompable for parser::Statement {
 /// final value of the expression.
 impl Chompable for parser::Exp {
     type Output = Val;
-    fn chomp<'a>(self, ctx: &mut ChompContext<'a>) -> Val {
+    fn chomp<'s, 't>(self, ctx: &mut ChompContext<'s, 't>) -> Self::Output {
         use Instruction::*;
         match self {
             parser::Exp::Constant {
@@ -741,7 +760,17 @@ impl Chompable for parser::Exp {
 
                 Val::Var(dst)
             }
-            parser::Exp::Var { ident, span: _span } => Val::Var(ctx.tf.var(&ident)),
+            parser::Exp::Var { ident, span: _span } => {
+                match ctx.symbol_table.get_symbol(&ident) {
+                    // If the variable has static duration, then emit as Data.
+                    Some(type_check::Declaration {
+                        ty: type_check::Type::Var(type_check::VarAttr::Static { .. }),
+                        span: _,
+                    }) => Val::Data(Identifier(ident)),
+                    // Otherwise, emit just as Var.
+                    _ => Val::Var(ctx.tf.var(&ident)),
+                }
+            }
             parser::Exp::Assignment { lhs, op, rhs, span } => match *lhs {
                 parser::Exp::Var { ref ident, .. } => {
                     let dst = ctx.tf.var(ident);

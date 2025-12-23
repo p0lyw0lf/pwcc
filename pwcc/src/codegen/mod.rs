@@ -31,7 +31,7 @@ mod ast {
 
     #[derive(Debug)]
     pub struct Program<S: State> {
-        pub functions: Vec<Function<S>>,
+        pub declarations: Vec<Declaration<S>>,
     }
 
     #[derive(Debug)]

@@ -24,8 +24,8 @@ pub fn emit(
 
 impl Display for WithSymbolTable<'_, &'_ Program<hardware::Pass>> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        for function in &self.value.functions {
-            write!(f, "{}", self.wrap(function))?;
+        for decl in &self.value.declarations {
+            write!(f, "{}", self.wrap(decl))?;
         }
         #[cfg(target_os = "linux")]
         {
@@ -35,10 +35,43 @@ impl Display for WithSymbolTable<'_, &'_ Program<hardware::Pass>> {
     }
 }
 
+impl Display for WithSymbolTable<'_, &'_ Declaration<hardware::Pass>> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self.value {
+            Declaration::Function(function) => self.wrap(function).fmt(f),
+            Declaration::StaticVariable(s) => s.fmt(f),
+        }
+    }
+}
+
+impl Display for StaticVariable {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        if self.global {
+            writeln!(f, "\t.globl {}", self.name)?;
+        }
+        if self.initial_value == 0 {
+            writeln!(f, "\t.data")?;
+            writeln!(f, "\t.balign 4")?;
+            writeln!(f, "{}:", self.name)?;
+            writeln!(f, "\t.long {}", self.initial_value)?;
+        } else {
+            writeln!(f, "\t.bss")?;
+            writeln!(f, "\t.balign 4")?;
+            writeln!(f, "{}:", self.name)?;
+            writeln!(f, "\t.zero 4")?;
+        }
+
+        Ok(())
+    }
+}
+
 impl Display for WithSymbolTable<'_, &'_ Function<hardware::Pass>> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let value = self.value;
-        writeln!(f, "\t.globl {}", value.name)?;
+        if value.global {
+            writeln!(f, "\t.globl {}", value.name)?;
+        }
+        writeln!(f, "\t.text")?;
         writeln!(f, "{}:", value.name)?;
         writeln!(f, "\tpushq\t%rbp")?;
         writeln!(f, "\tmovq\t%rsp, %rbp")?;
@@ -156,7 +189,13 @@ impl Display for hardware::Location {
         match self {
             Reg(reg) => write!(f, "{:w$}", reg),
             Stack(i) => write!(f, "{i}(%rbp)"),
-            Data(label) => write!(f, "{label}(%rip)"),
+            Data(label) => {
+                if cfg!(target_os = "macos") {
+                    write!(f, "_{label}(%rip)")
+                } else {
+                    write!(f, "{label}(%rip)")
+                }
+            }
         }
     }
 }

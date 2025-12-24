@@ -73,8 +73,11 @@ pub fn pass<S: State<Location = Location>>(instructions: Instructions<S>) -> Ins
                 match i {
                     // Memory -> Memory moves are not allowed
                     Mov {
-                        src: src @ Operand::Location(super::Location(Location::Stack(_))),
-                        dst: dst @ super::Location(Location::Stack(_)),
+                        src:
+                            src @ Operand::Location(super::Location(
+                                Location::Stack(_) | Location::Data(_),
+                            )),
+                        dst: dst @ super::Location(Location::Stack(_) | Location::Data(_)),
                     } => {
                         let i1: Instruction<Pass> = Mov {
                             src: src.identity(),
@@ -103,7 +106,7 @@ pub fn pass<S: State<Location = Location>>(instructions: Instructions<S>) -> Ins
                     Binary {
                         op: op @ BinaryOp::Mult,
                         src,
-                        dst: dst @ super::Location(Location::Stack(_)),
+                        dst: dst @ super::Location(Location::Stack(_) | Location::Data(_)),
                     } => {
                         let i1: Instruction<Pass> = Mov {
                             src: Operand::Location(dst.clone().identity()),
@@ -154,8 +157,11 @@ pub fn pass<S: State<Location = Location>>(instructions: Instructions<S>) -> Ins
                     // Memory -> Memory binary operations aren't allowed
                     Binary {
                         op,
-                        src: src @ Operand::Location(super::Location(Location::Stack(_))),
-                        dst: dst @ super::Location(Location::Stack(_)),
+                        src:
+                            src @ Operand::Location(super::Location(
+                                Location::Stack(_) | Location::Data(_),
+                            )),
+                        dst: dst @ super::Location(Location::Stack(_) | Location::Data(_)),
                     } => {
                         let i1: Instruction<Pass> = Mov {
                             src: src.identity(),
@@ -170,8 +176,11 @@ pub fn pass<S: State<Location = Location>>(instructions: Instructions<S>) -> Ins
                     }
                     // Memory -> Memory cmp operations aren't allowed
                     Cmp {
-                        left: left @ super::Location(Location::Stack(_)),
-                        right: right @ Operand::Location(super::Location(Location::Stack(_))),
+                        left: left @ super::Location(Location::Stack(_) | Location::Data(_)),
+                        right:
+                            right @ Operand::Location(super::Location(
+                                Location::Stack(_) | Location::Data(_),
+                            )),
                     } => Box::new(
                         [
                             Mov {
@@ -186,7 +195,11 @@ pub fn pass<S: State<Location = Location>>(instructions: Instructions<S>) -> Ins
                         .into_iter(),
                     ),
                     // Direct pushes of memory aren't allowed for alignment reasons
-                    Push(loc @ Operand::Location(super::Location(Location::Stack(_)))) => Box::new(
+                    Push(
+                        loc @ Operand::Location(super::Location(
+                            Location::Stack(_) | Location::Data(_),
+                        )),
+                    ) => Box::new(
                         [
                             Mov {
                                 src: loc.identity(),

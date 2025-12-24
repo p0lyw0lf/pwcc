@@ -254,7 +254,15 @@ impl From<tacky::Instructions> for Instructions<State> {
                         Copy { src, dst } => Box::new(
                             [Instruction::Mov {
                                 src: src.into(),
-                                dst: wrap(dst.into()),
+                                dst: match dst {
+                                    // TODO: redesign my types in such a way that this is
+                                    // impossible
+                                    tacky::Val::Constant(_) => {
+                                        panic!("unexpected constant in mov destination")
+                                    }
+                                    tacky::Val::Var(tmp) => wrap(tmp.into()),
+                                    tacky::Val::Data(ident) => wrap(ident.into()),
+                                },
                             }]
                             .into_iter(),
                         ),

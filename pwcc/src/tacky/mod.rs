@@ -162,7 +162,7 @@ pub enum Instruction {
     },
     Copy {
         src: Val,
-        dst: Temporary,
+        dst: Val,
     },
     Jump {
         target: Identifier,
@@ -247,6 +247,18 @@ impl<'s, 't> ChompContext<'s, 't> {
     fn case_label(&self, case_label: &str) -> Identifier {
         Identifier(format!("__case.{}", case_label))
     }
+
+    fn var(&mut self, ident: &str) -> Val {
+        match self.symbol_table.get_symbol(ident) {
+            // If the variable has static duration, then emit as Data.
+            Some(type_check::Declaration {
+                ty: type_check::Type::Var(type_check::VarAttr::Static { .. }),
+                span: _,
+            }) => Val::Data(Identifier(ident.to_string())),
+            // Otherwise, emit just as Var.
+            _ => Val::Var(self.tf.var(ident)),
+        }
+    }
 }
 
 /// Represents a type that can be used to emit instructions
@@ -263,7 +275,10 @@ impl Chompable for Val {
             Self::Var(t) => t,
             src @ (Val::Constant(_) | Val::Data(_)) => {
                 let dst = ctx.tf.next_temp();
-                ctx.push(Instruction::Copy { src, dst });
+                ctx.push(Instruction::Copy {
+                    src,
+                    dst: Val::Var(dst),
+                });
                 dst
             }
         }
@@ -341,7 +356,7 @@ impl Chompable for parser::VarDecl {
             Declared(_) => {}
             Defined(expression, _) => {
                 let src = expression.chomp(ctx);
-                let dst = ctx.tf.var(&self.name.0);
+                let dst = ctx.var(&self.name.0);
                 ctx.push(Instruction::Copy { src, dst });
             }
         }
@@ -616,7 +631,7 @@ impl Chompable for parser::Exp {
                 span: _span,
             } => match *exp {
                 parser::Exp::Var { ident, .. } => {
-                    let dst = ctx.tf.var(&ident);
+                    let dst = ctx.var(&ident).chomp(ctx);
                     let src = Val::Var(dst);
 
                     use parser::PrefixOp::*;
@@ -642,11 +657,14 @@ impl Chompable for parser::Exp {
                 span: _span,
             } => match *exp {
                 parser::Exp::Var { ident, .. } => {
-                    let dst = ctx.tf.var(&ident);
+                    let dst = ctx.var(&ident).chomp(ctx);
                     let src = Val::Var(dst);
                     let tmp = ctx.tf.next_temp();
 
-                    ctx.push(Copy { src, dst: tmp });
+                    ctx.push(Copy {
+                        src,
+                        dst: Val::Var(tmp),
+                    });
 
                     let src = Val::Var(dst);
                     use parser::PostfixOp::*;
@@ -706,7 +724,7 @@ impl Chompable for parser::Exp {
                 ctx.instructions.extend([
                     Copy {
                         src: Val::Constant(if is_and { 1 } else { 0 }),
-                        dst,
+                        dst: Val::Var(dst),
                     },
                     Jump {
                         target: end_label.clone(),
@@ -714,7 +732,7 @@ impl Chompable for parser::Exp {
                     Label(shortcut_label),
                     Copy {
                         src: Val::Constant(if is_and { 0 } else { 1 }),
-                        dst,
+                        dst: Val::Var(dst),
                     },
                     Label(end_label),
                 ]);
@@ -760,20 +778,13 @@ impl Chompable for parser::Exp {
 
                 Val::Var(dst)
             }
-            parser::Exp::Var { ident, span: _span } => {
-                match ctx.symbol_table.get_symbol(&ident) {
-                    // If the variable has static duration, then emit as Data.
-                    Some(type_check::Declaration {
-                        ty: type_check::Type::Var(type_check::VarAttr::Static { .. }),
-                        span: _,
-                    }) => Val::Data(Identifier(ident)),
-                    // Otherwise, emit just as Var.
-                    _ => Val::Var(ctx.tf.var(&ident)),
-                }
-            }
+            parser::Exp::Var { ident, span: _span } => ctx.var(&ident),
             parser::Exp::Assignment { lhs, op, rhs, span } => match *lhs {
                 parser::Exp::Var { ref ident, .. } => {
-                    let dst = ctx.tf.var(ident);
+                    let dst = ctx.var(ident);
+                    // Just `dst` again, but written in a way that I'm not tempted to impl Clone
+                    let dst2 = ctx.var(ident);
+
                     let rhs = match op {
                         parser::AssignmentOp::Equal(_) => *rhs,
                         otherwise => parser::Exp::Binary {
@@ -787,7 +798,7 @@ impl Chompable for parser::Exp {
                     };
                     let src = rhs.chomp(ctx);
                     ctx.push(Copy { src, dst });
-                    Val::Var(dst)
+                    dst2
                 }
                 ref otherwise => panic!("building tacky: got unexpected lhs: {otherwise:?}"),
             },
@@ -809,7 +820,7 @@ impl Chompable for parser::Exp {
                 let true_val = true_case.chomp(ctx);
                 ctx.push(Copy {
                     src: true_val,
-                    dst: result,
+                    dst: Val::Var(result),
                 });
                 ctx.push(Jump {
                     target: end.clone(),
@@ -818,7 +829,7 @@ impl Chompable for parser::Exp {
                 let false_val = false_case.chomp(ctx);
                 ctx.push(Copy {
                     src: false_val,
-                    dst: result,
+                    dst: Val::Var(result),
                 });
                 ctx.push(Label(end));
 

@@ -50,15 +50,15 @@ impl Display for StaticVariable {
             writeln!(f, "\t.globl {}", self.name)?;
         }
         if self.initial_value == 0 {
-            writeln!(f, "\t.data")?;
-            writeln!(f, "\t.balign 4")?;
-            writeln!(f, "{}:", self.name)?;
-            writeln!(f, "\t.long {}", self.initial_value)?;
-        } else {
             writeln!(f, "\t.bss")?;
             writeln!(f, "\t.balign 4")?;
             writeln!(f, "{}:", self.name)?;
             writeln!(f, "\t.zero 4")?;
+        } else {
+            writeln!(f, "\t.data")?;
+            writeln!(f, "\t.balign 4")?;
+            writeln!(f, "{}:", self.name)?;
+            writeln!(f, "\t.long {}", self.initial_value)?;
         }
 
         Ok(())

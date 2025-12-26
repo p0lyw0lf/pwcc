@@ -248,15 +248,21 @@ impl<'s, 't> ChompContext<'s, 't> {
         Identifier(format!("__case.{}", case_label))
     }
 
-    fn var(&mut self, ident: &str) -> Val {
+    fn is_static_var(&self, ident: &str) -> bool {
         match self.symbol_table.get_symbol(ident) {
-            // If the variable has static duration, then emit as Data.
             Some(type_check::Declaration {
                 ty: type_check::Type::Var(type_check::VarAttr::Static { .. }),
                 span: _,
-            }) => Val::Data(Identifier(ident.to_string())),
-            // Otherwise, emit just as Var.
-            _ => Val::Var(self.tf.var(ident)),
+            }) => true,
+            _ => false,
+        }
+    }
+
+    fn var(&mut self, ident: &str) -> Val {
+        if self.is_static_var(ident) {
+            Val::Data(Identifier(ident.to_string()))
+        } else {
+            Val::Var(self.tf.var(ident))
         }
     }
 }
@@ -355,8 +361,13 @@ impl Chompable for parser::VarDecl {
         match self.init {
             Declared(_) => {}
             Defined(expression, _) => {
+                let ident = &self.name.0;
+                if ctx.is_static_var(ident) {
+                    // Don't initialize declarations with static storage
+                    return;
+                }
                 let src = expression.chomp(ctx);
-                let dst = ctx.var(&self.name.0);
+                let dst = ctx.var(ident);
                 ctx.push(Instruction::Copy { src, dst });
             }
         }

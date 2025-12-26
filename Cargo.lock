@@ -74,7 +74,7 @@ dependencies = [
 
 [[package]]
 name = "functional"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "functional_macros",
  "paste",
@@ -82,7 +82,7 @@ dependencies = [
 
 [[package]]
 name = "functional_macros"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -190,7 +190,7 @@ dependencies = [
 
 [[package]]
 name = "pwcc"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "functional",
  "functional_macros",
@@ -202,7 +202,7 @@ dependencies = [
 
 [[package]]
 name = "pwcc_bin"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "functional",
  "miette",
@@ -211,7 +211,7 @@ dependencies = [
 
 [[package]]
 name = "pwcc_util"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "functional",
  "miette",
@@ -222,7 +222,7 @@ dependencies = [
 
 [[package]]
 name = "pwcc_util_macros"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "proc-macro2",
  "quote",

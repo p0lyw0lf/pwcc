@@ -1,6 +1,6 @@
 [package]
 name = "pwcc_util_macros"
-version = "0.0.9"
+version = "0.0.10"
 edition = "2024"
 
 [lib]

@@ -110,7 +110,7 @@ fn main() -> Result<()> {
     let ir = tacky::Program::new(&symbol_table, tree);
 
     if stage == Tacky {
-        println!("{ir:?}");
+        println!("{ir}");
         return Ok(());
     }
 

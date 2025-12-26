@@ -1,11 +1,13 @@
 use core::convert::From;
 use std::collections::HashMap;
 
-mod with_symbol_table;
-pub use with_symbol_table::WithSymbolTable;
-
 use crate::parser;
 use crate::semantic::type_check;
+
+mod display;
+mod with_symbol_table;
+
+pub use with_symbol_table::WithSymbolTable;
 
 #[derive(Debug)]
 pub struct Program {

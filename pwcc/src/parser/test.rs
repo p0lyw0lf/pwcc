@@ -1,6 +1,8 @@
 //! TODO: eventually, I want to have this test the span generation too. However, that's a bit
 //! tricky, so I am leaving everything in place for now.
 
+use pwcc_util::Boxable;
+
 use super::*;
 use std::fmt::Debug;
 
@@ -14,17 +16,6 @@ fn lex(source: &str) -> Vec<Token> {
         .into_iter()
         .map(|s| s.0)
         .collect()
-}
-
-/// Helper trait to avoid so many layers of Box::new()
-trait Boxed {
-    fn boxed(self) -> Box<Self>;
-}
-
-impl<T> Boxed for T {
-    fn boxed(self) -> Box<Self> {
-        Box::new(self)
-    }
 }
 
 fn assert_forwards<T: FromTokens<Token, ParseError> + Debug + PartialEq>(
@@ -69,10 +60,13 @@ fn constant() {
 fn statement() {
     assert_convertible(
         "return 2;",
-        Statement::ReturnStmt(ReturnStmt {
-            exp: Exp::Constant { constant: 2, span },
-            span,
-        }),
+        Statement::ReturnStmt(
+            ReturnStmt {
+                exp: Exp::Constant { constant: 2, span },
+                span,
+            }
+            .boxed(),
+        ),
     );
 }
 
@@ -106,19 +100,28 @@ int main(void) {
             args: FunctionDeclArgs::Void(span),
             body: FunctionBody::Defined(Block {
                 items: vec![
-                    BlockItem::Declaration(Declaration::Var(VarDecl {
-                        ty: TypeAndStorage {
-                            storage: None,
+                    BlockItem::Declaration(
+                        Declaration::Var(VarDecl {
+                            ty: TypeAndStorage {
+                                storage: None,
+                                span,
+                            },
+                            name: ("x".to_string(), span),
+                            init: Initializer::Defined(Exp::Constant { constant: 1, span }, span),
                             span,
-                        },
-                        name: ("x".to_string(), span),
-                        init: Initializer::Defined(Exp::Constant { constant: 1, span }, span),
-                        span,
-                    })),
-                    BlockItem::Statement(Statement::ReturnStmt(ReturnStmt {
-                        exp: Exp::Constant { constant: 2, span },
-                        span,
-                    })),
+                        })
+                        .boxed(),
+                    ),
+                    BlockItem::Statement(
+                        Statement::ReturnStmt(
+                            ReturnStmt {
+                                exp: Exp::Constant { constant: 2, span },
+                                span,
+                            }
+                            .boxed(),
+                        )
+                        .boxed(),
+                    ),
                 ],
                 span,
             }),
@@ -288,19 +291,22 @@ fn decl_init() {
 fn assign_statement() {
     assert_convertible(
         "sex = 69;",
-        Statement::ExpressionStmt(ExpressionStmt {
-            exp: Exp::Assignment {
-                lhs: Exp::Var {
-                    ident: "sex".to_string(),
+        Statement::ExpressionStmt(
+            ExpressionStmt {
+                exp: Exp::Assignment {
+                    lhs: Exp::Var {
+                        ident: "sex".to_string(),
+                        span,
+                    }
+                    .boxed(),
+                    op: AssignmentOp::Equal(span),
+                    rhs: Exp::Constant { constant: 69, span }.boxed(),
                     span,
-                }
-                .boxed(),
-                op: AssignmentOp::Equal(span),
-                rhs: Exp::Constant { constant: 69, span }.boxed(),
+                },
                 span,
-            },
-            span,
-        }),
+            }
+            .boxed(),
+        ),
     );
 }
 
@@ -308,32 +314,41 @@ fn assign_statement() {
 fn block_item() {
     assert_convertible(
         "int x = 5;",
-        BlockItem::Declaration(Declaration::Var(VarDecl {
-            ty: TypeAndStorage {
-                storage: None,
+        BlockItem::Declaration(
+            Declaration::Var(VarDecl {
+                ty: TypeAndStorage {
+                    storage: None,
+                    span,
+                },
+                name: ("x".to_string(), span),
+                init: Initializer::Defined(Exp::Constant { constant: 5, span }, span),
                 span,
-            },
-            name: ("x".to_string(), span),
-            init: Initializer::Defined(Exp::Constant { constant: 5, span }, span),
-            span,
-        })),
+            })
+            .boxed(),
+        ),
     );
 
     assert_convertible(
         "sex = 69;",
-        BlockItem::Statement(Statement::ExpressionStmt(ExpressionStmt {
-            exp: Exp::Assignment {
-                lhs: Exp::Var {
-                    ident: "sex".to_string(),
+        BlockItem::Statement(
+            Statement::ExpressionStmt(
+                ExpressionStmt {
+                    exp: Exp::Assignment {
+                        lhs: Exp::Var {
+                            ident: "sex".to_string(),
+                            span,
+                        }
+                        .boxed(),
+                        op: AssignmentOp::Equal(span),
+                        rhs: Exp::Constant { constant: 69, span }.boxed(),
+                        span,
+                    },
                     span,
                 }
                 .boxed(),
-                op: AssignmentOp::Equal(span),
-                rhs: Exp::Constant { constant: 69, span }.boxed(),
-                span,
-            },
-            span,
-        })),
+            )
+            .boxed(),
+        ),
     );
 }
 
@@ -418,52 +433,59 @@ fn if_statement() {
     let tokens = lex("if (a) if (a > 10) return a; else return 10 - a;");
     assert_forwards(
         &tokens,
-        &Statement::IfStmt(IfStmt {
-            guard: Exp::Var {
-                ident: "a".to_string(),
-                span,
-            },
-            body_true: Statement::IfStmt(IfStmt {
-                guard: Exp::Binary {
-                    lhs: Exp::Var {
-                        ident: "a".to_string(),
-                        span,
-                    }
-                    .boxed(),
-                    op: BinaryOp::GreaterThan(span),
-                    rhs: Exp::Constant { constant: 10, span }.boxed(),
+        &Statement::IfStmt(
+            IfStmt {
+                guard: Exp::Var {
+                    ident: "a".to_string(),
                     span,
                 },
-                body_true: Statement::ReturnStmt(ReturnStmt {
-                    exp: Exp::Var {
-                        ident: "a".to_string(),
-                        span,
-                    },
-                    span,
-                })
-                .boxed(),
-                body_false: Some(
-                    Statement::ReturnStmt(ReturnStmt {
-                        exp: Exp::Binary {
-                            lhs: Exp::Constant { constant: 10, span }.boxed(),
-                            op: BinaryOp::Minus(span),
-                            rhs: Exp::Var {
+                body_true: Statement::IfStmt(
+                    IfStmt {
+                        guard: Exp::Binary {
+                            lhs: Exp::Var {
                                 ident: "a".to_string(),
                                 span,
                             }
                             .boxed(),
+                            op: BinaryOp::GreaterThan(span),
+                            rhs: Exp::Constant { constant: 10, span }.boxed(),
                             span,
                         },
+                        body_true: Statement::ReturnStmt(
+                            ReturnStmt {
+                                exp: Exp::Var {
+                                    ident: "a".to_string(),
+                                    span,
+                                },
+                                span,
+                            }
+                            .boxed(),
+                        ),
+                        body_false: Some(Statement::ReturnStmt(
+                            ReturnStmt {
+                                exp: Exp::Binary {
+                                    lhs: Exp::Constant { constant: 10, span }.boxed(),
+                                    op: BinaryOp::Minus(span),
+                                    rhs: Exp::Var {
+                                        ident: "a".to_string(),
+                                        span,
+                                    }
+                                    .boxed(),
+                                    span,
+                                },
+                                span,
+                            }
+                            .boxed(),
+                        )),
                         span,
-                    })
+                    }
                     .boxed(),
                 ),
+                body_false: None,
                 span,
-            })
+            }
             .boxed(),
-            body_false: None,
-            span,
-        }),
+        ),
     );
 }
 
@@ -480,19 +502,27 @@ fn if_statement_naked() {
             name: ("main".to_string(), span),
             args: FunctionDeclArgs::Void(span),
             body: FunctionBody::Defined(Block {
-                items: vec![BlockItem::Statement(Statement::IfStmt(IfStmt {
-                    guard: Exp::Constant { constant: 0, span },
-                    body_true: Statement::ReturnStmt(ReturnStmt {
-                        exp: Exp::Var {
-                            ident: "a".to_string(),
+                items: vec![BlockItem::Statement(
+                    Statement::IfStmt(
+                        IfStmt {
+                            guard: Exp::Constant { constant: 0, span },
+                            body_true: Statement::ReturnStmt(
+                                ReturnStmt {
+                                    exp: Exp::Var {
+                                        ident: "a".to_string(),
+                                        span,
+                                    },
+                                    span,
+                                }
+                                .boxed(),
+                            ),
+                            body_false: None,
                             span,
-                        },
-                        span,
-                    })
+                        }
+                        .boxed(),
+                    )
                     .boxed(),
-                    body_false: None,
-                    span,
-                }))],
+                )],
                 span,
             }),
             span,
@@ -571,29 +601,32 @@ fn function_call_args() {
 fn binary_assignment_op() {
     assert_forwards(
         &lex("a &= 0 || b;"),
-        &Statement::ExpressionStmt(ExpressionStmt {
-            exp: Exp::Assignment {
-                lhs: Exp::Var {
-                    ident: "a".to_string(),
-                    span,
-                }
-                .boxed(),
-                op: AssignmentOp::BitAndEqual(span),
-                rhs: Exp::Binary {
-                    lhs: Exp::Constant { constant: 0, span }.boxed(),
-                    op: BinaryOp::LogicOr(span),
-                    rhs: Exp::Var {
-                        ident: "b".to_string(),
+        &Statement::ExpressionStmt(
+            ExpressionStmt {
+                exp: Exp::Assignment {
+                    lhs: Exp::Var {
+                        ident: "a".to_string(),
+                        span,
+                    }
+                    .boxed(),
+                    op: AssignmentOp::BitAndEqual(span),
+                    rhs: Exp::Binary {
+                        lhs: Exp::Constant { constant: 0, span }.boxed(),
+                        op: BinaryOp::LogicOr(span),
+                        rhs: Exp::Var {
+                            ident: "b".to_string(),
+                            span,
+                        }
+                        .boxed(),
                         span,
                     }
                     .boxed(),
                     span,
-                }
-                .boxed(),
+                },
                 span,
-            },
-            span,
-        }),
+            }
+            .boxed(),
+        ),
     );
 }
 

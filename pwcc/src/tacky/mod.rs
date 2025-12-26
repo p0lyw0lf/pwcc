@@ -347,11 +347,20 @@ impl Chompable for parser::BlockItem {
     type Output = ();
     fn chomp<'s, 't>(self, ctx: &mut ChompContext<'s, 't>) -> Self::Output {
         use parser::BlockItem::*;
+        match self {
+            Declaration(decl) => decl.chomp(ctx),
+            Statement(statement) => statement.chomp(ctx),
+        }
+    }
+}
+
+impl Chompable for parser::Declaration {
+    type Output = ();
+    fn chomp<'s, 't>(self, ctx: &mut ChompContext<'s, 't>) -> Self::Output {
         use parser::Declaration::*;
         match self {
-            Declaration(Var(decl)) => decl.chomp(ctx),
-            Declaration(Function(decl)) => decl.body.chomp(ctx),
-            Statement(statement) => statement.chomp(ctx),
+            Function(f) => f.body.chomp(ctx),
+            Var(v) => v.chomp(ctx),
         }
     }
 }
@@ -409,11 +418,12 @@ impl Chompable for parser::Statement {
             ExpressionStmt(expression_stmt) => {
                 let _ = expression_stmt.exp.chomp(ctx);
             }
-            LabelStmt(parser::LabelStmt {
-                label,
-                stmt,
-                span: _span,
-            }) => {
+            LabelStmt(label_stmt) => {
+                let parser::LabelStmt {
+                    label,
+                    stmt,
+                    span: _span,
+                } = *label_stmt;
                 match label {
                     parser::Label::Raw(parser::RawLabel { label, span: _span }) => {
                         ctx.push(Instruction::Label(ctx.goto_label(&label.0)));
@@ -427,17 +437,18 @@ impl Chompable for parser::Statement {
                 };
                 stmt.chomp(ctx);
             }
-            GotoStmt(parser::GotoStmt { label, span: _span }) => {
+            GotoStmt(goto_stmt) => {
                 ctx.push(Instruction::Jump {
-                    target: ctx.goto_label(&label.0),
+                    target: ctx.goto_label(&goto_stmt.label.0),
                 });
             }
-            IfStmt(parser::IfStmt {
-                guard,
-                body_true,
-                body_false: None,
-                span: _span,
-            }) => {
+            IfStmt(if_stmt) if if_stmt.body_false.is_none() => {
+                let parser::IfStmt {
+                    guard,
+                    body_true,
+                    body_false: _,
+                    span: _span,
+                } = *if_stmt;
                 let condition = guard.chomp(ctx).chomp(ctx);
                 let end = ctx.tf.next_label("end");
                 ctx.push(Instruction::JumpIfZero {
@@ -447,12 +458,13 @@ impl Chompable for parser::Statement {
                 body_true.chomp(ctx);
                 ctx.push(Instruction::Label(end));
             }
-            IfStmt(parser::IfStmt {
-                guard,
-                body_true,
-                body_false: Some(body_false),
-                span: _span,
-            }) => {
+            IfStmt(if_stmt) => {
+                let parser::IfStmt {
+                    guard,
+                    body_true,
+                    body_false,
+                    span: _span,
+                } = *if_stmt;
                 let condition = guard.chomp(ctx).chomp(ctx);
                 let else_label = ctx.tf.next_label("else");
                 let end = ctx.tf.next_label("end");
@@ -465,7 +477,7 @@ impl Chompable for parser::Statement {
                     target: end.clone(),
                 });
                 ctx.push(Instruction::Label(else_label));
-                body_false.chomp(ctx);
+                body_false.unwrap().chomp(ctx);
                 ctx.push(Instruction::Label(end));
             }
             SwitchStmt(switch_stmt) => {

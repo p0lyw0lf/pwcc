@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::iter::once;
 
 use functional::Semigroup;
+use pwcc_util::Boxable;
 use pwcc_util::parse_choices;
 use pwcc_util::parse_multiple;
 use pwcc_util::parse_plus;
@@ -128,27 +129,27 @@ mod ast {
     #[derive(Debug, Spanned)]
     #[cfg_attr(test, derive(PartialEq))]
     pub enum BlockItem {
-        Statement(Statement),
-        Declaration(Declaration),
+        Statement(Box<Statement>),
+        Declaration(Box<Declaration>),
     }
 
     #[include()]
     #[derive(Debug, Spanned)]
     #[cfg_attr(test, derive(PartialEq))]
     pub enum Statement {
-        ReturnStmt(ReturnStmt),
-        ExpressionStmt(ExpressionStmt),
-        IfStmt(IfStmt),
-        BreakStmt(BreakStmt),
-        ContinueStmt(ContinueStmt),
-        WhileStmt(WhileStmt),
-        DoWhileStmt(DoWhileStmt),
-        ForStmt(ForStmt),
-        SwitchStmt(SwitchStmt),
-        Block(Block),
-        LabelStmt(LabelStmt),
-        GotoStmt(GotoStmt),
-        NullStmt(NullStmt),
+        ReturnStmt(Box<ReturnStmt>),
+        ExpressionStmt(Box<ExpressionStmt>),
+        IfStmt(Box<IfStmt>),
+        BreakStmt(Box<BreakStmt>),
+        ContinueStmt(Box<ContinueStmt>),
+        WhileStmt(Box<WhileStmt>),
+        DoWhileStmt(Box<DoWhileStmt>),
+        ForStmt(Box<ForStmt>),
+        SwitchStmt(Box<SwitchStmt>),
+        Block(Box<Block>),
+        LabelStmt(Box<LabelStmt>),
+        GotoStmt(Box<GotoStmt>),
+        NullStmt(Box<NullStmt>),
     }
 
     #[derive(Debug, Spanned)]
@@ -169,8 +170,8 @@ mod ast {
     #[cfg_attr(test, derive(PartialEq))]
     pub struct IfStmt {
         pub guard: Exp,
-        pub body_true: Box<Statement>,
-        pub body_false: Option<Box<Statement>>,
+        pub body_true: Statement,
+        pub body_false: Option<Statement>,
         pub span: Span,
     }
 
@@ -180,7 +181,7 @@ mod ast {
         pub ctx: Option<SwitchContext>,
         pub label: Option<LoopLabel>,
         pub case: Exp,
-        pub body: Box<Statement>,
+        pub body: Statement,
         pub span: Span,
     }
 
@@ -203,14 +204,14 @@ mod ast {
     pub struct WhileStmt {
         pub label: Option<LoopLabel>,
         pub guard: Exp,
-        pub body: Box<Statement>,
+        pub body: Statement,
         pub span: Span,
     }
 
     #[derive(Debug, Spanned)]
     #[cfg_attr(test, derive(PartialEq))]
     pub struct DoWhileStmt {
-        pub body: Box<Statement>,
+        pub body: Statement,
         pub label: Option<LoopLabel>,
         pub guard: Exp,
         pub span: Span,
@@ -223,7 +224,7 @@ mod ast {
         pub init: ForInit,
         pub exp1: Option<Exp>,
         pub exp2: Option<Exp>,
-        pub body: Box<Statement>,
+        pub body: Statement,
         pub span: Span,
     }
 
@@ -238,7 +239,7 @@ mod ast {
     #[cfg_attr(test, derive(PartialEq))]
     pub struct LabelStmt {
         pub label: Label,
-        pub stmt: Box<Statement>,
+        pub stmt: Statement,
         pub span: Span,
     }
 
@@ -592,23 +593,23 @@ impl ToTokens<Token> for TypeAndStorage {
 
 parse_times!(Block: *OpenBrace *<items: Vec<BlockItem>> *CloseBrace);
 parse_plus!(BlockItem:
-    +<Statement>: Statement,
-    +<Declaration>: Declaration,
+    +<Box<Statement>>: Statement,
+    +<Box<Declaration>>: Declaration,
 );
 parse_plus!(Statement:
-    +<ReturnStmt>: ReturnStmt,
-    +<ExpressionStmt>: ExpressionStmt,
-    +<IfStmt>: IfStmt,
-    +<BreakStmt>: BreakStmt,
-    +<ContinueStmt>: ContinueStmt,
-    +<WhileStmt>: WhileStmt,
-    +<DoWhileStmt>: DoWhileStmt,
-    +<ForStmt>: ForStmt,
-    +<SwitchStmt>: SwitchStmt,
-    +<Block>: Block,
-    +<LabelStmt>: LabelStmt,
-    +<GotoStmt>: GotoStmt,
-    +<NullStmt>: NullStmt,
+    +<Box<ReturnStmt>>: ReturnStmt,
+    +<Box<ExpressionStmt>>: ExpressionStmt,
+    +<Box<IfStmt>>: IfStmt,
+    +<Box<BreakStmt>>: BreakStmt,
+    +<Box<ContinueStmt>>: ContinueStmt,
+    +<Box<WhileStmt>>: WhileStmt,
+    +<Box<DoWhileStmt>>: DoWhileStmt,
+    +<Box<ForStmt>>: ForStmt,
+    +<Box<SwitchStmt>>: SwitchStmt,
+    +<Box<Block>>: Block,
+    +<Box<LabelStmt>>: LabelStmt,
+    +<Box<GotoStmt>>: GotoStmt,
+    +<Box<NullStmt>>: NullStmt,
 );
 parse_times!(ReturnStmt: *KeywordReturn *<exp: Exp> *Semicolon);
 parse_times!(ExpressionStmt: *<exp: Exp> *Semicolon);
@@ -622,13 +623,13 @@ impl FromTokens<Token, ParseError> for IfStmt {
     {
         let mut span = Span::empty();
         parse_multiple!(ts, span, {
-            *KeywordIf *OpenParen *<guard: Exp> *CloseParen *<body_true: Box<Statement>>
+            *KeywordIf *OpenParen *<guard: Exp> *CloseParen *<body_true: Statement>
         });
 
         let mut iter = ts.clone();
         let body_false = (|| -> Result<_, ParseError> {
             parse_multiple!(&mut iter, span, {
-                *KeywordElse *<body_false: Box<Statement>>
+                *KeywordElse *<body_false: Statement>
             });
             *ts = iter;
             Ok(body_false)
@@ -668,12 +669,12 @@ impl ToTokens<Token> for IfStmt {
     }
 }
 
-parse_times!(SwitchStmt: *KeywordSwitch *<ctx: Option<SwitchContext>> *<label: Option<LoopLabel>> *OpenParen *<case: Exp> *CloseParen *<body: Box<Statement>>);
+parse_times!(SwitchStmt: *KeywordSwitch *<ctx: Option<SwitchContext>> *<label: Option<LoopLabel>> *OpenParen *<case: Exp> *CloseParen *<body: Statement>);
 parse_times!(BreakStmt: *KeywordBreak *<label: Option<LoopLabel>> *Semicolon);
 parse_times!(ContinueStmt: *KeywordContinue *<label: Option<LoopLabel>> *Semicolon);
-parse_times!(WhileStmt: *KeywordWhile *<label: Option<LoopLabel>> *OpenParen *<guard: Exp> *CloseParen *<body: Box<Statement>>);
-parse_times!(DoWhileStmt: *KeywordDo *<body: Box<Statement>> *KeywordWhile *<label: Option<LoopLabel>> *OpenParen *<guard: Exp> *CloseParen *Semicolon);
-parse_times!(ForStmt: *KeywordFor *<label: Option<LoopLabel>> *OpenParen *<init: ForInit> *<exp1: Option<Exp>> *Semicolon *<exp2: Option<Exp>> *CloseParen *<body: Box<Statement>>);
+parse_times!(WhileStmt: *KeywordWhile *<label: Option<LoopLabel>> *OpenParen *<guard: Exp> *CloseParen *<body: Statement>);
+parse_times!(DoWhileStmt: *KeywordDo *<body: Statement> *KeywordWhile *<label: Option<LoopLabel>> *OpenParen *<guard: Exp> *CloseParen *Semicolon);
+parse_times!(ForStmt: *KeywordFor *<label: Option<LoopLabel>> *OpenParen *<init: ForInit> *<exp1: Option<Exp>> *Semicolon *<exp2: Option<Exp>> *CloseParen *<body: Statement>);
 
 impl FromTokens<Token, ParseError> for ForInit {
     fn from_tokens<'a>(
@@ -710,7 +711,7 @@ impl ToTokens<Token> for ForInit {
     }
 }
 
-parse_times!(LabelStmt: *<label: Label> *Colon *<stmt: Box<Statement>>);
+parse_times!(LabelStmt: *<label: Label> *Colon *<stmt: Statement>);
 parse_plus!(Label:
     +<RawLabel>: Raw,
     +<CaseLabel>: Case,
@@ -866,13 +867,6 @@ impl BinaryTok {
             BinaryTok::TernaryQuestion(_) => Precedence::Ternary,
             BinaryTok::AssignmentOp(_) => Precedence::Assignment,
         }
-    }
-}
-
-impl Exp {
-    // Helper method, since we'll be doing this a lot
-    pub fn boxed(self) -> Box<Self> {
-        Box::new(self)
     }
 }
 

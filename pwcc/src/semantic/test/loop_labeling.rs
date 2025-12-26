@@ -45,11 +45,14 @@ fn labels_breaks_in_while_loop() {
     };
     let _ = block.items.pop().expect("no return statement");
     let while_stmt = match block.items.pop().expect("no while statement") {
-        BlockItem::Statement(Statement::WhileStmt(while_stmt)) => while_stmt,
-        otherwise => panic!("expected WhileStmt, got {otherwise:?}"),
+        BlockItem::Statement(stmt) => match *stmt {
+            Statement::WhileStmt(while_stmt) => while_stmt,
+            otherwise => panic!("expected Statement::WhileStmt, got {otherwise:?}"),
+        },
+        otherwise => panic!("expected BlockItem::Statement, got {otherwise:?}"),
     };
     let while_label = while_stmt.label;
-    let break_stmt = match *while_stmt.body {
+    let break_stmt = match while_stmt.body {
         Statement::BreakStmt(break_stmt) => break_stmt,
         otherwise => panic!("expected BreakStmt, got {otherwise:?}"),
     };

@@ -251,13 +251,13 @@ impl<'s, 't> ChompContext<'s, 't> {
     }
 
     fn is_static_var(&self, ident: &str) -> bool {
-        match self.symbol_table.get_symbol(ident) {
+        matches!(
+            self.symbol_table.get_symbol(ident),
             Some(type_check::Declaration {
                 ty: type_check::Type::Var(type_check::VarAttr::Static { .. }),
                 span: _,
-            }) => true,
-            _ => false,
-        }
+            })
+        )
     }
 
     fn var(&mut self, ident: &str) -> Val {

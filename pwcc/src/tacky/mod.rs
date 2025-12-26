@@ -212,7 +212,7 @@ pub enum BinaryOp {
     GreaterThanEqual,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Val {
     Constant(isize),
     Var(Temporary),
@@ -644,21 +644,34 @@ impl Chompable for parser::Exp {
                 span: _span,
             } => match *exp {
                 parser::Exp::Var { ident, .. } => {
-                    let dst = ctx.var(&ident).chomp(ctx);
-                    let src = Val::Var(dst);
+                    let src = ctx.var(&ident);
+                    let tmp = ctx.tf.next_temp();
 
                     use parser::PrefixOp::*;
                     ctx.push(Binary {
-                        src1: src,
+                        src1: src.clone(),
                         op: match op {
                             Increment(_) => BinaryOp::Add,
                             Decrement(_) => BinaryOp::Subtract,
                             _ => unreachable!(),
                         },
                         src2: Val::Constant(1),
-                        dst,
+                        dst: tmp,
                     });
-                    Val::Var(dst)
+
+                    match src {
+                        dst @ (Val::Data(_) | Val::Var(_)) => {
+                            // Persist change to data
+                            ctx.push(Copy {
+                                src: Val::Var(tmp),
+                                dst,
+                            });
+                        }
+                        // Shouldn't happen, but just in case, don't emit an invalid move.
+                        Val::Constant(_) => {}
+                    }
+
+                    Val::Var(tmp)
                 }
                 ref otherwise => {
                     panic!("building tacky: got {op:?} on expression {otherwise:?}")
@@ -670,27 +683,39 @@ impl Chompable for parser::Exp {
                 span: _span,
             } => match *exp {
                 parser::Exp::Var { ident, .. } => {
-                    let dst = ctx.var(&ident).chomp(ctx);
-                    let src = Val::Var(dst);
-                    let tmp = ctx.tf.next_temp();
+                    let src = ctx.var(&ident);
+                    let tmp1 = ctx.tf.next_temp();
 
                     ctx.push(Copy {
-                        src,
-                        dst: Val::Var(tmp),
+                        src: src.clone(),
+                        dst: Val::Var(tmp1),
                     });
 
-                    let src = Val::Var(dst);
+                    let tmp2 = ctx.tf.next_temp();
                     use parser::PostfixOp::*;
                     ctx.push(Binary {
-                        src1: src,
+                        src1: src.clone(),
                         op: match op {
                             Increment(_) => BinaryOp::Add,
                             Decrement(_) => BinaryOp::Subtract,
                         },
                         src2: Val::Constant(1),
-                        dst,
+                        dst: tmp2,
                     });
-                    Val::Var(tmp)
+
+                    match src {
+                        dst @ (Val::Data(_) | Val::Var(_)) => {
+                            // Persist change to data
+                            ctx.push(Copy {
+                                src: Val::Var(tmp2),
+                                dst,
+                            });
+                        }
+                        // Shouldn't happen, but just in case, don't emit an invalid move.
+                        Val::Constant(_) => {}
+                    }
+
+                    Val::Var(tmp1)
                 }
                 ref otherwise => {
                     panic!("building tacky: got {op:?} on expression {otherwise:?}")
